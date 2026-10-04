@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler d1 execute scholia --remote --file=./schema.sql && wrangler deploy",
-    "db:migrate": "wrangler d1 execute scholia --local --file=./schema.sql",
-    "db:migrate:remote": "wrangler d1 execute scholia --remote --file=./schema.sql",
+    "deploy": "wrangler d1 execute DB --remote --file=./schema.sql && wrangler deploy",
+    "db:migrate": "wrangler d1 execute DB --local --file=./schema.sql",
+    "db:migrate:remote": "wrangler d1 execute DB --remote --file=./schema.sql",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
