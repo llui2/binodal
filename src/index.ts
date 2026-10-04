@@ -760,6 +760,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-family: var(--font-main);
       font-size: 16px;
       line-height: 1.55;
+      font-weight: 500;
       font-kerning: normal;
       text-rendering: optimizeLegibility;
     }
@@ -774,7 +775,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     h1, h2, h3, p { margin-top: 0; }
     h1, h2, h3 {
       font-family: var(--font-main);
-      font-weight: 400;
+      font-weight: 500;
       color: var(--ink);
     }
 
@@ -794,6 +795,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       text-decoration: none;
       font-family: var(--font-main);
       font-size: 1.48rem;
+      font-weight: 600;
       line-height: 1;
       letter-spacing: -.025em;
     }
@@ -827,6 +829,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       line-height: 1.3;
       letter-spacing: .035em;
       color: var(--muted);
+      font-weight: 500;
     }
     .lookup-control {
       display: flex;
@@ -898,6 +901,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       color: var(--annotation);
       font-family: var(--font-main);
       font-size: .78rem;
+      font-weight: 600;
       line-height: 1.3;
       letter-spacing: .015em;
     }
@@ -914,6 +918,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       margin: 16px 0 0;
       color: #69655e;
       font-size: .96rem;
+      font-weight: 500;
       line-height: 1.5;
     }
 
@@ -964,7 +969,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       border-radius: 7px;
       color: var(--muted);
       font-size: .9rem;
-      font-weight: 400;
+      font-weight: 500;
       text-decoration: none;
     }
     .paper-tabs a.active {
@@ -980,6 +985,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       color: var(--muted);
       font-family: var(--font-main);
       font-size: .76rem;
+      font-weight: 500;
     }
 
     .signin-box,
@@ -1061,6 +1067,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       gap: 12px;
       color: #8a867e;
       font-size: .74rem;
+      font-weight: 500;
     }
     .comment-actions a { text-decoration: none; }
     .replies { margin-top: 8px; }
@@ -1101,7 +1108,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       padding: 0;
       border-radius: 0;
       font-size: .78rem;
-      font-weight: 400;
+      font-weight: 500;
       text-decoration: none;
     }
     .text-button:hover {
