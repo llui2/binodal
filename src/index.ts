@@ -766,7 +766,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--paper); }
-    a { color: inherit; text-underline-offset: 3px; }
+    a { color: inherit; text-decoration: none; }
     a:hover { color: var(--annotation); }
     button, input, textarea { font: inherit; }
     button { cursor: pointer; }
@@ -835,7 +835,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       padding: 6px;
       background: rgba(255, 255, 255, .48);
       border-radius: 14px;
-      box-shadow: 0 12px 34px rgba(46, 46, 42, .05);
     }
 
     input, textarea {
@@ -855,7 +854,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     input:focus-visible,
     textarea:focus-visible {
-      box-shadow: 0 0 0 3px rgba(184, 75, 60, .12);
+      background: #f3ede3;
     }
     textarea { resize: vertical; }
 
@@ -891,7 +890,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       padding: clamp(24px, 4vw, 44px);
       background: var(--surface);
       border-radius: var(--radius-lg);
-      box-shadow: 0 18px 55px rgba(46, 46, 42, .05);
     }
 
     .paper-summary { max-width: 840px; }
@@ -972,7 +970,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .paper-tabs a.active {
       background: #fbf9f3;
       color: var(--ink);
-      box-shadow: 0 5px 14px rgba(46, 46, 42, .06);
     }
     .paper-tab { margin-top: 26px; }
 
