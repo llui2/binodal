@@ -23,7 +23,7 @@ Requirements: Node.js and a Cloudflare account.
 npm run setup
 ```
 
-This installs dependencies, creates the `trails` D1 database, initializes it, and deploys the Worker.
+This installs dependencies, creates or reuses the `trails` D1 database, writes the binding, initializes the schema, and deploys the Worker.
 
 Configure ORCID after the first deployment:
 
