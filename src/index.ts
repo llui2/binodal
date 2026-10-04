@@ -204,28 +204,33 @@ async function renderPaper(request: Request, env: Env, arxivId: string): Promise
       <a class="back" href="/">← papers</a>
 
       <article class="paper-window">
-        <div class="paper-summary">
-          <p class="paper-id">arXiv:${escapeHtml(paper.arxiv_id)}</p>
-          <h1>${escapeHtml(paper.title)}</h1>
-          <p class="authors">${authors.map(escapeHtml).join(", ")}</p>
+        <div class="paper-grid">
+          <aside class="paper-meta" aria-label="Paper metadata">
+            <p class="paper-id">arXiv:${escapeHtml(paper.arxiv_id)}</p>
+            <a class="paper-source" href="https://arxiv.org/abs/${encodeURIComponent(paper.arxiv_id)}" rel="noreferrer">open on arXiv ↗</a>
+          </aside>
 
-          <div class="paper-actions">
-            <a href="https://arxiv.org/abs/${encodeURIComponent(paper.arxiv_id)}" rel="noreferrer">arXiv ↗</a>
-            <details class="abstract-disclosure">
-              <summary>Abstract</summary>
-              <p>${escapeHtml(paper.abstract)}</p>
-            </details>
+          <div class="paper-main">
+            <div class="paper-summary">
+              <h1>${escapeHtml(paper.title)}</h1>
+              <p class="authors">${authors.map(escapeHtml).join(", ")}</p>
+
+              <details class="abstract-disclosure">
+                <summary>Abstract</summary>
+                <p>${escapeHtml(paper.abstract)}</p>
+              </details>
+            </div>
+
+            <nav class="paper-tabs" aria-label="Paper sections">
+              ${tabLink("discussion", "Discussion")}
+              ${tabLink("references", "References")}
+              ${tabLink("related", "Related papers")}
+            </nav>
+
+            <div class="paper-tab">
+              ${tabContent}
+            </div>
           </div>
-        </div>
-
-        <nav class="paper-tabs" aria-label="Paper sections">
-          ${tabLink("discussion", "Discussion")}
-          ${tabLink("references", "References")}
-          ${tabLink("related", "Related papers")}
-        </nav>
-
-        <div class="paper-tab">
-          ${tabContent}
         </div>
       </article>
     </main>`,
@@ -235,8 +240,8 @@ async function renderPaper(request: Request, env: Env, arxivId: string): Promise
 function renderComposer(user: User | null, paperId: string, replyTo: number | null): string {
   if (!user) {
     const next = `/p/${encodeURIComponent(paperId)}`;
-    return `<div class="signin-box">
-      <p>Contributions are attached to a persistent ORCID identity.</p>
+    return `<div class="signin-plain">
+      <p>Sign in with ORCID to contribute.</p>
       <a class="button-link" href="/auth/orcid?next=${encodeURIComponent(next)}">Sign in with ORCID</a>
     </div>`;
   }
@@ -738,6 +743,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#F7F4ED">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400..700&display=swap">
   <title>${escapeHtml(title)}</title>
   <style>
     :root {
@@ -749,7 +755,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       --wash: #ebe6dc;
       --surface: rgba(255, 255, 255, .52);
 
-      --font-main: Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      --font-main: "Source Serif 4", Georgia, serif;
 
       --radius-sm: 3px;
       --radius-md: 4px;
@@ -865,8 +871,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
       border: 0;
       background: var(--annotation);
       color: #fffaf5;
-      padding: 11px 15px;
-      border-radius: var(--radius-sm);
+      padding: 11px 16px;
+      border-radius: 2px;
       font-family: var(--font-main);
       font-size: .92rem;
       font-weight: 500;
@@ -893,115 +899,125 @@ function htmlPage(title: string, body: string, status = 200): Response {
       background: transparent;
     }
 
-    .paper-summary { max-width: 840px; }
+    .paper-grid {
+      display: grid;
+      grid-template-columns: 132px minmax(0, 1fr);
+      gap: 0 32px;
+      align-items: start;
+    }
+
+    .paper-meta {
+      padding-top: 7px;
+    }
+
     .paper-id {
       margin: 0 0 12px;
       color: var(--annotation);
-      font-family: var(--font-main);
-      font-size: .78rem;
-      font-weight: 600;
+      font-size: .8rem;
+      font-weight: 650;
       line-height: 1.3;
-      letter-spacing: .015em;
+      letter-spacing: .01em;
     }
 
+    .paper-source {
+      display: inline-block;
+      max-width: 112px;
+      color: var(--muted);
+      font-size: .8rem;
+      line-height: 1.3;
+    }
+
+    .paper-main { min-width: 0; }
+    .paper-summary { max-width: 760px; }
+
     .paper-summary h1 {
-      max-width: 860px;
+      max-width: 760px;
       margin: 0;
-      font-size: clamp(2rem, 4.6vw, 3.55rem);
-      line-height: 1.04;
-      letter-spacing: -.03em;
+      font-size: clamp(1.9rem, 3.8vw, 2.9rem);
+      line-height: 1.05;
+      font-weight: 620;
+      letter-spacing: -.025em;
     }
 
     .authors {
-      margin: 16px 0 0;
-      color: #69655e;
-      font-size: .96rem;
-      font-weight: 500;
-      line-height: 1.5;
-    }
-
-    .paper-actions {
-      display: flex;
-      align-items: flex-start;
-      gap: 18px;
-      flex-wrap: wrap;
-      margin-top: 22px;
-      font-size: .86rem;
-    }
-    .paper-actions > a {
-      color: var(--annotation);
-      font-weight: 600;
-      text-decoration: none;
+      margin: 20px 0 0;
+      max-width: 720px;
+      color: #625f58;
+      font-size: .98rem;
+      font-weight: 520;
+      line-height: 1.55;
     }
 
     .abstract-disclosure {
       max-width: 720px;
+      margin-top: 20px;
       color: #59564f;
     }
     .abstract-disclosure summary {
       cursor: pointer;
-      color: var(--muted);
-      font-weight: 500;
+      color: var(--annotation);
+      font-weight: 600;
       list-style: none;
     }
     .abstract-disclosure summary::-webkit-details-marker { display: none; }
-    .abstract-disclosure[open] { flex-basis: 100%; }
     .abstract-disclosure p {
       margin: 12px 0 0;
-      max-width: 760px;
-      font-size: .95rem;
-      line-height: 1.65;
+      max-width: 720px;
+      font-size: .97rem;
+      line-height: 1.68;
+      font-weight: 450;
     }
 
     .paper-tabs {
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 38px;
+      gap: 24px;
+      margin-top: 52px;
       padding: 0;
       background: transparent;
     }
     .paper-tabs a {
-      padding: 7px 10px;
-      border-radius: 2px;
+      padding: 0;
       color: var(--muted);
       font-size: .9rem;
       font-weight: 600;
+      letter-spacing: .012em;
       text-decoration: none;
     }
     .paper-tabs a.active {
-      background: var(--annotation);
-      color: #fffaf5;
+      background: transparent;
+      color: var(--annotation);
     }
-    .paper-tab { margin-top: 26px; }
+    .paper-tab { margin-top: 32px; }
 
     .discussion-meta {
       display: flex;
-      justify-content: flex-end;
-      margin-bottom: 8px;
+      justify-content: flex-start;
+      margin-bottom: 12px;
       color: var(--muted);
       font-family: var(--font-main);
       font-size: .76rem;
       font-weight: 500;
     }
 
-    .signin-box,
-    .composer {
-      margin: 16px 0 28px;
-      padding: 16px 18px;
-      background: var(--wash);
-      border-radius: 2px;
-    }
-    .signin-box {
+    .signin-plain {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-start;
       gap: 20px;
+      margin: 20px 0 32px;
     }
-    .signin-box p {
+    .signin-plain p {
       margin: 0;
       color: #5f5b54;
-      font-size: .93rem;
+      font-size: .95rem;
+    }
+
+    .composer {
+      margin: 20px 0 32px;
+      padding: 18px 20px;
+      background: var(--wash);
+      border-radius: 2px;
     }
 
     .composer-meta,
@@ -1028,8 +1044,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
     .comments {
       display: grid;
-      gap: 28px;
-      margin-top: 22px;
+      gap: 32px;
+      margin-top: 32px;
     }
     .comment {
       margin-left: calc(var(--depth) * 22px);
@@ -1143,22 +1159,34 @@ function htmlPage(title: string, body: string, status = 200): Response {
       .brand-mark { width: 27px; height: 27px; }
       .home { padding-top: 10vh; }
       .lookup-control,
-      .signin-box {
+      .signin-plain {
         flex-direction: column;
         align-items: stretch;
       }
       .paper-window {
         padding: 8px 0 0;
       }
+      .paper-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+      }
+      .paper-meta {
+        display: flex;
+        align-items: baseline;
+        gap: 14px;
+        padding-top: 0;
+      }
+      .paper-id { margin: 0; }
+      .paper-source { max-width: none; }
       .paper-tabs {
         display: flex;
         width: 100%;
-        gap: 6px;
+        gap: 18px;
+        overflow-x: auto;
       }
       .paper-tabs a {
-        flex: 1;
-        text-align: center;
-        padding-inline: 7px;
+        flex: 0 0 auto;
+        text-align: left;
       }
       .comment {
         margin-left: calc(min(var(--depth), 2) * 14px);
@@ -1177,7 +1205,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "strict-origin-when-cross-origin",
-        "Content-Security-Policy": "default-src 'self'; style-src 'unsafe-inline'; form-action 'self' https://orcid.org; frame-ancestors 'none'; base-uri 'none'",
+        "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; form-action 'self' https://orcid.org; frame-ancestors 'none'; base-uri 'none'",
       },
     },
   );
