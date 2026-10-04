@@ -48,8 +48,8 @@ interface CommentRow {
 }
 
 const BLUEPAPER_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 310 310" role="img" aria-label="bluepaper logo">
-  <path fill="#BC4F3B" d="M 168 20 L 168 250 C 168 267 165 278 156 283 C 148 288 139 288 130 283 C 120 277 112 269 103 261 L 80 239 C 77 236 78 231 83 230 C 92 230 103 236 114 243 C 124 249 134 257 143 264 L 143 54 C 143 50 141 48 137 48 C 134 48 133 46 135 44 C 145 42 155 34 165 21 C 166 20 167 19 168 20 Z"/>
-  <circle cx="211" cy="144" r="19" fill="#BC4F3B"/>
+  <path fill="#315C84" d="M 158 24 L 178 24 L 178 237 C 178 259 172 275 160 284 C 149 292 134 292 120 286 C 109 281 99 273 89 264 L 73 250 C 67 245 68 237 75 233 C 81 229 87 231 94 236 L 123 257 C 135 266 145 267 152 260 C 157 255 158 248 158 237 L 158 65 C 158 56 154 52 146 51 L 137 50 C 131 49 130 44 135 40 C 145 37 152 32 158 24 Z"/>
+  <rect x="207" y="126" width="36" height="36" rx="3" fill="#315C84"/>
 </svg>`;
 
 export default {
@@ -1487,8 +1487,8 @@ function decodeXmlEntities(value: string): string {
 function renderBrand(): string {
   return `<a class="brand" href="/" aria-label="bluepaper home">
     <svg class="brand-mark" viewBox="0 0 310 310" aria-hidden="true">
-      <path fill="#BC4F3B" d="M 168 20 L 168 250 C 168 267 165 278 156 283 C 148 288 139 288 130 283 C 120 277 112 269 103 261 L 80 239 C 77 236 78 231 83 230 C 92 230 103 236 114 243 C 124 249 134 257 143 264 L 143 54 C 143 50 141 48 137 48 C 134 48 133 46 135 44 C 145 42 155 34 165 21 C 166 20 167 19 168 20 Z"/>
-      <circle cx="211" cy="144" r="19" fill="#BC4F3B"/>
+      <path fill="#315C84" d="M 158 24 L 178 24 L 178 237 C 178 259 172 275 160 284 C 149 292 134 292 120 286 C 109 281 99 273 89 264 L 73 250 C 67 245 68 237 75 233 C 81 229 87 231 94 236 L 123 257 C 135 266 145 267 152 260 C 157 255 158 248 158 237 L 158 65 C 158 56 154 52 146 51 L 137 50 C 131 49 130 44 135 40 C 145 37 152 32 158 24 Z"/>
+      <rect x="207" y="126" width="36" height="36" rx="3" fill="#315C84"/>
     </svg>
     <span>bluepaper</span>
   </a>`;
@@ -1521,7 +1521,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     :root {
       --paper: #f7f4ed;
       --ink: #2e2e2a;
-      --annotation: #b84b3c;
+      --annotation: #315c84;
       --stone: #a7a39a;
       --muted: #77736c;
       --wash: #ebe6dc;
@@ -1926,9 +1926,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
       max-width: 640px;
       margin-top: 22px;
       padding: 11px 13px;
-      background: #efe2dd;
+      background: #e3eaf0;
       border-radius: 2px;
-      color: #69433d;
+      color: #3d5569;
       font-size: .9rem;
     }
 
