@@ -18,8 +18,6 @@ References and related-paper indexing are not implemented yet.
 Requirements: Node.js and a Cloudflare account.
 
 ```bash
-git clone https://github.com/llui2/bluepaper.git
-cd bluepaper
 npm install
 ```
 
