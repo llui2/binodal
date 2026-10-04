@@ -1236,7 +1236,9 @@ function normalizePaperInput(raw: string): string | null {
 
   if (value.toLowerCase().startsWith("doi:")) {
     const doi = normalizeDoiInput(value.slice(4));
-    return doi ? `doi:${doi}` : null;
+    if (!doi) return null;
+    const arxivFromDoi = arxivIdFromDoi(doi);
+    return arxivFromDoi ?? `doi:${doi}`;
   }
 
   if (value.toLowerCase().startsWith("url:")) {
@@ -1581,12 +1583,33 @@ function htmlPage(title: string, body: string, status = 200): Response {
       letter-spacing: .01em;
     }
 
+    .paper-venue {
+      margin: 0 0 10px;
+      color: var(--annotation);
+      font-size: .82rem;
+      font-weight: 650;
+      line-height: 1.28;
+    }
+
+    .paper-links {
+      display: grid;
+      gap: 6px;
+    }
+
     .paper-source {
       display: inline-block;
-      max-width: 112px;
+      max-width: 120px;
       color: var(--muted);
       font-size: .8rem;
       line-height: 1.3;
+    }
+
+    .paper-doi {
+      margin: 12px 0 0;
+      color: #8a867e;
+      font-size: .68rem;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
     }
 
     .paper-main { min-width: 0; }
@@ -1838,7 +1861,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
         gap: 14px;
         padding-top: 0;
       }
-      .paper-id { margin: 0; }
+      .paper-id,
+      .paper-venue,
+      .paper-doi { margin: 0; }
+      .paper-links { display: flex; gap: 12px; }
       .paper-source { max-width: none; }
       .paper-tabs {
         display: flex;
