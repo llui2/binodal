@@ -511,12 +511,12 @@ async function fetchPaperFromAbs(arxivId: string): Promise<Paper> {
     const published = metaContent(html, "citation_date") || null;
 
     const abstractMatch = html.match(
-      /<blockquote[^>]*class=["'][^"']*abstract[^"']*["'][^>]*>([\\s\\S]*?)<\\/blockquote>/i,
+      /<blockquote[^>]*class=["'][^"']*abstract[^"']*["'][^>]*>([\s\S]*?)<\/blockquote>/i,
     );
     const abstract = abstractMatch
       ? cleanHtmlText(
           abstractMatch[1].replace(
-            /<span[^>]*class=["'][^"']*descriptor[^"']*["'][^>]*>[\\s\\S]*?<\\/span>/i,
+            /<span[^>]*class=["'][^"']*descriptor[^"']*["'][^>]*>[\s\S]*?<\/span>/i,
             "",
           ),
         )
@@ -555,14 +555,14 @@ async function fetchPaperFromAtom(arxivId: string): Promise<Paper> {
   }
 
   const xml = await response.text();
-  const entry = xml.match(/<entry>([\\s\\S]*?)<\\/entry>/)?.[1];
+  const entry = xml.match(/<entry>([\s\S]*?)<\/entry>/)?.[1];
   if (!entry) throw new Error(`No arXiv paper found for ${arxivId}`);
 
   const title = cleanXmlText(extractTag(entry, "title"));
   const abstract = cleanXmlText(extractTag(entry, "summary"));
   const published = extractTag(entry, "published") || null;
   const updated = extractTag(entry, "updated") || null;
-  const authors = [...entry.matchAll(/<author>[\\s\\S]*?<name>([\\s\\S]*?)<\\/name>[\\s\\S]*?<\\/author>/g)]
+  const authors = [...entry.matchAll(/<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/g)]
     .map((match) => cleanXmlText(match[1]))
     .filter(Boolean);
 
@@ -579,7 +579,7 @@ async function fetchPaperFromAtom(arxivId: string): Promise<Paper> {
 }
 
 function metaContent(html: string, name: string): string {
-  const escaped = name.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\name.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")");
   const patterns = [
     new RegExp(`<meta[^>]+name=["']${escaped}["'][^>]+content=["']([\\s\\S]*?)["'][^>]*>`, "i"),
     new RegExp(`<meta[^>]+content=["']([\\s\\S]*?)["'][^>]+name=["']${escaped}["'][^>]*>`, "i"),
@@ -594,7 +594,7 @@ function metaContent(html: string, name: string): string {
 }
 
 function metaContents(html: string, name: string): string[] {
-  const escaped = name.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\name.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")");
   const pattern = new RegExp(
     `<meta[^>]+name=["']${escaped}["'][^>]+content=["']([\\s\\S]*?)["'][^>]*>`,
     "gi",
@@ -608,7 +608,7 @@ function cleanHtmlText(value: string): string {
   return decodeHtmlEntities(
     value
       .replace(/<[^>]+>/g, " ")
-      .replace(/\\s+/g, " ")
+      .replace(/\s+/g, " ")
       .trim(),
   );
 }
@@ -620,7 +620,7 @@ function decodeHtmlEntities(value: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;|&apos;/g, "'")
-    .replace(/&#(\\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
     .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)));
 }
 
