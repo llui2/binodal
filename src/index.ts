@@ -63,28 +63,31 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
 
   if (request.method === "GET" && path === "/go") {
-    const raw = url.searchParams.get("arxiv") ?? "";
-    const id = normalizeArxivInput(raw);
+    const raw = url.searchParams.get("paper") ?? url.searchParams.get("arxiv") ?? "";
+    const id = normalizePaperInput(raw);
     if (!id) {
-      return redirect("/?error=Enter+a+valid+arXiv+ID+or+URL");
+      return redirect("/?error=Enter+a+valid+arXiv+ID,+DOI,+or+paper+URL");
     }
     return redirect(`/p/${encodeURIComponent(id)}`);
   }
 
   if (request.method === "GET" && path.startsWith("/p/")) {
-    const id = normalizeArxivInput(decodeURIComponent(path.slice(3)));
-    if (!id) return notFound("Invalid arXiv identifier.");
+    const id = normalizePaperInput(decodeURIComponent(path.slice(3)));
+    if (!id) return notFound("Invalid paper identifier or URL.");
     return renderPaper(request, env, id);
   }
 
   if (request.method === "GET" && path.startsWith("/api/papers/")) {
-    const id = normalizeArxivInput(decodeURIComponent(path.slice("/api/papers/".length)));
-    if (!id) return json({ error: "invalid arXiv id" }, 400);
+    const id = normalizePaperInput(decodeURIComponent(path.slice("/api/papers/".length)));
+    if (!id) return json({ error: "invalid paper identifier or URL" }, 400);
     const paper = await ensurePaper(env, id);
+    const source = paperSource(paper.arxiv_id);
     return json({
       ...paper,
-      authors: safeJsonArray(paper.authors_json),
-      arxiv_url: `https://arxiv.org/abs/${paper.arxiv_id}`,
+      authors: safeJsonArray(paper.authors_json).map(normalizeAuthorName),
+      source: source.kind,
+      source_url: source.url,
+      ...(source.kind === "arxiv" ? { arxiv_url: source.url } : {}),
     });
   }
 
@@ -135,9 +138,9 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
       <h1>A public record of scientific activity around papers.</h1>
       ${error ? `<p class="notice">${escapeHtml(error)}</p>` : ""}
       <form class="lookup" action="/go" method="get">
-        <label for="arxiv">arXiv</label>
+        <label for="paper">paper</label>
         <div class="lookup-control">
-          <input id="arxiv" name="arxiv" placeholder="Paste an arXiv ID or URL" autocomplete="off" required>
+          <input id="paper" name="paper" placeholder="Paste an arXiv ID, DOI, or paper URL" autocomplete="off" required>
           <button type="submit">Open</button>
         </div>
       </form>
@@ -145,8 +148,8 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
   );
 }
 
-async function renderPaper(request: Request, env: Env, arxivId: string): Promise<Response> {
-  const paper = await ensurePaper(env, arxivId);
+async function renderPaper(request: Request, env: Env, paperId: string): Promise<Response> {
+  const paper = await ensurePaper(env, paperId);
   const user = await currentUser(request, env);
   const url = new URL(request.url);
   const replyToRaw = url.searchParams.get("reply");
@@ -162,14 +165,15 @@ async function renderPaper(request: Request, env: Env, arxivId: string): Promise
       WHERE c.paper_id = ?
       ORDER BY c.created_at ASC, c.id ASC`,
   )
-    .bind(arxivId)
+    .bind(paperId)
     .all<CommentRow>();
 
   const comments = result.results ?? [];
   const commentIds = new Set(comments.map((comment) => comment.id));
   const validReplyTo = replyTo && commentIds.has(replyTo) ? replyTo : null;
-  const authors = safeJsonArray(paper.authors_json);
-  const paperUrl = `/p/${encodeURIComponent(arxivId)}`;
+  const authors = safeJsonArray(paper.authors_json).map(normalizeAuthorName);
+  const source = paperSource(paper.arxiv_id);
+  const paperUrl = `/p/${encodeURIComponent(paperId)}`;
 
   const tabLink = (id: "discussion" | "references" | "related", label: string): string =>
     `<a href="${paperUrl}?tab=${id}"${tab === id ? ` class="active" aria-current="page"` : ""}>${label}</a>`;
@@ -178,8 +182,8 @@ async function renderPaper(request: Request, env: Env, arxivId: string): Promise
     <div class="discussion-meta">
       <span>${comments.length} ${comments.length === 1 ? "comment" : "comments"}</span>
     </div>
-    ${renderComposer(user, arxivId, validReplyTo)}
-    ${comments.length ? renderCommentTree(comments, arxivId) : `<p class="empty">No discussion yet.</p>`}
+    ${renderComposer(user, paperId, validReplyTo)}
+    ${comments.length ? renderCommentTree(comments, paperId) : `<p class="empty">No discussion yet.</p>`}
   </section>`;
 
   const references = `<section class="tab-empty">
@@ -206,8 +210,8 @@ async function renderPaper(request: Request, env: Env, arxivId: string): Promise
       <article class="paper-window">
         <div class="paper-grid">
           <aside class="paper-meta" aria-label="Paper metadata">
-            <p class="paper-id">arXiv:${escapeHtml(paper.arxiv_id)}</p>
-            <a class="paper-source" href="https://arxiv.org/abs/${encodeURIComponent(paper.arxiv_id)}" rel="noreferrer">open on arXiv ↗</a>
+            <p class="paper-id">${escapeHtml(source.idLabel)}</p>
+            <a class="paper-source" href="${escapeAttr(source.url)}" rel="noreferrer">${escapeHtml(source.openLabel)}</a>
           </aside>
 
           <div class="paper-main">
@@ -307,11 +311,11 @@ async function createComment(request: Request, env: Env): Promise<Response> {
 
   const form = await request.formData();
   const rawPaper = String(form.get("paper_id") ?? "");
-  const paperId = normalizeArxivInput(rawPaper);
+  const paperId = normalizePaperInput(rawPaper);
   const body = String(form.get("body") ?? "").trim();
   const parentRaw = String(form.get("parent_id") ?? "").trim();
 
-  if (!paperId) return new Response("Invalid arXiv id", { status: 400 });
+  if (!paperId) return new Response("Invalid paper identifier or URL", { status: 400 });
   if (!body || body.length > 5000) {
     return new Response("Comment must contain 1–5000 characters", { status: 400 });
   }
@@ -502,25 +506,33 @@ async function currentUser(request: Request, env: Env): Promise<User | null> {
   };
 }
 
-async function ensurePaper(env: Env, arxivId: string): Promise<Paper> {
+async function ensurePaper(env: Env, paperId: string): Promise<Paper> {
   const cached = await env.DB.prepare(
     "SELECT arxiv_id, title, authors_json, abstract, published_at, updated_at FROM papers WHERE arxiv_id = ?",
   )
-    .bind(arxivId)
+    .bind(paperId)
     .first<Paper>();
 
   if (cached) return cached;
 
-  let paper: Paper | null = null;
+  let paper: Paper;
 
-  try {
-    paper = await fetchPaperFromAbs(arxivId);
-  } catch (error) {
-    console.warn("Fast arXiv metadata lookup failed; falling back to Atom API", error);
-  }
+  if (paperId.startsWith("doi:")) {
+    paper = await fetchPaperFromCrossref(paperId.slice(4), paperId);
+  } else if (paperId.startsWith("url:")) {
+    const sourceUrl = decodeUrlPaperId(paperId);
+    if (!sourceUrl) throw new Error("Invalid paper URL");
+    paper = await fetchPaperFromUrl(sourceUrl, paperId);
+  } else {
+    let arxivPaper: Paper | null = null;
 
-  if (!paper) {
-    paper = await fetchPaperFromAtom(arxivId);
+    try {
+      arxivPaper = await fetchPaperFromAbs(paperId);
+    } catch (error) {
+      console.warn("Fast arXiv metadata lookup failed; falling back to Atom API", error);
+    }
+
+    paper = arxivPaper ?? await fetchPaperFromAtom(paperId);
   }
 
   await env.DB.prepare(
@@ -559,7 +571,7 @@ async function fetchPaperFromAbs(arxivId: string): Promise<Paper> {
 
     const html = await response.text();
     const title = metaContent(html, "citation_title");
-    const authors = metaContents(html, "citation_author");
+    const authors = metaContents(html, "citation_author").map(normalizeAuthorName);
     const published = metaContent(html, "citation_date") || null;
 
     const abstractMatch = html.match(
@@ -615,7 +627,7 @@ async function fetchPaperFromAtom(arxivId: string): Promise<Paper> {
   const published = extractTag(entry, "published") || null;
   const updated = extractTag(entry, "updated") || null;
   const authors = [...entry.matchAll(/<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/g)]
-    .map((match) => cleanXmlText(match[1]))
+    .map((match) => normalizeAuthorName(cleanXmlText(match[1])))
     .filter(Boolean);
 
   if (!title) throw new Error(`Could not parse arXiv metadata for ${arxivId}`);
@@ -628,6 +640,152 @@ async function fetchPaperFromAtom(arxivId: string): Promise<Paper> {
     published_at: published,
     updated_at: updated,
   };
+}
+
+async function fetchPaperFromCrossref(doi: string, storageId = `doi:${doi.toLowerCase()}`): Promise<Paper> {
+  const response = await fetch(`https://api.crossref.org/works/${encodeURIComponent(doi)}`, {
+    headers: {
+      "User-Agent": "Scholia/0.1 (+https://github.com/llui2/scholia)",
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Crossref returned HTTP ${response.status}`);
+  }
+
+  const payload = await response.json() as {
+    message?: {
+      title?: string[];
+      author?: Array<{ given?: string; family?: string; name?: string }>;
+      abstract?: string;
+      published?: { "date-parts"?: number[][] };
+      "published-print"?: { "date-parts"?: number[][] };
+      "published-online"?: { "date-parts"?: number[][] };
+      created?: { "date-time"?: string };
+    };
+  };
+
+  const message = payload.message;
+  if (!message) throw new Error(`No Crossref metadata found for ${doi}`);
+
+  const title = cleanHtmlText(message.title?.[0] ?? "");
+  const authors = (message.author ?? [])
+    .map((author) => {
+      if (author.name) return normalizeAuthorName(author.name);
+      return [author.given, author.family].filter(Boolean).join(" ").trim();
+    })
+    .filter(Boolean);
+  const abstract = cleanHtmlText(message.abstract ?? "");
+  const published = crossrefDate(
+    message["published-print"] ?? message["published-online"] ?? message.published,
+  ) ?? message.created?.["date-time"] ?? null;
+
+  if (!title) throw new Error(`Could not parse Crossref metadata for ${doi}`);
+
+  return {
+    arxiv_id: storageId,
+    title,
+    authors_json: JSON.stringify(authors),
+    abstract,
+    published_at: published,
+    updated_at: published,
+  };
+}
+
+async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<Paper> {
+  if (!isSafePaperUrl(sourceUrl)) throw new Error("Only public HTTPS paper URLs are supported");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
+
+  try {
+    const response = await fetch(sourceUrl, {
+      headers: {
+        "User-Agent": "Scholia/0.1 (+https://github.com/llui2/scholia)",
+        Accept: "text/html,application/xhtml+xml",
+      },
+      redirect: "follow",
+      signal: controller.signal,
+    });
+
+    if (!response.ok) throw new Error(`Paper page returned HTTP ${response.status}`);
+
+    const finalUrl = response.url || sourceUrl;
+    if (!isSafePaperUrl(finalUrl)) throw new Error("Paper URL redirected to an unsupported address");
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
+      throw new Error("Paper URL did not return an HTML page");
+    }
+
+    const contentLength = Number(response.headers.get("content-length") ?? "0");
+    if (contentLength > 3_000_000) throw new Error("Paper page is too large to inspect");
+
+    const html = await response.text();
+    const doi = normalizeDoiInput(metaContent(html, "citation_doi"));
+    if (doi) {
+      try {
+        return await fetchPaperFromCrossref(doi, storageId);
+      } catch (error) {
+        console.warn("Crossref lookup from paper URL failed; using page metadata", error);
+      }
+    }
+
+    const title =
+      metaContent(html, "citation_title") ||
+      metaPropertyContent(html, "og:title") ||
+      cleanHtmlText(extractHtmlTitle(html));
+    const authors = metaContents(html, "citation_author").map(normalizeAuthorName);
+    const abstract =
+      metaContent(html, "citation_abstract") ||
+      metaContent(html, "description") ||
+      metaPropertyContent(html, "og:description");
+    const published =
+      metaContent(html, "citation_publication_date") ||
+      metaContent(html, "citation_date") ||
+      null;
+
+    if (!title) throw new Error("Could not find paper metadata at this URL");
+
+    return {
+      arxiv_id: storageId,
+      title,
+      authors_json: JSON.stringify(authors),
+      abstract,
+      published_at: published,
+      updated_at: published,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function crossrefDate(value?: { "date-parts"?: number[][] }): string | null {
+  const parts = value?.["date-parts"]?.[0];
+  if (!parts?.length) return null;
+  const [year, month = 1, day = 1] = parts;
+  if (!year) return null;
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function metaPropertyContent(html: string, property: string): string {
+  const escaped = property.replace(/[.*+?^$()|[\\]{}]/g, "\\$&");
+  const patterns = [
+    new RegExp(`<meta[^>]+property=["']${escaped}["'][^>]+content=["']([\\s\\S]*?)["'][^>]*>`, "i"),
+    new RegExp(`<meta[^>]+content=["']([\\s\\S]*?)["'][^>]+property=["']${escaped}["'][^>]*>`, "i"),
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match) return decodeHtmlEntities(match[1]).trim();
+  }
+
+  return "";
+}
+
+function extractHtmlTitle(html: string): string {
+  return html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i)?.[1] ?? "";
 }
 
 function metaContent(html: string, name: string): string {
@@ -676,6 +834,30 @@ function decodeHtmlEntities(value: string): string {
     .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)));
 }
 
+function normalizePaperInput(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) return null;
+
+  const arxiv = normalizeArxivInput(value);
+  if (arxiv) return arxiv;
+
+  if (value.toLowerCase().startsWith("doi:")) {
+    const doi = normalizeDoiInput(value.slice(4));
+    return doi ? `doi:${doi}` : null;
+  }
+
+  if (value.toLowerCase().startsWith("url:")) {
+    const decoded = decodeUrlPaperId(value);
+    return decoded && isSafePaperUrl(decoded) ? `url:${encodeURIComponent(decoded)}` : null;
+  }
+
+  const doi = normalizeDoiInput(value);
+  if (doi) return `doi:${doi}`;
+
+  const url = normalizePaperUrl(value);
+  return url ? `url:${encodeURIComponent(url)}` : null;
+}
+
 function normalizeArxivInput(raw: string): string | null {
   let value = raw.trim();
   if (!value) return null;
@@ -690,6 +872,125 @@ function normalizeArxivInput(raw: string): string | null {
   const legacy = /^[A-Za-z0-9.\-]+\/\d{7}$/;
 
   return modern.test(value) || legacy.test(value) ? value : null;
+}
+
+function normalizeDoiInput(raw: string): string | null {
+  let value = decodeURIComponentSafe(raw.trim());
+  if (!value) return null;
+
+  value = value.replace(/^doi:\s*/i, "");
+  value = value.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "");
+  value = value.split(/[?#]/, 1)[0];
+
+  const direct = value.match(/^10\.\d{4,9}\/\S+$/i)?.[0];
+  if (direct) return direct.replace(/[\s.]+$/, "").toLowerCase();
+
+  const embedded = value.match(/10\.\d{4,9}\/[^\s"'<>]+/i)?.[0];
+  return embedded ? embedded.replace(/[\s.]+$/, "").toLowerCase() : null;
+}
+
+function normalizePaperUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:") return null;
+    url.hash = "";
+    const normalized = url.toString();
+    return isSafePaperUrl(normalized) ? normalized : null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeUrlPaperId(paperId: string): string | null {
+  if (!paperId.toLowerCase().startsWith("url:")) return null;
+  const decoded = decodeURIComponentSafe(paperId.slice(4));
+  return normalizePaperUrl(decoded);
+}
+
+function isSafePaperUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:") return false;
+
+    const host = url.hostname.toLowerCase();
+    if (
+      host === "localhost" ||
+      host.endsWith(".local") ||
+      host === "::1" ||
+      host.startsWith("127.") ||
+      host.startsWith("0.") ||
+      host.startsWith("10.") ||
+      host.startsWith("192.168.") ||
+      host.startsWith("169.254.") ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+    ) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function decodeURIComponentSafe(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeAuthorName(raw: string): string {
+  const value = raw.replace(/\s+/g, " ").trim();
+  if (!value) return "";
+
+  const parts = value.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length === 2 && parts[0] && parts[1]) {
+    return `${parts[1]} ${parts[0]}`.replace(/\s+/g, " ").trim();
+  }
+
+  return value;
+}
+
+function paperSource(paperId: string): {
+  kind: "arxiv" | "doi" | "url";
+  idLabel: string;
+  url: string;
+  openLabel: string;
+} {
+  if (paperId.startsWith("doi:")) {
+    const doi = paperId.slice(4);
+    return {
+      kind: "doi",
+      idLabel: `DOI:${doi}`,
+      url: `https://doi.org/${doi}`,
+      openLabel: "open DOI ↗",
+    };
+  }
+
+  if (paperId.startsWith("url:")) {
+    const url = decodeUrlPaperId(paperId) ?? "#";
+    let label = "source";
+    try {
+      label = new URL(url).hostname.replace(/^www\./, "");
+    } catch {
+      // Keep the generic source label.
+    }
+    return {
+      kind: "url",
+      idLabel: label,
+      url,
+      openLabel: "open source ↗",
+    };
+  }
+
+  return {
+    kind: "arxiv",
+    idLabel: `arXiv:${paperId}`,
+    url: `https://arxiv.org/abs/${encodeURIComponent(paperId)}`,
+    openLabel: "open on arXiv ↗",
+  };
 }
 
 function extractTag(xml: string, tag: string): string {
