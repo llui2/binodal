@@ -163,61 +163,68 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
   );
 }
 
-async function renderPaper(request: Request, env: Env, paperId: string): Promise<Response> {
-  const paper = await ensurePaper(env, paperId);
+async function renderPaper(request: Request, env: Env, requestedPaperId: string): Promise<Response> {
+  const paper = await ensurePaper(env, requestedPaperId);
+  const identifiers = await getPaperIdentifiers(env, paper.arxiv_id);
+  const publicPaperId = preferredPaperId(identifiers, paper.arxiv_id);
+  const requestUrl = new URL(request.url);
+
+  if (requestedPaperId !== publicPaperId) {
+    return redirect(\`/p/\${encodeURIComponent(publicPaperId)}\${requestUrl.search}\`);
+  }
+
   const user = await currentUser(request, env);
-  const url = new URL(request.url);
-  const replyToRaw = url.searchParams.get("reply");
-  const replyTo = replyToRaw && /^\\d+$/.test(replyToRaw) ? Number(replyToRaw) : null;
-  const requestedTab = url.searchParams.get("tab");
+  const replyToRaw = requestUrl.searchParams.get("reply");
+  const replyTo = replyToRaw && /^\d+$/.test(replyToRaw) ? Number(replyToRaw) : null;
+  const requestedTab = requestUrl.searchParams.get("tab");
   const tab = requestedTab === "references" || requestedTab === "related" ? requestedTab : "discussion";
+  const storagePaperId = paper.arxiv_id;
 
   const result = await env.DB.prepare(
-    `SELECT c.id, c.paper_id, c.user_id, c.parent_id, c.body, c.created_at,
+    \`SELECT c.id, c.paper_id, c.user_id, c.parent_id, c.body, c.created_at,
             u.display_name, u.orcid
        FROM comments c
        JOIN users u ON u.id = c.user_id
       WHERE c.paper_id = ?
-      ORDER BY c.created_at ASC, c.id ASC`,
+      ORDER BY c.created_at ASC, c.id ASC\`,
   )
-    .bind(paperId)
+    .bind(storagePaperId)
     .all<CommentRow>();
 
   const comments = result.results ?? [];
   const commentIds = new Set(comments.map((comment) => comment.id));
   const validReplyTo = replyTo && commentIds.has(replyTo) ? replyTo : null;
   const authors = safeJsonArray(paper.authors_json).map(normalizeAuthorName);
-  const source = paperSource(paper.arxiv_id);
-  const paperUrl = `/p/${encodeURIComponent(paperId)}`;
+  const paperUrl = \`/p/\${encodeURIComponent(publicPaperId)}\`;
 
   const tabLink = (id: "discussion" | "references" | "related", label: string): string =>
-    `<a href="${paperUrl}?tab=${id}"${tab === id ? ` class="active" aria-current="page"` : ""}>${label}</a>`;
+    \`<a href="\${paperUrl}?tab=\${id}"\${tab === id ? \` class="active" aria-current="page"\` : ""}>\${label}</a>\`;
 
-  const discussion = `<section class="discussion">
+  const discussion = \`<section class="discussion">
     <div class="discussion-meta">
-      <span>${comments.length} ${comments.length === 1 ? "comment" : "comments"}</span>
+      <span>\${comments.length} \${comments.length === 1 ? "comment" : "comments"}</span>
     </div>
-    ${renderComposer(user, paperId, validReplyTo)}
-    ${comments.length ? renderCommentTree(comments, paperId) : `<p class="empty">No discussion yet.</p>`}
-  </section>`;
+    \${renderComposer(user, storagePaperId, publicPaperId, validReplyTo)}
+    \${comments.length ? renderCommentTree(comments, publicPaperId) : \`<p class="empty">No discussion yet.</p>\`}
+  </section>\`;
 
-  const references = `<section class="tab-empty">
+  const references = \`<section class="tab-empty">
     <h2>References</h2>
     <p>Not indexed yet.</p>
-  </section>`;
+  </section>\`;
 
-  const related = `<section class="tab-empty">
+  const related = \`<section class="tab-empty">
     <h2>Related papers</h2>
     <p>Not indexed yet.</p>
-  </section>`;
+  </section>\`;
 
   const tabContent = tab === "references" ? references : tab === "related" ? related : discussion;
 
   return htmlPage(
-    `${paper.title} · Scholia`,
-    `<header class="topbar">
-      ${renderBrand()}
-      ${renderIdentity(user)}
+    \`\${paper.title} · Scholia\`,
+    \`<header class="topbar">
+      \${renderBrand()}
+      \${renderIdentity(user)}
     </header>
     <main class="shell paper-page">
       <a class="back" href="/">← papers</a>
@@ -225,34 +232,33 @@ async function renderPaper(request: Request, env: Env, paperId: string): Promise
       <article class="paper-window">
         <div class="paper-grid">
           <aside class="paper-meta" aria-label="Paper metadata">
-            <p class="paper-id">${escapeHtml(source.idLabel)}</p>
-            <a class="paper-source" href="${escapeAttr(source.url)}" rel="noreferrer">${escapeHtml(source.openLabel)}</a>
+            \${renderPaperSources(identifiers)}
           </aside>
 
           <div class="paper-main">
             <div class="paper-summary">
-              <h1>${escapeHtml(paper.title)}</h1>
-              <p class="authors">${authors.map(escapeHtml).join(", ")}</p>
+              <h1>\${escapeHtml(paper.title)}</h1>
+              <p class="authors">\${authors.map(escapeHtml).join(", ")}</p>
 
               <details class="abstract-disclosure">
                 <summary>Abstract</summary>
-                <p>${escapeHtml(paper.abstract)}</p>
+                <p>\${escapeHtml(paper.abstract)}</p>
               </details>
             </div>
 
             <nav class="paper-tabs" aria-label="Paper sections">
-              ${tabLink("discussion", "Discussion")}
-              ${tabLink("references", "References")}
-              ${tabLink("related", "Related papers")}
+              \${tabLink("discussion", "Discussion")}
+              \${tabLink("references", "References")}
+              \${tabLink("related", "Related papers")}
             </nav>
 
             <div class="paper-tab">
-              ${tabContent}
+              \${tabContent}
             </div>
           </div>
         </div>
       </article>
-    </main>`,
+    </main>\`,
   );
 }
 
