@@ -751,9 +751,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
       --font-main: Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
 
-      --radius-sm: 8px;
-      --radius-md: 12px;
-      --radius-lg: 18px;
+      --radius-sm: 3px;
+      --radius-md: 4px;
+      --radius-lg: 4px;
 
       color: var(--ink);
       background: var(--paper);
@@ -833,11 +833,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .lookup-control {
       display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px;
-      background: rgba(255, 255, 255, .48);
-      border-radius: 14px;
+      align-items: stretch;
+      gap: 8px;
+      padding: 0;
+      background: transparent;
     }
 
     input, textarea {
@@ -852,8 +851,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .lookup input {
       min-width: 0;
-      background: transparent;
-      padding: 13px 12px;
+      background: #ece7dc;
+      padding: 13px 14px;
     }
     input:focus-visible,
     textarea:focus-visible {
@@ -890,9 +889,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .paper-window {
-      padding: clamp(24px, 4vw, 44px);
-      background: var(--surface);
-      border-radius: var(--radius-lg);
+      padding: 12px 0 0;
+      background: transparent;
     }
 
     .paper-summary { max-width: 840px; }
@@ -956,25 +954,24 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .paper-tabs {
-      display: inline-flex;
+      display: flex;
       flex-wrap: wrap;
-      gap: 5px;
-      margin-top: 34px;
-      padding: 5px;
-      background: var(--wash);
-      border-radius: 11px;
+      gap: 10px;
+      margin-top: 38px;
+      padding: 0;
+      background: transparent;
     }
     .paper-tabs a {
-      padding: 8px 12px;
-      border-radius: 7px;
+      padding: 7px 10px;
+      border-radius: 2px;
       color: var(--muted);
       font-size: .9rem;
-      font-weight: 500;
+      font-weight: 600;
       text-decoration: none;
     }
     .paper-tabs a.active {
-      background: #fbf9f3;
-      color: var(--ink);
+      background: var(--annotation);
+      color: #fffaf5;
     }
     .paper-tab { margin-top: 26px; }
 
@@ -990,10 +987,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
     .signin-box,
     .composer {
-      margin: 12px 0 24px;
-      padding: 18px;
-      background: #fbf9f3;
-      border-radius: var(--radius-md);
+      margin: 16px 0 28px;
+      padding: 16px 18px;
+      background: var(--wash);
+      border-radius: 2px;
     }
     .signin-box {
       display: flex;
@@ -1019,8 +1016,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .composer-meta strong { color: var(--ink); }
     .composer textarea {
       margin: 12px 0;
-      background: #f2eee5;
+      background: #f7f4ed;
       line-height: 1.55;
+      border-radius: 2px;
     }
     .reply-note {
       margin-bottom: 0;
@@ -1030,14 +1028,13 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
     .comments {
       display: grid;
-      gap: 10px;
-      margin-top: 12px;
+      gap: 28px;
+      margin-top: 22px;
     }
     .comment {
-      margin-left: calc(var(--depth) * 18px);
-      padding: 17px 19px;
-      background: rgba(255, 255, 255, .44);
-      border-radius: var(--radius-md);
+      margin-left: calc(var(--depth) * 22px);
+      padding: 0;
+      background: transparent;
     }
     .comment-head {
       display: flex;
@@ -1070,7 +1067,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-weight: 500;
     }
     .comment-actions a { text-decoration: none; }
-    .replies { margin-top: 8px; }
+    .replies { margin-top: 22px; }
 
     .tab-empty {
       min-height: 150px;
@@ -1121,7 +1118,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       margin-top: 22px;
       padding: 11px 13px;
       background: #efe2dd;
-      border-radius: var(--radius-sm);
+      border-radius: 2px;
       color: #69433d;
       font-size: .9rem;
     }
@@ -1151,20 +1148,20 @@ function htmlPage(title: string, body: string, status = 200): Response {
         align-items: stretch;
       }
       .paper-window {
-        padding: 22px 18px;
-        border-radius: 14px;
+        padding: 8px 0 0;
       }
       .paper-tabs {
         display: flex;
         width: 100%;
+        gap: 6px;
       }
       .paper-tabs a {
         flex: 1;
         text-align: center;
-        padding-inline: 8px;
+        padding-inline: 7px;
       }
       .comment {
-        margin-left: calc(min(var(--depth), 2) * 10px);
+        margin-left: calc(min(var(--depth), 2) * 14px);
       }
       .comment-head span { display: none; }
       .composer-actions { align-items: flex-end; }
