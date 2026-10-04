@@ -563,33 +563,16 @@ async function ensurePaper(env: Env, rawPaperId: string): Promise<Paper> {
   const aliasedStorageId = await findStorageIdByIdentifier(env, requestedIdentifier);
   if (aliasedStorageId) {
     const aliased = await getPaperByStorageId(env, aliasedStorageId);
-    if (aliased) return aliased;
+    if (aliased) {
+      const storageId = await enrichPaperIdentifiers(env, aliased, requestedIdentifier);
+      const enriched = await getPaperByStorageId(env, storageId);
+      if (enriched) return enriched;
+    }
   }
 
   let cached = await getPaperByStorageId(env, paperId);
   if (cached) {
-    const existingIdentifiers = await getPaperIdentifiers(env, cached.arxiv_id);
-    const discovered: PaperIdentifier[] = [requestedIdentifier];
-
-    if (existingIdentifiers.length === 0) {
-      try {
-        if (requestedIdentifier.type === "arxiv") {
-          discovered.push(...await fetchArxivRelations(requestedIdentifier.value));
-        } else if (requestedIdentifier.type === "doi") {
-          const refreshed = await fetchPaperFromCrossref(requestedIdentifier.value, cached.arxiv_id);
-          discovered.push(...refreshed.identifiers);
-        } else {
-          const refreshed = await fetchPaperFromUrl(requestedIdentifier.value, cached.arxiv_id);
-          discovered.push(...refreshed.identifiers);
-        }
-      } catch (error) {
-        console.warn("Could not enrich cached paper identifiers", error);
-      }
-    }
-
-    let storageId = await attachIdentifiers(env, cached.arxiv_id, discovered);
-    const matching = await findMatchingPaper(env, cached, storageId);
-    if (matching) storageId = await mergePaperRows(env, storageId, matching.arxiv_id);
+    const storageId = await enrichPaperIdentifiers(env, cached, requestedIdentifier);
     cached = await getPaperByStorageId(env, storageId);
     if (!cached) throw new Error("Could not resolve cached paper");
     return cached;
@@ -631,6 +614,89 @@ async function ensurePaper(env: Env, rawPaperId: string): Promise<Paper> {
   const paper = await getPaperByStorageId(env, storageId);
   if (!paper) throw new Error("Could not store paper");
   return paper;
+}
+
+async function enrichPaperIdentifiers(
+  env: Env,
+  paper: Paper,
+  requestedIdentifier: PaperIdentifier,
+): Promise<string> {
+  const existingIdentifiers = await getPaperIdentifiers(env, paper.arxiv_id);
+  const discovered: PaperIdentifier[] = [requestedIdentifier];
+  let allIdentifiers = dedupeIdentifiers([...existingIdentifiers, ...discovered]);
+
+  try {
+    if (requestedIdentifier.type === "arxiv" && !allIdentifiers.some((identifier) => identifier.type === "doi")) {
+      discovered.push(...await fetchArxivRelations(requestedIdentifier.value));
+    } else if (requestedIdentifier.type === "doi" && existingIdentifiers.length === 0) {
+      const refreshed = await fetchPaperFromCrossref(requestedIdentifier.value, paper.arxiv_id);
+      discovered.push(...refreshed.identifiers);
+    } else if (requestedIdentifier.type === "url" && !allIdentifiers.some((identifier) => identifier.type === "doi")) {
+      const refreshed = await fetchPaperFromUrl(requestedIdentifier.value, paper.arxiv_id);
+      discovered.push(...refreshed.identifiers);
+    }
+  } catch (error) {
+    console.warn("Could not enrich cached paper identifiers", error);
+  }
+
+  allIdentifiers = dedupeIdentifiers([...existingIdentifiers, ...discovered]);
+
+  const doi = allIdentifiers.find(
+    (identifier) => identifier.type === "doi" && !isArxivIssuedDoi(identifier.value),
+  );
+  const hasArxiv = allIdentifiers.some((identifier) => identifier.type === "arxiv");
+
+  if (doi && !hasArxiv) {
+    try {
+      const arxiv = await fetchArxivIdentifierForDoi(doi.value);
+      if (arxiv) discovered.push(arxiv);
+    } catch (error) {
+      console.warn("Could not resolve DOI to arXiv", error);
+    }
+  }
+
+  let storageId = await attachIdentifiers(env, paper.arxiv_id, discovered);
+  const matching = await findMatchingPaper(env, paper, storageId);
+  if (matching) storageId = await mergePaperRows(env, storageId, matching.arxiv_id);
+  return storageId;
+}
+
+async function fetchArxivIdentifierForDoi(doi: string): Promise<PaperIdentifier | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4500);
+
+  try {
+    const response = await fetch(
+      `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(doi)}?fields=externalIds`,
+      {
+        headers: {
+          "User-Agent": "Scholia/0.1 (+https://github.com/llui2/scholia)",
+          Accept: "application/json",
+        },
+        signal: controller.signal,
+      },
+    );
+
+    if (!response.ok) return null;
+
+    const payload = await response.json() as {
+      externalIds?: Record<string, string | number | null>;
+    };
+    const rawArxiv = payload.externalIds?.ArXiv;
+    if (typeof rawArxiv !== "string") return null;
+
+    const arxiv = normalizeArxivInput(rawArxiv);
+    if (!arxiv) return null;
+
+    return {
+      type: "arxiv",
+      value: arxiv,
+      label: "arXiv",
+      url: `https://arxiv.org/abs/${encodeURIComponent(arxiv)}`,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function getPaperByStorageId(env: Env, storageId: string): Promise<Paper | null> {
@@ -1018,7 +1084,9 @@ async function fetchPaperFromCrossref(doi: string, storageId = `doi:${doi.toLowe
       author?: Array<{ given?: string; family?: string; name?: string }>;
       abstract?: string;
       URL?: string;
+      publisher?: string;
       "container-title"?: string[];
+      "short-container-title"?: string[];
       published?: { "date-parts"?: number[][] };
       "published-print"?: { "date-parts"?: number[][] };
       "published-online"?: { "date-parts"?: number[][] };
@@ -1037,7 +1105,11 @@ async function fetchPaperFromCrossref(doi: string, storageId = `doi:${doi.toLowe
   const published = crossrefDate(
     message["published-print"] ?? message["published-online"] ?? message.published,
   ) ?? message.created?.["date-time"] ?? null;
-  const venue = cleanHtmlText(message["container-title"]?.[0] ?? "") || "Published version";
+  const venue =
+    cleanHtmlText(message["container-title"]?.[0] ?? "") ||
+    cleanHtmlText(message["short-container-title"]?.[0] ?? "") ||
+    cleanHtmlText(message.publisher ?? "") ||
+    "Published version";
 
   if (!title) throw new Error(`Could not parse Crossref metadata for ${doi}`);
 
@@ -1573,7 +1645,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
     .paper-grid {
       display: grid;
-      grid-template-columns: 132px minmax(0, 1fr);
+      grid-template-columns: 158px minmax(0, 1fr);
       gap: 0 32px;
       align-items: start;
     }
@@ -1606,10 +1678,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
     .paper-source {
       display: inline-block;
-      max-width: 120px;
       color: var(--muted);
       font-size: .8rem;
       line-height: 1.3;
+      white-space: nowrap;
     }
 
     .paper-doi {
