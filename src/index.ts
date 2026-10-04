@@ -170,7 +170,7 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   const requestUrl = new URL(request.url);
 
   if (requestedPaperId !== publicPaperId) {
-    return redirect(\`/p/\${encodeURIComponent(publicPaperId)}\${requestUrl.search}\`);
+    return redirect(`/p/${encodeURIComponent(publicPaperId)}${requestUrl.search}`);
   }
 
   const user = await currentUser(request, env);
@@ -181,12 +181,12 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   const storagePaperId = paper.arxiv_id;
 
   const result = await env.DB.prepare(
-    \`SELECT c.id, c.paper_id, c.user_id, c.parent_id, c.body, c.created_at,
+    `SELECT c.id, c.paper_id, c.user_id, c.parent_id, c.body, c.created_at,
             u.display_name, u.orcid
        FROM comments c
        JOIN users u ON u.id = c.user_id
       WHERE c.paper_id = ?
-      ORDER BY c.created_at ASC, c.id ASC\`,
+      ORDER BY c.created_at ASC, c.id ASC`,
   )
     .bind(storagePaperId)
     .all<CommentRow>();
@@ -195,36 +195,36 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   const commentIds = new Set(comments.map((comment) => comment.id));
   const validReplyTo = replyTo && commentIds.has(replyTo) ? replyTo : null;
   const authors = safeJsonArray(paper.authors_json).map(normalizeAuthorName);
-  const paperUrl = \`/p/\${encodeURIComponent(publicPaperId)}\`;
+  const paperUrl = `/p/${encodeURIComponent(publicPaperId)}`;
 
   const tabLink = (id: "discussion" | "references" | "related", label: string): string =>
-    \`<a href="\${paperUrl}?tab=\${id}"\${tab === id ? \` class="active" aria-current="page"\` : ""}>\${label}</a>\`;
+    `<a href="${paperUrl}?tab=${id}"${tab === id ? ` class="active" aria-current="page"` : ""}>${label}</a>`;
 
-  const discussion = \`<section class="discussion">
+  const discussion = `<section class="discussion">
     <div class="discussion-meta">
-      <span>\${comments.length} \${comments.length === 1 ? "comment" : "comments"}</span>
+      <span>${comments.length} ${comments.length === 1 ? "comment" : "comments"}</span>
     </div>
-    \${renderComposer(user, storagePaperId, publicPaperId, validReplyTo)}
-    \${comments.length ? renderCommentTree(comments, publicPaperId) : \`<p class="empty">No discussion yet.</p>\`}
-  </section>\`;
+    ${renderComposer(user, storagePaperId, publicPaperId, validReplyTo)}
+    ${comments.length ? renderCommentTree(comments, publicPaperId) : `<p class="empty">No discussion yet.</p>`}
+  </section>`;
 
-  const references = \`<section class="tab-empty">
+  const references = `<section class="tab-empty">
     <h2>References</h2>
     <p>Not indexed yet.</p>
-  </section>\`;
+  </section>`;
 
-  const related = \`<section class="tab-empty">
+  const related = `<section class="tab-empty">
     <h2>Related papers</h2>
     <p>Not indexed yet.</p>
-  </section>\`;
+  </section>`;
 
   const tabContent = tab === "references" ? references : tab === "related" ? related : discussion;
 
   return htmlPage(
-    \`\${paper.title} · Scholia\`,
-    \`<header class="topbar">
-      \${renderBrand()}
-      \${renderIdentity(user)}
+    `${paper.title} · Scholia`,
+    `<header class="topbar">
+      ${renderBrand()}
+      ${renderIdentity(user)}
     </header>
     <main class="shell paper-page">
       <a class="back" href="/">← papers</a>
@@ -232,39 +232,44 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
       <article class="paper-window">
         <div class="paper-grid">
           <aside class="paper-meta" aria-label="Paper metadata">
-            \${renderPaperSources(identifiers)}
+            ${renderPaperSources(identifiers)}
           </aside>
 
           <div class="paper-main">
             <div class="paper-summary">
-              <h1>\${escapeHtml(paper.title)}</h1>
-              <p class="authors">\${authors.map(escapeHtml).join(", ")}</p>
+              <h1>${escapeHtml(paper.title)}</h1>
+              <p class="authors">${authors.map(escapeHtml).join(", ")}</p>
 
               <details class="abstract-disclosure">
                 <summary>Abstract</summary>
-                <p>\${escapeHtml(paper.abstract)}</p>
+                <p>${escapeHtml(paper.abstract)}</p>
               </details>
             </div>
 
             <nav class="paper-tabs" aria-label="Paper sections">
-              \${tabLink("discussion", "Discussion")}
-              \${tabLink("references", "References")}
-              \${tabLink("related", "Related papers")}
+              ${tabLink("discussion", "Discussion")}
+              ${tabLink("references", "References")}
+              ${tabLink("related", "Related papers")}
             </nav>
 
             <div class="paper-tab">
-              \${tabContent}
+              ${tabContent}
             </div>
           </div>
         </div>
       </article>
-    </main>\`,
+    </main>`,
   );
 }
 
-function renderComposer(user: User | null, paperId: string, replyTo: number | null): string {
+function renderComposer(
+  user: User | null,
+  storagePaperId: string,
+  publicPaperId: string,
+  replyTo: number | null,
+): string {
   if (!user) {
-    const next = `/p/${encodeURIComponent(paperId)}`;
+    const next = `/p/${encodeURIComponent(publicPaperId)}`;
     return `<div class="signin-plain">
       <p>Sign in with ORCID to contribute.</p>
       <a class="button-link" href="/auth/orcid?next=${encodeURIComponent(next)}">Sign in with ORCID</a>
@@ -272,11 +277,11 @@ function renderComposer(user: User | null, paperId: string, replyTo: number | nu
   }
 
   return `<form id="comment-form" class="composer" action="/api/comments" method="post">
-    <input type="hidden" name="paper_id" value="${escapeAttr(paperId)}">
+    <input type="hidden" name="paper_id" value="${escapeAttr(storagePaperId)}">
     ${replyTo ? `<input type="hidden" name="parent_id" value="${replyTo}">` : ""}
     <div class="composer-meta">
       <span>Commenting as <strong>${escapeHtml(user.display_name)}</strong></span>
-      ${replyTo ? `<a href="/p/${encodeURIComponent(paperId)}#comment-form">cancel reply</a>` : ""}
+      ${replyTo ? `<a href="/p/${encodeURIComponent(publicPaperId)}#comment-form">cancel reply</a>` : ""}
     </div>
     ${replyTo ? `<p class="reply-note">Replying to comment #${replyTo}</p>` : ""}
     <textarea name="body" rows="5" maxlength="5000" placeholder="Add to the discussion…" required></textarea>
