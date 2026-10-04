@@ -31,6 +31,20 @@ CREATE TABLE IF NOT EXISTS papers (
   fetched_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS paper_identifiers (
+  type TEXT NOT NULL,
+  value TEXT NOT NULL,
+  paper_id TEXT NOT NULL,
+  label TEXT,
+  url TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (type, value),
+  FOREIGN KEY (paper_id) REFERENCES papers(arxiv_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_paper_identifiers_paper
+  ON paper_identifiers(paper_id);
+
 CREATE TABLE IF NOT EXISTS comments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   paper_id TEXT NOT NULL,
