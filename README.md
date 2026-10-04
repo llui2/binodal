@@ -41,7 +41,7 @@ Scholia is built for researchers rather than publishers, advertisers, or engagem
 - **Public contributions should remain durable.** Prefer open identifiers, addressable records, exportable data, and minimal lock-in.
 - **AI should reduce search and coordination costs.** It should reconnect researchers with papers and people rather than replace scientific interaction.
 
-The longer product direction is documented in [`docs/PRODUCT_PRINCIPLES.md`](docs/PRODUCT_PRINCIPLES.md).
+The longer product direction is documented in [`docs/PRODUCT_PRINCIPLES.md`](docs/PRODUCT_PRINCIPLES.md), with the current implementation sequence in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Architecture
 
