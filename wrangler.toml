@@ -1,3 +1,8 @@
 name = "trails"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "trails"
+database_id = "75bc2a4e-f630-4e71-be00-f7b7be01a02f"
