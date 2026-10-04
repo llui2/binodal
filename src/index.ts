@@ -118,7 +118,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 
 
   if (request.method === "GET" && path === "/health") {
-    return json({ ok: true, service: "paper-tool" });
+    return json({ ok: true, service: "papr" });
   }
 
   return notFound("Page not found.");
@@ -130,7 +130,7 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
   const error = url.searchParams.get("error");
 
   return htmlPage(
-    "papers",
+    "papr",
     `<header class="topbar">
       ${renderBrand()}
       ${renderIdentity(user)}
@@ -865,7 +865,7 @@ async function fetchPaperFromAbs(arxivId: string): Promise<FetchedPaper> {
   try {
     const response = await fetch(`https://arxiv.org/abs/${encodeURIComponent(arxivId)}`, {
       headers: {
-        "User-Agent": "paper-tool/0.1",
+        "User-Agent": "papr/0.1",
         Accept: "text/html",
       },
       signal: controller.signal,
@@ -929,7 +929,7 @@ async function fetchArxivRelations(arxivId: string): Promise<PaperIdentifier[]> 
   endpoint.searchParams.set("id_list", arxivId);
   const response = await fetch(endpoint, {
     headers: {
-      "User-Agent": "paper-tool/0.1",
+      "User-Agent": "papr/0.1",
       Accept: "application/atom+xml",
     },
   });
@@ -955,7 +955,7 @@ async function fetchPaperFromAtom(arxivId: string): Promise<FetchedPaper> {
 
   const response = await fetch(endpoint, {
     headers: {
-      "User-Agent": "paper-tool/0.1",
+      "User-Agent": "papr/0.1",
       Accept: "application/atom+xml",
     },
   });
@@ -1007,7 +1007,7 @@ async function fetchPaperFromAtom(arxivId: string): Promise<FetchedPaper> {
 async function fetchPaperFromCrossref(doi: string, storageId = `doi:${doi.toLowerCase()}`): Promise<FetchedPaper> {
   const response = await fetch(`https://api.crossref.org/works/${encodeURIComponent(doi)}`, {
     headers: {
-      "User-Agent": "paper-tool/0.1",
+      "User-Agent": "papr/0.1",
       Accept: "application/json",
     },
   });
@@ -1112,7 +1112,7 @@ async function findArxivByTitleAndAuthors(
   try {
     const response = await fetch(endpoint, {
       headers: {
-        "User-Agent": "paper-tool/0.1",
+        "User-Agent": "papr/0.1",
         Accept: "application/atom+xml",
       },
       signal: controller.signal,
@@ -1165,7 +1165,7 @@ async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<
   try {
     const response = await fetch(sourceUrl, {
       headers: {
-        "User-Agent": "paper-tool/0.1",
+        "User-Agent": "papr/0.1",
         Accept: "text/html,application/xhtml+xml",
       },
       redirect: "follow",
@@ -1472,7 +1472,7 @@ function decodeXmlEntities(value: string): string {
 }
 
 function renderBrand(): string {
-  return `<a class="brand" href="/">papers</a>`;
+  return `<a class="brand" href="/">papr</a>`;
 }
 
 function renderIdentity(user: User | null): string {
