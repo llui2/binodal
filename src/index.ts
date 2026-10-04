@@ -45,7 +45,7 @@ export default {
       console.error(error);
       return htmlPage(
         "Scholia · error",
-        `<main class="shell"><p class="kicker">Scholia</p><h1>Something went wrong.</h1><p class="muted">${escapeHtml(
+        `<main class="shell utility-page"><p class="eyebrow">Scholia</p><h1>Something went wrong.</h1><p class="muted">${escapeHtml(
           error instanceof Error ? error.message : "Unknown error",
         )}</p><p><a href="/">Return home</a></p></main>`,
         500,
@@ -745,19 +745,38 @@ function htmlPage(title: string, body: string, status = 200): Response {
       --ink: #2e2e2a;
       --annotation: #b84b3c;
       --stone: #a7a39a;
+      --muted: #77736c;
       --wash: #ebe6dc;
       --surface: rgba(255, 255, 255, .52);
+
+      --font-display: Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+      --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 18px;
+
       color: var(--ink);
       background: var(--paper);
-      font-family: Georgia, "Times New Roman", serif;
-      line-height: 1.5;
+      font-family: var(--font-body);
+      font-size: 16px;
+      line-height: 1.55;
     }
+
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--paper); }
     a { color: inherit; text-underline-offset: 3px; }
     a:hover { color: var(--annotation); }
     button, input, textarea { font: inherit; }
     button { cursor: pointer; }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1, h2, h3 {
+      font-family: var(--font-display);
+      font-weight: 400;
+      color: var(--ink);
+    }
 
     .topbar {
       min-height: 72px;
@@ -767,37 +786,48 @@ function htmlPage(title: string, body: string, status = 200): Response {
       gap: 24px;
       padding: 10px max(20px, calc((100vw - 980px) / 2));
     }
+
     .brand {
       display: inline-flex;
       align-items: center;
       gap: 9px;
       text-decoration: none;
-      font-size: 1.45rem;
+      font-family: var(--font-display);
+      font-size: 1.48rem;
       line-height: 1;
       letter-spacing: -.025em;
     }
     .brand:hover { color: var(--ink); }
     .brand-mark { width: 30px; height: 30px; display: block; }
 
-    .shell { width: min(980px, calc(100% - 40px)); margin: 0 auto; }
-    .home { padding: 13vh 0 90px; }
-    .home h1 {
-      max-width: 650px;
-      margin: 0;
-      font-size: clamp(2rem, 4vw, 3rem);
-      line-height: 1.08;
-      font-weight: 400;
-      letter-spacing: -.025em;
+    .shell {
+      width: min(980px, calc(100% - 40px));
+      margin: 0 auto;
     }
 
-    .lookup { margin-top: 42px; max-width: 650px; }
-    .lookup label {
+    .home { padding: 13vh 0 90px; }
+    .home h1 {
+      max-width: 640px;
+      margin: 0;
+      font-size: clamp(2.05rem, 4vw, 3rem);
+      line-height: 1.08;
+      letter-spacing: -.028em;
+    }
+
+    .lookup {
+      margin-top: 40px;
+      max-width: 640px;
+    }
+    .lookup label,
+    .eyebrow {
       display: block;
       margin: 0 0 8px 2px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: .72rem;
+      font-family: var(--font-mono);
+      font-size: .7rem;
+      line-height: 1.3;
       letter-spacing: .08em;
-      color: #77736c;
+      color: var(--muted);
+      text-transform: uppercase;
     }
     .lookup-control {
       display: flex;
@@ -806,8 +836,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
       padding: 6px;
       background: rgba(255, 255, 255, .48);
       border-radius: 14px;
-      box-shadow: 0 12px 34px rgba(46, 46, 42, .06);
+      box-shadow: 0 12px 34px rgba(46, 46, 42, .05);
     }
+
     input, textarea {
       width: 100%;
       border: 0;
@@ -815,85 +846,109 @@ function htmlPage(title: string, body: string, status = 200): Response {
       background: #fbf9f3;
       color: var(--ink);
       padding: 13px 14px;
-      border-radius: 9px;
+      border-radius: var(--radius-sm);
+      font-family: var(--font-body);
     }
     .lookup input {
       min-width: 0;
       background: transparent;
       padding: 13px 12px;
     }
-    input:focus-visible, textarea:focus-visible {
+    input:focus-visible,
+    textarea:focus-visible {
       box-shadow: 0 0 0 3px rgba(184, 75, 60, .12);
     }
     textarea { resize: vertical; }
 
-    button, .button-link {
+    button,
+    .button-link {
       border: 0;
       background: var(--annotation);
       color: #fffaf5;
       padding: 11px 15px;
-      border-radius: 9px;
+      border-radius: var(--radius-sm);
+      font-family: var(--font-body);
+      font-size: .9rem;
+      font-weight: 600;
       text-decoration: none;
       white-space: nowrap;
     }
-    button:hover, .button-link:hover { color: #fffaf5; filter: brightness(.96); }
+    button:hover,
+    .button-link:hover {
+      color: #fffaf5;
+      filter: brightness(.96);
+    }
 
     .paper-page { padding: 28px 0 90px; }
     .back {
       display: inline-block;
       margin-bottom: 22px;
-      color: #77736c;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: .76rem;
+      color: var(--muted);
+      font-size: .8rem;
       text-decoration: none;
     }
+
     .paper-window {
       padding: clamp(24px, 4vw, 44px);
       background: var(--surface);
-      border-radius: 18px;
-      box-shadow: 0 18px 55px rgba(46, 46, 42, .055);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 18px 55px rgba(46, 46, 42, .05);
     }
-    .paper-summary { max-width: 820px; }
+
+    .paper-summary { max-width: 840px; }
     .paper-id {
-      margin: 0 0 10px;
+      margin: 0 0 12px;
       color: var(--annotation);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: .72rem;
-      letter-spacing: .05em;
+      font-family: var(--font-mono);
+      font-size: .7rem;
+      line-height: 1.3;
+      letter-spacing: .045em;
     }
+
     .paper-summary h1 {
-      margin: 0;
       max-width: 860px;
-      font-size: clamp(2rem, 4.8vw, 3.8rem);
-      line-height: 1.02;
-      font-weight: 400;
-      letter-spacing: -.035em;
+      margin: 0;
+      font-size: clamp(2rem, 4.6vw, 3.55rem);
+      line-height: 1.04;
+      letter-spacing: -.03em;
     }
+
     .authors {
-      margin: 18px 0 0;
-      color: #726e66;
-      font-size: 1rem;
+      margin: 16px 0 0;
+      color: #69655e;
+      font-size: .96rem;
+      line-height: 1.5;
     }
+
     .paper-actions {
       display: flex;
       align-items: flex-start;
       gap: 18px;
       flex-wrap: wrap;
-      margin-top: 24px;
-      font-size: .88rem;
+      margin-top: 22px;
+      font-size: .86rem;
     }
-    .paper-actions > a { color: var(--annotation); text-decoration: none; }
-    .abstract-disclosure { max-width: 720px; color: #59564f; }
+    .paper-actions > a {
+      color: var(--annotation);
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .abstract-disclosure {
+      max-width: 720px;
+      color: #59564f;
+    }
     .abstract-disclosure summary {
       cursor: pointer;
-      color: #77736c;
+      color: var(--muted);
+      font-weight: 500;
       list-style: none;
     }
     .abstract-disclosure summary::-webkit-details-marker { display: none; }
     .abstract-disclosure[open] { flex-basis: 100%; }
     .abstract-disclosure p {
       margin: 12px 0 0;
-      font-family: ui-sans-serif, system-ui, sans-serif;
+      max-width: 760px;
       font-size: .95rem;
       line-height: 1.65;
     }
@@ -910,14 +965,15 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .paper-tabs a {
       padding: 8px 12px;
       border-radius: 7px;
-      color: #77736c;
+      color: var(--muted);
+      font-size: .86rem;
+      font-weight: 500;
       text-decoration: none;
-      font-size: .9rem;
     }
     .paper-tabs a.active {
       background: #fbf9f3;
       color: var(--ink);
-      box-shadow: 0 5px 14px rgba(46, 46, 42, .07);
+      box-shadow: 0 5px 14px rgba(46, 46, 42, .06);
     }
     .paper-tab { margin-top: 26px; }
 
@@ -925,15 +981,17 @@ function htmlPage(title: string, body: string, status = 200): Response {
       display: flex;
       justify-content: flex-end;
       margin-bottom: 8px;
-      color: #77736c;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: .72rem;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: .68rem;
     }
-    .signin-box, .composer {
+
+    .signin-box,
+    .composer {
       margin: 12px 0 24px;
       padding: 18px;
       background: #fbf9f3;
-      border-radius: 12px;
+      border-radius: var(--radius-md);
     }
     .signin-box {
       display: flex;
@@ -941,108 +999,170 @@ function htmlPage(title: string, body: string, status = 200): Response {
       justify-content: space-between;
       gap: 20px;
     }
-    .signin-box p { margin: 0; color: #5f5b54; }
-    .composer-meta, .composer-actions {
+    .signin-box p {
+      margin: 0;
+      color: #5f5b54;
+      font-size: .93rem;
+    }
+
+    .composer-meta,
+    .composer-actions {
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 16px;
-      color: #77736c;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: .7rem;
+      color: var(--muted);
+      font-size: .76rem;
     }
+    .composer-meta strong { color: var(--ink); }
     .composer textarea {
       margin: 12px 0;
       background: #f2eee5;
-      font-family: ui-sans-serif, system-ui, sans-serif;
+      line-height: 1.55;
     }
-    .reply-note { margin-bottom: 0; color: #77736c; font-size: .78rem; }
+    .reply-note {
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: .78rem;
+    }
 
-    .comments { display: grid; gap: 10px; margin-top: 12px; }
+    .comments {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
     .comment {
       margin-left: calc(var(--depth) * 18px);
       padding: 17px 19px;
       background: rgba(255, 255, 255, .44);
-      border-radius: 12px;
+      border-radius: var(--radius-md);
     }
     .comment-head {
       display: flex;
       gap: 9px;
       flex-wrap: wrap;
       align-items: baseline;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: .7rem;
+      font-size: .76rem;
     }
-    .comment-head a { font-family: Georgia, "Times New Roman", serif; font-size: .9rem; font-weight: 600; text-decoration: none; }
-    .comment-head span, .comment-head time { color: #8a867e; }
+    .comment-head a {
+      color: var(--ink);
+      font-weight: 650;
+      text-decoration: none;
+    }
+    .comment-head span,
+    .comment-head time {
+      color: #8a867e;
+      font-family: var(--font-mono);
+      font-size: .67rem;
+    }
     .comment-body {
-      margin: 10px 0;
-      font-family: ui-sans-serif, system-ui, sans-serif;
-      line-height: 1.6;
+      margin: 9px 0 10px;
+      max-width: 760px;
+      line-height: 1.62;
     }
     .comment-actions {
       display: flex;
       gap: 12px;
       color: #8a867e;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: .7rem;
+      font-size: .74rem;
     }
+    .comment-actions a { text-decoration: none; }
     .replies { margin-top: 8px; }
+
     .tab-empty {
       min-height: 150px;
       padding: 20px 4px;
-      color: #77736c;
+      color: var(--muted);
     }
     .tab-empty h2 {
       margin: 0 0 6px;
-      color: var(--ink);
-      font-size: 1.25rem;
-      font-weight: 400;
+      font-size: 1.35rem;
     }
-    .tab-empty p { margin: 0; }
-    .empty, .muted { color: #77736c; }
+    .tab-empty p {
+      margin: 0;
+      font-size: .93rem;
+    }
+
+    .empty,
+    .muted { color: var(--muted); }
 
     .identity {
       display: flex;
       gap: 12px;
       align-items: center;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: .72rem;
+      font-size: .78rem;
     }
     .identity-link {
-      color: #77736c;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: .72rem;
+      color: var(--muted);
+      font-size: .78rem;
       text-decoration: none;
     }
     .identity form { margin: 0; }
+
     .text-button {
       background: none;
       color: #8a867e;
       padding: 0;
       border-radius: 0;
+      font-size: .78rem;
+      font-weight: 400;
       text-decoration: none;
     }
-    .text-button:hover { color: var(--annotation); filter: none; }
+    .text-button:hover {
+      color: var(--annotation);
+      filter: none;
+    }
+
     .notice {
-      max-width: 650px;
+      max-width: 640px;
       margin-top: 22px;
       padding: 11px 13px;
       background: #efe2dd;
-      border-radius: 9px;
+      border-radius: var(--radius-sm);
       color: #69433d;
+      font-size: .9rem;
+    }
+
+    .utility-page {
+      padding: 15vh 0 80px;
+      max-width: 720px;
+    }
+    .utility-page h1 {
+      margin: 0 0 14px;
+      font-size: clamp(2rem, 4vw, 3rem);
+      line-height: 1.08;
+      letter-spacing: -.025em;
+    }
+    .utility-page p {
+      max-width: 620px;
     }
 
     @media (max-width: 680px) {
       .topbar { min-height: 64px; }
-      .brand { font-size: 1.25rem; }
+      .brand { font-size: 1.3rem; }
       .brand-mark { width: 27px; height: 27px; }
       .home { padding-top: 10vh; }
-      .lookup-control, .signin-box { flex-direction: column; align-items: stretch; }
-      .paper-window { padding: 22px 18px; border-radius: 14px; }
-      .paper-tabs { display: flex; width: 100%; }
-      .paper-tabs a { flex: 1; text-align: center; padding-inline: 8px; }
-      .comment { margin-left: calc(min(var(--depth), 2) * 10px); }
+      .lookup-control,
+      .signin-box {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .paper-window {
+        padding: 22px 18px;
+        border-radius: 14px;
+      }
+      .paper-tabs {
+        display: flex;
+        width: 100%;
+      }
+      .paper-tabs a {
+        flex: 1;
+        text-align: center;
+        padding-inline: 8px;
+      }
+      .comment {
+        margin-left: calc(min(var(--depth), 2) * 10px);
+      }
       .comment-head span { display: none; }
       .composer-actions { align-items: flex-end; }
     }
@@ -1077,7 +1197,7 @@ function redirect(location: string, status = 302): Response {
 function notFound(message: string): Response {
   return htmlPage(
     "Not found · Scholia",
-    `<main class="shell"><p class="kicker">Scholia</p><h1>Not found.</h1><p class="muted">${escapeHtml(message)}</p><p><a href="/">Return home</a></p></main>`,
+    `<main class="shell utility-page"><p class="eyebrow">Scholia</p><h1>Not found.</h1><p class="muted">${escapeHtml(message)}</p><p><a href="/">Return home</a></p></main>`,
     404,
   );
 }
