@@ -118,9 +118,7 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
       ${renderIdentity(user)}
     </header>
     <main class="shell home">
-      <p class="kicker">Open discussion around research papers</p>
-      <h1>Papers should not end at publication.</h1>
-      <p class="lede">Scholia adds a persistent discussion layer to arXiv. Read publicly. Sign in with ORCID to contribute under a stable scientific identity.</p>
+      <h1>A public discussion record for scientific papers.</h1>
       ${error ? `<p class="notice">${escapeHtml(error)}</p>` : ""}
       <form class="lookup" action="/go" method="get">
         <label for="arxiv">arXiv paper</label>
@@ -581,7 +579,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
     button { cursor: pointer; }
     .topbar {
       height: 58px;
-      border-bottom: 1px solid #d9d5ca;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -619,30 +616,30 @@ function htmlPage(title: string, body: string, status = 200): Response {
       margin-top: 64px;
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      border-top: 1px solid #d9d5ca;
+      gap: 28px;
     }
     .principles div { padding: 18px 18px 18px 0; }
     .principles strong, .principles span { display: block; }
     .principles span { color: #6b675f; font-family: ui-sans-serif, system-ui, sans-serif; font-size: .9rem; margin-top: 4px; }
     .paper-page { padding: 36px 0 100px; }
     .back { color: #6b675f; font-size: .85rem; }
-    .paper-card { padding: 42px 0 50px; border-bottom: 1px solid #d9d5ca; }
+    .paper-card { padding: 42px 0 50px; }
     .paper-card h1 { font-size: clamp(2rem, 5vw, 3.6rem); margin: 10px 0 18px; }
     .authors { color: #55514a; }
     .abstract { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 820px; color: #35332f; margin-top: 26px; }
     .paper-links { margin-top: 24px; font-size: .9rem; }
     .discussion { padding-top: 40px; }
-    .section-heading { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #d9d5ca; }
+    .section-heading { display: flex; justify-content: space-between; align-items: baseline; }
     .section-heading h2 { font-size: 1.25rem; }
     .section-heading span { color: #77736a; font-size: .82rem; }
-    .signin-box, .composer { margin: 24px 0 34px; border: 1px solid #d9d5ca; padding: 18px; background: rgba(255,255,255,.35); }
+    .signin-box, .composer { margin: 24px 0 34px; padding: 18px; background: rgba(255,255,255,.45); border-radius: 8px; }
     .signin-box { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
     .signin-box p { margin: 0; color: #55514a; }
     .composer-meta, .composer-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; font-size: .78rem; color: #77736a; }
     .composer textarea { margin: 12px 0; }
     .reply-note { font-size: .78rem; color: #77736a; margin-bottom: 0; }
     .comments { margin-top: 10px; }
-    .comment { margin: 0 0 0 calc(var(--depth) * 22px); padding: 18px 0 18px 14px; border-left: 1px solid #d9d5ca; }
+    .comment { margin: 0 0 0 calc(var(--depth) * 22px); padding: 18px 0 18px 14px; }
     .comment-head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; font-size: .78rem; }
     .comment-head a { font-weight: 700; }
     .comment-head span, .comment-head time { color: #77736a; }
@@ -658,7 +655,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
     @media (max-width: 680px) {
       .lookup-row, .signin-box { flex-direction: column; align-items: stretch; }
       .principles { grid-template-columns: 1fr; }
-      .principles div { border-bottom: 1px solid #d9d5ca; }
       .comment { margin-left: calc(min(var(--depth), 2) * 12px); }
       .comment-head span { display: none; }
     }
