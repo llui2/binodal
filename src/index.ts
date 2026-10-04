@@ -96,13 +96,12 @@ async function route(request: Request, env: Env): Promise<Response> {
     const id = normalizePaperInput(decodeURIComponent(path.slice("/api/papers/".length)));
     if (!id) return json({ error: "invalid paper identifier or URL" }, 400);
     const paper = await ensurePaper(env, id);
-    const source = paperSource(paper.arxiv_id);
+    const identifiers = await getPaperIdentifiers(env, paper.arxiv_id);
     return json({
       ...paper,
       authors: safeJsonArray(paper.authors_json).map(normalizeAuthorName),
-      source: source.kind,
-      source_url: source.url,
-      ...(source.kind === "arxiv" ? { arxiv_url: source.url } : {}),
+      identifiers,
+      preferred_id: preferredPaperId(identifiers, paper.arxiv_id),
     });
   }
 
@@ -346,7 +345,8 @@ async function createComment(request: Request, env: Env): Promise<Response> {
     return new Response("Comment must contain 1–5000 characters", { status: 400 });
   }
 
-  await ensurePaper(env, paperId);
+  const paper = await ensurePaper(env, paperId);
+  const storagePaperId = paper.arxiv_id;
 
   let parentId: number | null = null;
   if (parentRaw) {
@@ -355,7 +355,7 @@ async function createComment(request: Request, env: Env): Promise<Response> {
     const parent = await env.DB.prepare(
       "SELECT id FROM comments WHERE id = ? AND paper_id = ?",
     )
-      .bind(parentId, paperId)
+      .bind(parentId, storagePaperId)
       .first();
     if (!parent) return new Response("Parent comment not found", { status: 400 });
   }
@@ -363,10 +363,12 @@ async function createComment(request: Request, env: Env): Promise<Response> {
   await env.DB.prepare(
     "INSERT INTO comments (paper_id, user_id, parent_id, body) VALUES (?, ?, ?, ?)",
   )
-    .bind(paperId, user.id, parentId, body)
+    .bind(storagePaperId, user.id, parentId, body)
     .run();
 
-  return redirect(`/p/${encodeURIComponent(paperId)}`, 303);
+  const identifiers = await getPaperIdentifiers(env, storagePaperId);
+  const publicPaperId = preferredPaperId(identifiers, storagePaperId);
+  return redirect(`/p/${encodeURIComponent(publicPaperId)}`, 303);
 }
 
 async function beginOrcidAuth(request: Request, env: Env): Promise<Response> {
