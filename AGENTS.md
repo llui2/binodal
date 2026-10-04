@@ -6,7 +6,7 @@ Treat those principles as product constraints, not aspirational copy.
 
 In particular:
 
-- the tool serves researchers, not engagement or publisher incentives.
+- trails serves researchers, not engagement or publisher incentives.
 - Papers are stable reference objects; researchers and their interactions are the primary actors.
 - Prefer low-friction, structured scientific signals over forcing long-form comments.
 - Discovery should prioritize relevance to the individual researcher rather than chronology or virality alone.
