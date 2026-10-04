@@ -1,8 +1,3 @@
-name = "papr"
+name = "trails"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "papr"
-database_id = "e9623ade-af15-4de5-981f-0d726fd8312d"
