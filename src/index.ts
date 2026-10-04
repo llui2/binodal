@@ -47,7 +47,7 @@ interface CommentRow {
   orcid: string;
 }
 
-const SCHOLIA_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 310 310" role="img" aria-label="Scholia logo">
+const BINODAL_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 310 310" role="img" aria-label="binodal logo">
   <path fill="#BC4F3B" d="M 168 20 L 168 250 C 168 267 165 278 156 283 C 148 288 139 288 130 283 C 120 277 112 269 103 261 L 80 239 C 77 236 78 231 83 230 C 92 230 103 236 114 243 C 124 249 134 257 143 264 L 143 54 C 143 50 141 48 137 48 C 134 48 133 46 135 44 C 145 42 155 34 165 21 C 166 20 167 19 168 20 Z"/>
   <circle cx="211" cy="144" r="19" fill="#BC4F3B"/>
 </svg>`;
@@ -59,8 +59,8 @@ export default {
     } catch (error) {
       console.error(error);
       return htmlPage(
-        "Scholia · error",
-        `<main class="shell utility-page"><p class="eyebrow">Scholia</p><h1>Something went wrong.</h1><p class="muted">${escapeHtml(
+        "binodal · error",
+        `<main class="shell utility-page"><p class="eyebrow">binodal</p><h1>Something went wrong.</h1><p class="muted">${escapeHtml(
           error instanceof Error ? error.message : "Unknown error",
         )}</p><p><a href="/">Return home</a></p></main>`,
         500,
@@ -122,7 +122,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
 
   if (request.method === "GET" && path === "/favicon.svg") {
-    return new Response(SCHOLIA_LOGO_SVG, {
+    return new Response(BINODAL_LOGO_SVG, {
       headers: {
         "Content-Type": "image/svg+xml; charset=utf-8",
         "Cache-Control": "public, max-age=604800, immutable",
@@ -131,7 +131,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
 
   if (request.method === "GET" && path === "/health") {
-    return json({ ok: true, service: "scholia" });
+    return json({ ok: true, service: "binodal" });
   }
 
   return notFound("Page not found.");
@@ -143,7 +143,7 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
   const error = url.searchParams.get("error");
 
   return htmlPage(
-    "Scholia",
+    "binodal",
     `<header class="topbar">
       ${renderBrand()}
       ${renderIdentity(user)}
@@ -220,7 +220,7 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   const tabContent = tab === "references" ? references : tab === "related" ? related : discussion;
 
   return htmlPage(
-    `${paper.title} · Scholia`,
+    `${paper.title} · binodal`,
     `<header class="topbar">
       ${renderBrand()}
       ${renderIdentity(user)}
@@ -466,7 +466,7 @@ async function finishOrcidAuth(request: Request, env: Env): Promise<Response> {
     .bind(token.orcid)
     .first<User>();
 
-  if (!user) return new Response("Could not create Scholia user", { status: 500 });
+  if (!user) return new Response("Could not create binodal user", { status: 500 });
 
   const session = randomToken();
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -491,7 +491,7 @@ async function finishOrcidAuth(request: Request, env: Env): Promise<Response> {
 async function logout(request: Request, env: Env): Promise<Response> {
   assertSameOrigin(request);
   const cookies = parseCookies(request.headers.get("Cookie") ?? "");
-  const token = cookies.get("scholia_session");
+  const token = cookies.get("binodal_session");
 
   if (token) {
     await env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(token).run();
@@ -508,7 +508,7 @@ async function logout(request: Request, env: Env): Promise<Response> {
 
 async function currentUser(request: Request, env: Env): Promise<User | null> {
   const cookies = parseCookies(request.headers.get("Cookie") ?? "");
-  const token = cookies.get("scholia_session");
+  const token = cookies.get("binodal_session");
   if (!token) return null;
 
   const row = await env.DB.prepare(
@@ -878,7 +878,7 @@ async function fetchPaperFromAbs(arxivId: string): Promise<FetchedPaper> {
   try {
     const response = await fetch(`https://arxiv.org/abs/${encodeURIComponent(arxivId)}`, {
       headers: {
-        "User-Agent": "Scholia/0.1 (+https://github.com/llui2/scholia)",
+        "User-Agent": "binodal/0.1 (+https://github.com/llui2/binodal)",
         Accept: "text/html",
       },
       signal: controller.signal,
@@ -942,7 +942,7 @@ async function fetchArxivRelations(arxivId: string): Promise<PaperIdentifier[]> 
   endpoint.searchParams.set("id_list", arxivId);
   const response = await fetch(endpoint, {
     headers: {
-      "User-Agent": "Scholia/0.1 (+https://github.com/llui2/scholia)",
+      "User-Agent": "binodal/0.1 (+https://github.com/llui2/binodal)",
       Accept: "application/atom+xml",
     },
   });
@@ -968,7 +968,7 @@ async function fetchPaperFromAtom(arxivId: string): Promise<FetchedPaper> {
 
   const response = await fetch(endpoint, {
     headers: {
-      "User-Agent": "Scholia/0.1 (+https://github.com/llui2/scholia)",
+      "User-Agent": "binodal/0.1 (+https://github.com/llui2/binodal)",
       Accept: "application/atom+xml",
     },
   });
@@ -1020,7 +1020,7 @@ async function fetchPaperFromAtom(arxivId: string): Promise<FetchedPaper> {
 async function fetchPaperFromCrossref(doi: string, storageId = `doi:${doi.toLowerCase()}`): Promise<FetchedPaper> {
   const response = await fetch(`https://api.crossref.org/works/${encodeURIComponent(doi)}`, {
     headers: {
-      "User-Agent": "Scholia/0.1 (+https://github.com/llui2/scholia)",
+      "User-Agent": "binodal/0.1 (+https://github.com/llui2/binodal)",
       Accept: "application/json",
     },
   });
@@ -1125,7 +1125,7 @@ async function findArxivByTitleAndAuthors(
   try {
     const response = await fetch(endpoint, {
       headers: {
-        "User-Agent": "Scholia/0.1 (+https://github.com/llui2/scholia)",
+        "User-Agent": "binodal/0.1 (+https://github.com/llui2/binodal)",
         Accept: "application/atom+xml",
       },
       signal: controller.signal,
@@ -1178,7 +1178,7 @@ async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<
   try {
     const response = await fetch(sourceUrl, {
       headers: {
-        "User-Agent": "Scholia/0.1 (+https://github.com/llui2/scholia)",
+        "User-Agent": "binodal/0.1 (+https://github.com/llui2/binodal)",
         Accept: "text/html,application/xhtml+xml",
       },
       redirect: "follow",
@@ -1485,12 +1485,12 @@ function decodeXmlEntities(value: string): string {
 }
 
 function renderBrand(): string {
-  return `<a class="brand" href="/" aria-label="Scholia home">
+  return `<a class="brand" href="/" aria-label="binodal home">
     <svg class="brand-mark" viewBox="0 0 310 310" aria-hidden="true">
       <path fill="#BC4F3B" d="M 168 20 L 168 250 C 168 267 165 278 156 283 C 148 288 139 288 130 283 C 120 277 112 269 103 261 L 80 239 C 77 236 78 231 83 230 C 92 230 103 236 114 243 C 124 249 134 257 143 264 L 143 54 C 143 50 141 48 137 48 C 134 48 133 46 135 44 C 145 42 155 34 165 21 C 166 20 167 19 168 20 Z"/>
       <circle cx="211" cy="144" r="19" fill="#BC4F3B"/>
     </svg>
-    <span>Scholia</span>
+    <span>binodal</span>
   </a>`;
 }
 
@@ -2020,8 +2020,8 @@ function redirect(location: string, status = 302): Response {
 
 function notFound(message: string): Response {
   return htmlPage(
-    "Not found · Scholia",
-    `<main class="shell utility-page"><p class="eyebrow">Scholia</p><h1>Not found.</h1><p class="muted">${escapeHtml(message)}</p><p><a href="/">Return home</a></p></main>`,
+    "Not found · binodal",
+    `<main class="shell utility-page"><p class="eyebrow">binodal</p><h1>Not found.</h1><p class="muted">${escapeHtml(message)}</p><p><a href="/">Return home</a></p></main>`,
     404,
   );
 }
@@ -2072,7 +2072,7 @@ function parseCookies(header: string): Map<string, string> {
 
 function sessionCookie(token: string, request: Request, maxAge: number): string {
   const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
-  return `scholia_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+  return `binodal_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
 }
 
 function randomToken(): string {
