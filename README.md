@@ -76,7 +76,7 @@ npm install
 Create a D1 database:
 
 ```bash
-npx wrangler d1 create scholia
+npx wrangler d1 create binodal --binding DB --update-config
 ```
 
 Add the returned database ID to `wrangler.toml`, then initialize the local database:
