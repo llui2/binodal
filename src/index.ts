@@ -32,6 +32,11 @@ interface CommentRow {
   orcid: string;
 }
 
+const SCHOLIA_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 310 310" role="img" aria-label="Scholia logo">
+  <path fill="#BC4F3B" d="M 168 20 L 168 250 C 168 267 165 278 156 283 C 148 288 139 288 130 283 C 120 277 112 269 103 261 L 80 239 C 77 236 78 231 83 230 C 92 230 103 236 114 243 C 124 249 134 257 143 264 L 143 54 C 143 50 141 48 137 48 C 134 48 133 46 135 44 C 145 42 155 34 165 21 C 166 20 167 19 168 20 Z"/>
+  <circle cx="211" cy="144" r="19" fill="#BC4F3B"/>
+</svg>`;
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
@@ -99,6 +104,15 @@ async function route(request: Request, env: Env): Promise<Response> {
     return logout(request, env);
   }
 
+  if (request.method === "GET" && path === "/favicon.svg") {
+    return new Response(SCHOLIA_LOGO_SVG, {
+      headers: {
+        "Content-Type": "image/svg+xml; charset=utf-8",
+        "Cache-Control": "public, max-age=604800, immutable",
+      },
+    });
+  }
+
   if (request.method === "GET" && path === "/health") {
     return json({ ok: true, service: "scholia" });
   }
@@ -114,7 +128,7 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
   return htmlPage(
     "Scholia",
     `<header class="topbar">
-      <a class="brand" href="/">scholia</a>
+      ${renderBrand()}
       ${renderIdentity(user)}
     </header>
     <main class="shell home">
@@ -136,7 +150,9 @@ async function renderPaper(request: Request, env: Env, arxivId: string): Promise
   const user = await currentUser(request, env);
   const url = new URL(request.url);
   const replyToRaw = url.searchParams.get("reply");
-  const replyTo = replyToRaw && /^\d+$/.test(replyToRaw) ? Number(replyToRaw) : null;
+  const replyTo = replyToRaw && /^\\d+$/.test(replyToRaw) ? Number(replyToRaw) : null;
+  const requestedTab = url.searchParams.get("tab");
+  const tab = requestedTab === "references" || requestedTab === "related" ? requestedTab : "discussion";
 
   const result = await env.DB.prepare(
     `SELECT c.id, c.paper_id, c.user_id, c.parent_id, c.body, c.created_at,
@@ -153,34 +169,65 @@ async function renderPaper(request: Request, env: Env, arxivId: string): Promise
   const commentIds = new Set(comments.map((comment) => comment.id));
   const validReplyTo = replyTo && commentIds.has(replyTo) ? replyTo : null;
   const authors = safeJsonArray(paper.authors_json);
+  const paperUrl = `/p/${encodeURIComponent(arxivId)}`;
+
+  const tabLink = (id: "discussion" | "references" | "related", label: string): string =>
+    `<a href="${paperUrl}?tab=${id}"${tab === id ? ` class="active" aria-current="page"` : ""}>${label}</a>`;
+
+  const discussion = `<section class="discussion">
+    <div class="discussion-meta">
+      <span>${comments.length} ${comments.length === 1 ? "comment" : "comments"}</span>
+    </div>
+    ${renderComposer(user, arxivId, validReplyTo)}
+    ${comments.length ? renderCommentTree(comments, arxivId) : `<p class="empty">No discussion yet.</p>`}
+  </section>`;
+
+  const references = `<section class="tab-empty">
+    <h2>References</h2>
+    <p>Not indexed yet.</p>
+  </section>`;
+
+  const related = `<section class="tab-empty">
+    <h2>Related papers</h2>
+    <p>Not indexed yet.</p>
+  </section>`;
+
+  const tabContent = tab === "references" ? references : tab === "related" ? related : discussion;
 
   return htmlPage(
     `${paper.title} · Scholia`,
     `<header class="topbar">
-      <a class="brand" href="/">scholia</a>
+      ${renderBrand()}
       ${renderIdentity(user)}
     </header>
     <main class="shell paper-page">
       <a class="back" href="/">← papers</a>
-      <article class="paper-card">
-        <p class="kicker">arXiv:${escapeHtml(paper.arxiv_id)}</p>
-        <h1>${escapeHtml(paper.title)}</h1>
-        <p class="authors">${authors.map(escapeHtml).join(", ")}</p>
-        <p class="abstract">${escapeHtml(paper.abstract)}</p>
-        <div class="paper-links">
-          <a href="https://arxiv.org/abs/${encodeURIComponent(paper.arxiv_id)}" rel="noreferrer">View on arXiv ↗</a>
+
+      <article class="paper-window">
+        <div class="paper-summary">
+          <p class="paper-id">arXiv:${escapeHtml(paper.arxiv_id)}</p>
+          <h1>${escapeHtml(paper.title)}</h1>
+          <p class="authors">${authors.map(escapeHtml).join(", ")}</p>
+
+          <div class="paper-actions">
+            <a href="https://arxiv.org/abs/${encodeURIComponent(paper.arxiv_id)}" rel="noreferrer">arXiv ↗</a>
+            <details class="abstract-disclosure">
+              <summary>Abstract</summary>
+              <p>${escapeHtml(paper.abstract)}</p>
+            </details>
+          </div>
+        </div>
+
+        <nav class="paper-tabs" aria-label="Paper sections">
+          ${tabLink("discussion", "Discussion")}
+          ${tabLink("references", "References")}
+          ${tabLink("related", "Related papers")}
+        </nav>
+
+        <div class="paper-tab">
+          ${tabContent}
         </div>
       </article>
-
-      <section class="discussion">
-        <div class="section-heading">
-          <h2>Discussion</h2>
-          <span>${comments.length} ${comments.length === 1 ? "comment" : "comments"}</span>
-        </div>
-
-        ${renderComposer(user, arxivId, validReplyTo)}
-        ${comments.length ? renderCommentTree(comments, arxivId) : `<p class="empty">No discussion yet.</p>`}
-      </section>
     </main>`,
   );
 }
@@ -235,7 +282,7 @@ function renderCommentTree(comments: CommentRow[], paperId: string): string {
           </div>
           <div class="comment-body">${escapeHtml(comment.body).replace(/\n/g, "<br>")}</div>
           <div class="comment-actions">
-            <a href="/p/${encodeURIComponent(paperId)}?reply=${comment.id}#comment-form">reply</a>
+            <a href="/p/${encodeURIComponent(paperId)}?tab=discussion&reply=${comment.id}#comment-form">reply</a>
             <a href="#comment-${comment.id}">#${comment.id}</a>
           </div>
           ${replies ? `<div class="replies">${replies}</div>` : ""}
@@ -660,6 +707,16 @@ function decodeXmlEntities(value: string): string {
     .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)));
 }
 
+function renderBrand(): string {
+  return `<a class="brand" href="/" aria-label="Scholia home">
+    <svg class="brand-mark" viewBox="0 0 310 310" aria-hidden="true">
+      <path fill="#BC4F3B" d="M 168 20 L 168 250 C 168 267 165 278 156 283 C 148 288 139 288 130 283 C 120 277 112 269 103 261 L 80 239 C 77 236 78 231 83 230 C 92 230 103 236 114 243 C 124 249 134 257 143 264 L 143 54 C 143 50 141 48 137 48 C 134 48 133 46 135 44 C 145 42 155 34 165 21 C 166 20 167 19 168 20 Z"/>
+      <circle cx="211" cy="144" r="19" fill="#BC4F3B"/>
+    </svg>
+    <span>Scholia</span>
+  </a>`;
+}
+
 function renderIdentity(user: User | null): string {
   if (!user) {
     return `<a class="identity-link" href="/auth/orcid?next=/">Sign in with ORCID</a>`;
@@ -679,57 +736,86 @@ function htmlPage(title: string, body: string, status = 200): Response {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#F7F4ED">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <title>${escapeHtml(title)}</title>
   <style>
     :root {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      color: #171717;
-      background: #f6f4ee;
-      line-height: 1.55;
+      --paper: #f7f4ed;
+      --ink: #2e2e2a;
+      --annotation: #b84b3c;
+      --stone: #a7a39a;
+      --wash: #ebe6dc;
+      --surface: rgba(255, 255, 255, .52);
+      color: var(--ink);
+      background: var(--paper);
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.5;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; }
+    body { margin: 0; background: var(--paper); }
     a { color: inherit; text-underline-offset: 3px; }
+    a:hover { color: var(--annotation); }
     button, input, textarea { font: inherit; }
     button { cursor: pointer; }
+
     .topbar {
-      height: 58px;
+      min-height: 72px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 max(20px, calc((100vw - 920px) / 2));
+      gap: 24px;
+      padding: 10px max(20px, calc((100vw - 980px) / 2));
     }
-    .brand { font-weight: 700; text-decoration: none; letter-spacing: -.04em; }
-    .shell { width: min(920px, calc(100% - 40px)); margin: 0 auto; }
-    .home { padding: 12vh 0 80px; }
-    .home h1, .paper-card h1 { letter-spacing: -.045em; line-height: 1.08; }
-    .home h1 { max-width: 760px; font-size: clamp(1.9rem, 4vw, 2.8rem); margin: 12px 0 24px; }
-    .lede { max-width: 700px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 1.08rem; color: #52504b; }
-    .kicker { text-transform: uppercase; letter-spacing: .12em; font-size: .76rem; color: #77736a; }
-    .lookup { margin-top: 42px; max-width: 700px; }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      text-decoration: none;
+      font-size: 1.45rem;
+      line-height: 1;
+      letter-spacing: -.025em;
+    }
+    .brand:hover { color: var(--ink); }
+    .brand-mark { width: 30px; height: 30px; display: block; }
+
+    .shell { width: min(980px, calc(100% - 40px)); margin: 0 auto; }
+    .home { padding: 13vh 0 90px; }
+    .home h1 {
+      max-width: 650px;
+      margin: 0;
+      font-size: clamp(2rem, 4vw, 3rem);
+      line-height: 1.08;
+      font-weight: 400;
+      letter-spacing: -.025em;
+    }
+
+    .lookup { margin-top: 42px; max-width: 650px; }
     .lookup label {
       display: block;
-      margin: 0 0 9px 3px;
-      font-size: .76rem;
-      color: #77736a;
-      letter-spacing: .04em;
+      margin: 0 0 8px 2px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: .72rem;
+      letter-spacing: .08em;
+      color: #77736c;
     }
     .lookup-control {
       display: flex;
       align-items: center;
       gap: 6px;
       padding: 6px;
-      background: #e9e5da;
-      border-radius: 12px;
+      background: rgba(255, 255, 255, .48);
+      border-radius: 14px;
+      box-shadow: 0 12px 34px rgba(46, 46, 42, .06);
     }
     input, textarea {
       width: 100%;
       border: 0;
       outline: 0;
-      background: #fffefa;
-      color: #171717;
+      background: #fbf9f3;
+      color: var(--ink);
       padding: 13px 14px;
-      border-radius: 8px;
+      border-radius: 9px;
     }
     .lookup input {
       min-width: 0;
@@ -737,53 +823,228 @@ function htmlPage(title: string, body: string, status = 200): Response {
       padding: 13px 12px;
     }
     input:focus-visible, textarea:focus-visible {
-      box-shadow: 0 0 0 3px rgba(23, 23, 23, .10);
+      box-shadow: 0 0 0 3px rgba(184, 75, 60, .12);
     }
     textarea { resize: vertical; }
+
     button, .button-link {
       border: 0;
-      background: #171717;
-      color: #fff;
-      padding: 12px 15px;
-      border-radius: 8px;
+      background: var(--annotation);
+      color: #fffaf5;
+      padding: 11px 15px;
+      border-radius: 9px;
       text-decoration: none;
       white-space: nowrap;
     }
-    .paper-page { padding: 36px 0 100px; }
-    .back { color: #6b675f; font-size: .85rem; }
-    .paper-card { padding: 42px 0 50px; }
-    .paper-card h1 { font-size: clamp(2rem, 5vw, 3.6rem); margin: 10px 0 18px; }
-    .authors { color: #55514a; }
-    .abstract { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 820px; color: #35332f; margin-top: 26px; }
-    .paper-links { margin-top: 24px; font-size: .9rem; }
-    .discussion { padding-top: 40px; }
-    .section-heading { display: flex; justify-content: space-between; align-items: baseline; }
-    .section-heading h2 { font-size: 1.25rem; }
-    .section-heading span { color: #77736a; font-size: .82rem; }
-    .signin-box, .composer { margin: 24px 0 34px; padding: 18px; background: rgba(255,255,255,.45); border-radius: 8px; }
-    .signin-box { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-    .signin-box p { margin: 0; color: #55514a; }
-    .composer-meta, .composer-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; font-size: .78rem; color: #77736a; }
-    .composer textarea { margin: 12px 0; }
-    .reply-note { font-size: .78rem; color: #77736a; margin-bottom: 0; }
-    .comments { margin-top: 10px; }
-    .comment { margin: 0 0 0 calc(var(--depth) * 22px); padding: 18px 0 18px 14px; }
-    .comment-head { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; font-size: .78rem; }
-    .comment-head a { font-weight: 700; }
-    .comment-head span, .comment-head time { color: #77736a; }
-    .comment-body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 10px 0; white-space: normal; }
-    .comment-actions { display: flex; gap: 12px; font-size: .76rem; color: #77736a; }
-    .replies { margin-top: 4px; }
-    .empty, .muted { color: #77736a; }
-    .identity { display: flex; gap: 12px; align-items: center; font-size: .8rem; }
-    .identity-link { font-size: .8rem; }
+    button:hover, .button-link:hover { color: #fffaf5; filter: brightness(.96); }
+
+    .paper-page { padding: 28px 0 90px; }
+    .back {
+      display: inline-block;
+      margin-bottom: 22px;
+      color: #77736c;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: .76rem;
+      text-decoration: none;
+    }
+    .paper-window {
+      padding: clamp(24px, 4vw, 44px);
+      background: var(--surface);
+      border-radius: 18px;
+      box-shadow: 0 18px 55px rgba(46, 46, 42, .055);
+    }
+    .paper-summary { max-width: 820px; }
+    .paper-id {
+      margin: 0 0 10px;
+      color: var(--annotation);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: .72rem;
+      letter-spacing: .05em;
+    }
+    .paper-summary h1 {
+      margin: 0;
+      max-width: 860px;
+      font-size: clamp(2rem, 4.8vw, 3.8rem);
+      line-height: 1.02;
+      font-weight: 400;
+      letter-spacing: -.035em;
+    }
+    .authors {
+      margin: 18px 0 0;
+      color: #726e66;
+      font-size: 1rem;
+    }
+    .paper-actions {
+      display: flex;
+      align-items: flex-start;
+      gap: 18px;
+      flex-wrap: wrap;
+      margin-top: 24px;
+      font-size: .88rem;
+    }
+    .paper-actions > a { color: var(--annotation); text-decoration: none; }
+    .abstract-disclosure { max-width: 720px; color: #59564f; }
+    .abstract-disclosure summary {
+      cursor: pointer;
+      color: #77736c;
+      list-style: none;
+    }
+    .abstract-disclosure summary::-webkit-details-marker { display: none; }
+    .abstract-disclosure[open] { flex-basis: 100%; }
+    .abstract-disclosure p {
+      margin: 12px 0 0;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: .95rem;
+      line-height: 1.65;
+    }
+
+    .paper-tabs {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 34px;
+      padding: 5px;
+      background: var(--wash);
+      border-radius: 11px;
+    }
+    .paper-tabs a {
+      padding: 8px 12px;
+      border-radius: 7px;
+      color: #77736c;
+      text-decoration: none;
+      font-size: .9rem;
+    }
+    .paper-tabs a.active {
+      background: #fbf9f3;
+      color: var(--ink);
+      box-shadow: 0 5px 14px rgba(46, 46, 42, .07);
+    }
+    .paper-tab { margin-top: 26px; }
+
+    .discussion-meta {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 8px;
+      color: #77736c;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: .72rem;
+    }
+    .signin-box, .composer {
+      margin: 12px 0 24px;
+      padding: 18px;
+      background: #fbf9f3;
+      border-radius: 12px;
+    }
+    .signin-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .signin-box p { margin: 0; color: #5f5b54; }
+    .composer-meta, .composer-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      color: #77736c;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: .7rem;
+    }
+    .composer textarea {
+      margin: 12px 0;
+      background: #f2eee5;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+    }
+    .reply-note { margin-bottom: 0; color: #77736c; font-size: .78rem; }
+
+    .comments { display: grid; gap: 10px; margin-top: 12px; }
+    .comment {
+      margin-left: calc(var(--depth) * 18px);
+      padding: 17px 19px;
+      background: rgba(255, 255, 255, .44);
+      border-radius: 12px;
+    }
+    .comment-head {
+      display: flex;
+      gap: 9px;
+      flex-wrap: wrap;
+      align-items: baseline;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: .7rem;
+    }
+    .comment-head a { font-family: Georgia, "Times New Roman", serif; font-size: .9rem; font-weight: 600; text-decoration: none; }
+    .comment-head span, .comment-head time { color: #8a867e; }
+    .comment-body {
+      margin: 10px 0;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      line-height: 1.6;
+    }
+    .comment-actions {
+      display: flex;
+      gap: 12px;
+      color: #8a867e;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: .7rem;
+    }
+    .replies { margin-top: 8px; }
+    .tab-empty {
+      min-height: 150px;
+      padding: 20px 4px;
+      color: #77736c;
+    }
+    .tab-empty h2 {
+      margin: 0 0 6px;
+      color: var(--ink);
+      font-size: 1.25rem;
+      font-weight: 400;
+    }
+    .tab-empty p { margin: 0; }
+    .empty, .muted { color: #77736c; }
+
+    .identity {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: .72rem;
+    }
+    .identity-link {
+      color: #77736c;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: .72rem;
+      text-decoration: none;
+    }
     .identity form { margin: 0; }
-    .text-button { background: none; border: 0; color: #77736a; padding: 0; text-decoration: underline; text-underline-offset: 3px; }
-    .notice { padding: 10px 12px; background: #efe3df; border-radius: 8px; max-width: 760px; }
+    .text-button {
+      background: none;
+      color: #8a867e;
+      padding: 0;
+      border-radius: 0;
+      text-decoration: none;
+    }
+    .text-button:hover { color: var(--annotation); filter: none; }
+    .notice {
+      max-width: 650px;
+      margin-top: 22px;
+      padding: 11px 13px;
+      background: #efe2dd;
+      border-radius: 9px;
+      color: #69433d;
+    }
+
     @media (max-width: 680px) {
+      .topbar { min-height: 64px; }
+      .brand { font-size: 1.25rem; }
+      .brand-mark { width: 27px; height: 27px; }
+      .home { padding-top: 10vh; }
       .lookup-control, .signin-box { flex-direction: column; align-items: stretch; }
-      .comment { margin-left: calc(min(var(--depth), 2) * 12px); }
+      .paper-window { padding: 22px 18px; border-radius: 14px; }
+      .paper-tabs { display: flex; width: 100%; }
+      .paper-tabs a { flex: 1; text-align: center; padding-inline: 8px; }
+      .comment { margin-left: calc(min(var(--depth), 2) * 10px); }
       .comment-head span { display: none; }
+      .composer-actions { align-items: flex-end; }
     }
   </style>
 </head>
