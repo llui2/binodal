@@ -24,7 +24,7 @@ npm install
 Create a D1 database and bind it as `DB`:
 
 ```bash
-npx wrangler d1 create paper-tool --binding DB --update-config
+npx wrangler d1 create papr --binding DB --update-config
 ```
 
 Initialize the database:
