@@ -564,15 +564,28 @@ async function ensurePaper(env: Env, rawPaperId: string): Promise<Paper> {
   if (aliasedStorageId) {
     const aliased = await getPaperByStorageId(env, aliasedStorageId);
     if (aliased) {
-      const storageId = await enrichPaperIdentifiers(env, aliased, requestedIdentifier);
-      const enriched = await getPaperByStorageId(env, storageId);
-      if (enriched) return enriched;
+      const matching = await findMatchingPaper(env, aliased, aliasedStorageId);
+      if (matching) {
+        const storageId = await mergePaperRows(env, aliasedStorageId, matching.arxiv_id);
+        const merged = await getPaperByStorageId(env, storageId);
+        if (merged) return merged;
+      }
+      return aliased;
     }
   }
 
   let cached = await getPaperByStorageId(env, paperId);
   if (cached) {
-    const storageId = await enrichPaperIdentifiers(env, cached, requestedIdentifier);
+    const existingIdentifiers = await getPaperIdentifiers(env, cached.arxiv_id);
+    let storageId = cached.arxiv_id;
+
+    if (existingIdentifiers.length === 0) {
+      storageId = await enrichPaperIdentifiers(env, cached, requestedIdentifier);
+    }
+
+    const matching = await findMatchingPaper(env, cached, storageId);
+    if (matching) storageId = await mergePaperRows(env, storageId, matching.arxiv_id);
+
     cached = await getPaperByStorageId(env, storageId);
     if (!cached) throw new Error("Could not resolve cached paper");
     return cached;
@@ -621,82 +634,23 @@ async function enrichPaperIdentifiers(
   paper: Paper,
   requestedIdentifier: PaperIdentifier,
 ): Promise<string> {
-  const existingIdentifiers = await getPaperIdentifiers(env, paper.arxiv_id);
   const discovered: PaperIdentifier[] = [requestedIdentifier];
-  let allIdentifiers = dedupeIdentifiers([...existingIdentifiers, ...discovered]);
 
   try {
-    if (requestedIdentifier.type === "arxiv" && !allIdentifiers.some((identifier) => identifier.type === "doi")) {
+    if (requestedIdentifier.type === "arxiv") {
       discovered.push(...await fetchArxivRelations(requestedIdentifier.value));
-    } else if (requestedIdentifier.type === "doi" && existingIdentifiers.length === 0) {
+    } else if (requestedIdentifier.type === "doi") {
       const refreshed = await fetchPaperFromCrossref(requestedIdentifier.value, paper.arxiv_id);
       discovered.push(...refreshed.identifiers);
-    } else if (requestedIdentifier.type === "url" && !allIdentifiers.some((identifier) => identifier.type === "doi")) {
+    } else {
       const refreshed = await fetchPaperFromUrl(requestedIdentifier.value, paper.arxiv_id);
       discovered.push(...refreshed.identifiers);
     }
   } catch (error) {
-    console.warn("Could not enrich cached paper identifiers", error);
+    console.warn("Could not enrich legacy paper identifiers", error);
   }
 
-  allIdentifiers = dedupeIdentifiers([...existingIdentifiers, ...discovered]);
-
-  const doi = allIdentifiers.find(
-    (identifier) => identifier.type === "doi" && !isArxivIssuedDoi(identifier.value),
-  );
-  const hasArxiv = allIdentifiers.some((identifier) => identifier.type === "arxiv");
-
-  if (doi && !hasArxiv) {
-    try {
-      const arxiv = await fetchArxivIdentifierForDoi(doi.value);
-      if (arxiv) discovered.push(arxiv);
-    } catch (error) {
-      console.warn("Could not resolve DOI to arXiv", error);
-    }
-  }
-
-  let storageId = await attachIdentifiers(env, paper.arxiv_id, discovered);
-  const matching = await findMatchingPaper(env, paper, storageId);
-  if (matching) storageId = await mergePaperRows(env, storageId, matching.arxiv_id);
-  return storageId;
-}
-
-async function fetchArxivIdentifierForDoi(doi: string): Promise<PaperIdentifier | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 4500);
-
-  try {
-    const response = await fetch(
-      `https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(doi)}?fields=externalIds`,
-      {
-        headers: {
-          "User-Agent": "Scholia/0.1 (+https://github.com/llui2/scholia)",
-          Accept: "application/json",
-        },
-        signal: controller.signal,
-      },
-    );
-
-    if (!response.ok) return null;
-
-    const payload = await response.json() as {
-      externalIds?: Record<string, string | number | null>;
-    };
-    const rawArxiv = payload.externalIds?.ArXiv;
-    if (typeof rawArxiv !== "string") return null;
-
-    const arxiv = normalizeArxivInput(rawArxiv);
-    if (!arxiv) return null;
-
-    return {
-      type: "arxiv",
-      value: arxiv,
-      label: "arXiv",
-      url: `https://arxiv.org/abs/${encodeURIComponent(arxiv)}`,
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
+  return attachIdentifiers(env, paper.arxiv_id, discovered);
 }
 
 async function getPaperByStorageId(env: Env, storageId: string): Promise<Paper | null> {
@@ -795,25 +749,41 @@ async function findMatchingPaper(
   const result = await env.DB.prepare(
     `SELECT arxiv_id, title, authors_json, abstract, published_at, updated_at
        FROM papers
-      WHERE lower(trim(title)) = lower(trim(?))
-        AND (? IS NULL OR arxiv_id <> ?)
-      LIMIT 12`,
+      WHERE (? IS NULL OR arxiv_id <> ?)
+      ORDER BY fetched_at DESC
+      LIMIT 250`,
   )
-    .bind(paper.title, excludeStorageId, excludeStorageId)
+    .bind(excludeStorageId, excludeStorageId)
     .all<Paper>();
 
+  const targetTitle = titleFingerprint(paper.title);
+  if (!targetTitle) return null;
+
   for (const candidate of result.results ?? []) {
-    if (sameAuthorList(paper.authors_json, candidate.authors_json)) return candidate;
+    if (titleFingerprint(candidate.title) !== targetTitle) continue;
+    if (authorListsMatch(paper.authors_json, candidate.authors_json)) return candidate;
   }
 
   return null;
 }
 
-function sameAuthorList(firstJson: string, secondJson: string): boolean {
+function titleFingerprint(value: string): string {
+  return decodeHtmlEntities(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function authorListsMatch(firstJson: string, secondJson: string): boolean {
   const first = safeJsonArray(firstJson).map(authorFingerprint).filter(Boolean);
   const second = safeJsonArray(secondJson).map(authorFingerprint).filter(Boolean);
-  if (!first.length || first.length !== second.length) return false;
-  return first.every((author, index) => author === second[index]);
+  if (!first.length || !second.length) return false;
+
+  const secondSet = new Set(second);
+  const overlap = first.filter((author) => secondSet.has(author)).length;
+  return overlap >= Math.min(first.length, second.length, 2) &&
+    overlap / Math.min(first.length, second.length) >= 0.75;
 }
 
 function authorFingerprint(value: string): string {
@@ -1129,10 +1099,10 @@ async function fetchPaperFromCrossref(doi: string, storageId = `doi:${doi.toLowe
   });
 
   try {
-    const arxiv = await fetchArxivIdentifierForDoi(normalizedDoi);
+    const arxiv = await findArxivByTitleAndAuthors(title, authors);
     if (arxiv) identifiers.push(arxiv);
   } catch (error) {
-    console.warn("Could not resolve Crossref DOI to arXiv", error);
+    console.warn("Could not resolve Crossref paper to arXiv", error);
   }
 
   return {
@@ -1146,6 +1116,78 @@ async function fetchPaperFromCrossref(doi: string, storageId = `doi:${doi.toLowe
     },
     identifiers,
   };
+}
+
+async function findArxivByTitleAndAuthors(
+  title: string,
+  authors: string[],
+): Promise<PaperIdentifier | null> {
+  const words = title
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .match(/[a-z0-9]+/g)
+    ?.filter((word) => word.length >= 6)
+    .slice(0, 3) ?? [];
+
+  if (words.length < 2) return null;
+
+  const endpoint = new URL("https://export.arxiv.org/api/query");
+  endpoint.searchParams.set(
+    "search_query",
+    words.map((word) => `ti:${word}`).join(" AND "),
+  );
+  endpoint.searchParams.set("start", "0");
+  endpoint.searchParams.set("max_results", "8");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2500);
+
+  try {
+    const response = await fetch(endpoint, {
+      headers: {
+        "User-Agent": "Scholia/0.1 (+https://github.com/llui2/scholia)",
+        Accept: "application/atom+xml",
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) return null;
+
+    const xml = await response.text();
+    const targetTitle = titleFingerprint(title);
+    const targetAuthors = authors.map(authorFingerprint).filter(Boolean);
+
+    for (const match of xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)) {
+      const entry = match[1];
+      const candidateTitle = cleanXmlText(extractTag(entry, "title"));
+      if (titleFingerprint(candidateTitle) !== targetTitle) continue;
+
+      const candidateAuthors = [...entry.matchAll(/<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/g)]
+        .map((authorMatch) => authorFingerprint(cleanXmlText(authorMatch[1])))
+        .filter(Boolean);
+      const candidateSet = new Set(candidateAuthors);
+      const overlap = targetAuthors.filter((author) => candidateSet.has(author)).length;
+      if (targetAuthors.length && overlap / Math.min(targetAuthors.length, candidateAuthors.length) < 0.75) {
+        continue;
+      }
+
+      const idUrl = cleanXmlText(extractTag(entry, "id"));
+      const arxiv = normalizeArxivInput(idUrl);
+      if (!arxiv) continue;
+
+      return {
+        type: "arxiv",
+        value: arxiv,
+        label: "arXiv",
+        url: `https://arxiv.org/abs/${encodeURIComponent(arxiv)}`,
+      };
+    }
+
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<FetchedPaper> {
@@ -1652,7 +1694,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
     .paper-grid {
       display: grid;
-      grid-template-columns: 158px minmax(0, 1fr);
+      grid-template-columns: 148px minmax(0, 1fr);
       gap: 0 32px;
       align-items: start;
     }
