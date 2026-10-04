@@ -132,7 +132,7 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
       ${renderIdentity(user)}
     </header>
     <main class="shell home">
-      <h1>A public discussion record for scientific papers.</h1>
+      <h1>A public record of scientific activity around papers.</h1>
       ${error ? `<p class="notice">${escapeHtml(error)}</p>` : ""}
       <form class="lookup" action="/go" method="get">
         <label for="arxiv">arXiv</label>
