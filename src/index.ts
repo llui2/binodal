@@ -47,11 +47,6 @@ interface CommentRow {
   orcid: string;
 }
 
-const BLUEPAPER_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 310 310" role="img" aria-label="bluepaper logo">
-  <path fill="#315C84" d="M 158 24 L 178 24 L 178 237 C 178 259 172 275 160 284 C 149 292 134 292 120 286 C 109 281 99 273 89 264 L 73 250 C 67 245 68 237 75 233 C 81 229 87 231 94 236 L 123 257 C 135 266 145 267 152 260 C 157 255 158 248 158 237 L 158 65 C 158 56 154 52 146 51 L 137 50 C 131 49 130 44 135 40 C 145 37 152 32 158 24 Z"/>
-  <rect x="207" y="126" width="36" height="36" rx="3" fill="#315C84"/>
-</svg>`;
-
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
@@ -59,8 +54,8 @@ export default {
     } catch (error) {
       console.error(error);
       return htmlPage(
-        "bluepaper · error",
-        `<main class="shell utility-page"><p class="eyebrow">bluepaper</p><h1>Something went wrong.</h1><p class="muted">${escapeHtml(
+        "error",
+        `<main class="shell utility-page"><h1>Something went wrong.</h1><p class="muted">${escapeHtml(
           error instanceof Error ? error.message : "Unknown error",
         )}</p><p><a href="/">Return home</a></p></main>`,
         500,
@@ -121,17 +116,9 @@ async function route(request: Request, env: Env): Promise<Response> {
     return logout(request, env);
   }
 
-  if (request.method === "GET" && path === "/favicon.svg") {
-    return new Response(BLUEPAPER_LOGO_SVG, {
-      headers: {
-        "Content-Type": "image/svg+xml; charset=utf-8",
-        "Cache-Control": "public, max-age=604800, immutable",
-      },
-    });
-  }
 
   if (request.method === "GET" && path === "/health") {
-    return json({ ok: true, service: "bluepaper" });
+    return json({ ok: true, service: "paper-tool" });
   }
 
   return notFound("Page not found.");
@@ -143,7 +130,7 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
   const error = url.searchParams.get("error");
 
   return htmlPage(
-    "bluepaper",
+    "papers",
     `<header class="topbar">
       ${renderBrand()}
       ${renderIdentity(user)}
@@ -220,7 +207,7 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   const tabContent = tab === "references" ? references : tab === "related" ? related : discussion;
 
   return htmlPage(
-    `${paper.title} · bluepaper`,
+    paper.title,
     `<header class="topbar">
       ${renderBrand()}
       ${renderIdentity(user)}
@@ -466,7 +453,7 @@ async function finishOrcidAuth(request: Request, env: Env): Promise<Response> {
     .bind(token.orcid)
     .first<User>();
 
-  if (!user) return new Response("Could not create bluepaper user", { status: 500 });
+  if (!user) return new Response("Could not create user", { status: 500 });
 
   const session = randomToken();
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -491,7 +478,7 @@ async function finishOrcidAuth(request: Request, env: Env): Promise<Response> {
 async function logout(request: Request, env: Env): Promise<Response> {
   assertSameOrigin(request);
   const cookies = parseCookies(request.headers.get("Cookie") ?? "");
-  const token = cookies.get("bluepaper_session");
+  const token = cookies.get("session");
 
   if (token) {
     await env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(token).run();
@@ -508,7 +495,7 @@ async function logout(request: Request, env: Env): Promise<Response> {
 
 async function currentUser(request: Request, env: Env): Promise<User | null> {
   const cookies = parseCookies(request.headers.get("Cookie") ?? "");
-  const token = cookies.get("bluepaper_session");
+  const token = cookies.get("session");
   if (!token) return null;
 
   const row = await env.DB.prepare(
@@ -878,7 +865,7 @@ async function fetchPaperFromAbs(arxivId: string): Promise<FetchedPaper> {
   try {
     const response = await fetch(`https://arxiv.org/abs/${encodeURIComponent(arxivId)}`, {
       headers: {
-        "User-Agent": "bluepaper/0.1 (+https://github.com/llui2/bluepaper)",
+        "User-Agent": "paper-tool/0.1",
         Accept: "text/html",
       },
       signal: controller.signal,
@@ -942,7 +929,7 @@ async function fetchArxivRelations(arxivId: string): Promise<PaperIdentifier[]> 
   endpoint.searchParams.set("id_list", arxivId);
   const response = await fetch(endpoint, {
     headers: {
-      "User-Agent": "bluepaper/0.1 (+https://github.com/llui2/bluepaper)",
+      "User-Agent": "paper-tool/0.1",
       Accept: "application/atom+xml",
     },
   });
@@ -968,7 +955,7 @@ async function fetchPaperFromAtom(arxivId: string): Promise<FetchedPaper> {
 
   const response = await fetch(endpoint, {
     headers: {
-      "User-Agent": "bluepaper/0.1 (+https://github.com/llui2/bluepaper)",
+      "User-Agent": "paper-tool/0.1",
       Accept: "application/atom+xml",
     },
   });
@@ -1020,7 +1007,7 @@ async function fetchPaperFromAtom(arxivId: string): Promise<FetchedPaper> {
 async function fetchPaperFromCrossref(doi: string, storageId = `doi:${doi.toLowerCase()}`): Promise<FetchedPaper> {
   const response = await fetch(`https://api.crossref.org/works/${encodeURIComponent(doi)}`, {
     headers: {
-      "User-Agent": "bluepaper/0.1 (+https://github.com/llui2/bluepaper)",
+      "User-Agent": "paper-tool/0.1",
       Accept: "application/json",
     },
   });
@@ -1125,7 +1112,7 @@ async function findArxivByTitleAndAuthors(
   try {
     const response = await fetch(endpoint, {
       headers: {
-        "User-Agent": "bluepaper/0.1 (+https://github.com/llui2/bluepaper)",
+        "User-Agent": "paper-tool/0.1",
         Accept: "application/atom+xml",
       },
       signal: controller.signal,
@@ -1178,7 +1165,7 @@ async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<
   try {
     const response = await fetch(sourceUrl, {
       headers: {
-        "User-Agent": "bluepaper/0.1 (+https://github.com/llui2/bluepaper)",
+        "User-Agent": "paper-tool/0.1",
         Accept: "text/html,application/xhtml+xml",
       },
       redirect: "follow",
@@ -1485,13 +1472,7 @@ function decodeXmlEntities(value: string): string {
 }
 
 function renderBrand(): string {
-  return `<a class="brand" href="/" aria-label="bluepaper home">
-    <svg class="brand-mark" viewBox="0 0 310 310" aria-hidden="true">
-      <path fill="#315C84" d="M 158 24 L 178 24 L 178 237 C 178 259 172 275 160 284 C 149 292 134 292 120 286 C 109 281 99 273 89 264 L 73 250 C 67 245 68 237 75 233 C 81 229 87 231 94 236 L 123 257 C 135 266 145 267 152 260 C 157 255 158 248 158 237 L 158 65 C 158 56 154 52 146 51 L 137 50 C 131 49 130 44 135 40 C 145 37 152 32 158 24 Z"/>
-      <rect x="207" y="126" width="36" height="36" rx="3" fill="#315C84"/>
-    </svg>
-    <span>bluepaper</span>
-  </a>`;
+  return `<a class="brand" href="/">papers</a>`;
 }
 
 function renderIdentity(user: User | null): string {
@@ -1514,7 +1495,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#F7F4ED">
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400..700&display=swap">
   <title>${escapeHtml(title)}</title>
   <style>
@@ -1578,7 +1558,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       letter-spacing: -.025em;
     }
     .brand:hover { color: var(--ink); }
-    .brand-mark { width: 30px; height: 30px; display: block; }
 
     .shell {
       width: min(980px, calc(100% - 40px));
@@ -2020,8 +1999,8 @@ function redirect(location: string, status = 302): Response {
 
 function notFound(message: string): Response {
   return htmlPage(
-    "Not found · bluepaper",
-    `<main class="shell utility-page"><p class="eyebrow">bluepaper</p><h1>Not found.</h1><p class="muted">${escapeHtml(message)}</p><p><a href="/">Return home</a></p></main>`,
+    "Not found",
+    `<main class="shell utility-page"><h1>Not found.</h1><p class="muted">${escapeHtml(message)}</p><p><a href="/">Return home</a></p></main>`,
     404,
   );
 }
@@ -2072,7 +2051,7 @@ function parseCookies(header: string): Map<string, string> {
 
 function sessionCookie(token: string, request: Request, maxAge: number): string {
   const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
-  return `bluepaper_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+  return `session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
 }
 
 function randomToken(): string {
