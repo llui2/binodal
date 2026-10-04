@@ -534,33 +534,75 @@ async function currentUser(request: Request, env: Env): Promise<User | null> {
   };
 }
 
-async function ensurePaper(env: Env, paperId: string): Promise<Paper> {
-  const cached = await env.DB.prepare(
-    "SELECT arxiv_id, title, authors_json, abstract, published_at, updated_at FROM papers WHERE arxiv_id = ?",
-  )
-    .bind(paperId)
-    .first<Paper>();
+async function ensurePaperIdentifierSchema(env: Env): Promise<void> {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS paper_identifiers (
+      type TEXT NOT NULL,
+      value TEXT NOT NULL,
+      paper_id TEXT NOT NULL,
+      label TEXT,
+      url TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (type, value),
+      FOREIGN KEY (paper_id) REFERENCES papers(arxiv_id) ON DELETE CASCADE
+    )`,
+  ).run();
+  await env.DB.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_paper_identifiers_paper ON paper_identifiers(paper_id)",
+  ).run();
+}
 
-  if (cached) return cached;
+async function ensurePaper(env: Env, rawPaperId: string): Promise<Paper> {
+  await ensurePaperIdentifierSchema(env);
 
-  let paper: Paper;
+  const paperId = normalizePaperInput(rawPaperId);
+  if (!paperId) throw new Error("Invalid paper identifier or URL");
+  const requestedIdentifier = identifierFromPaperId(paperId);
+  if (!requestedIdentifier) throw new Error("Invalid paper identifier or URL");
 
-  if (paperId.startsWith("doi:")) {
-    paper = await fetchPaperFromCrossref(paperId.slice(4), paperId);
-  } else if (paperId.startsWith("url:")) {
-    const sourceUrl = decodeUrlPaperId(paperId);
-    if (!sourceUrl) throw new Error("Invalid paper URL");
-    paper = await fetchPaperFromUrl(sourceUrl, paperId);
-  } else {
-    let arxivPaper: Paper | null = null;
+  const aliasedStorageId = await findStorageIdByIdentifier(env, requestedIdentifier);
+  if (aliasedStorageId) {
+    const aliased = await getPaperByStorageId(env, aliasedStorageId);
+    if (aliased) return aliased;
+  }
 
-    try {
-      arxivPaper = await fetchPaperFromAbs(paperId);
-    } catch (error) {
-      console.warn("Fast arXiv metadata lookup failed; falling back to Atom API", error);
+  let cached = await getPaperByStorageId(env, paperId);
+  if (cached) {
+    const existingIdentifiers = await getPaperIdentifiers(env, cached.arxiv_id);
+    const discovered: PaperIdentifier[] = [requestedIdentifier];
+
+    if (requestedIdentifier.type === "arxiv" && existingIdentifiers.length === 0) {
+      try {
+        discovered.push(...await fetchArxivRelations(requestedIdentifier.value));
+      } catch (error) {
+        console.warn("Could not enrich cached arXiv identifiers", error);
+      }
     }
 
-    paper = arxivPaper ?? await fetchPaperFromAtom(paperId);
+    let storageId = await attachIdentifiers(env, cached.arxiv_id, discovered);
+    const matching = await findMatchingPaper(env, cached, storageId);
+    if (matching) storageId = await mergePaperRows(env, storageId, matching.arxiv_id);
+    cached = await getPaperByStorageId(env, storageId);
+    if (!cached) throw new Error("Could not resolve cached paper");
+    return cached;
+  }
+
+  const fetched = await fetchPaperByInput(paperId);
+
+  for (const identifier of fetched.identifiers) {
+    const existingStorageId = await findStorageIdByIdentifier(env, identifier);
+    if (existingStorageId) {
+      const storageId = await attachIdentifiers(env, existingStorageId, fetched.identifiers);
+      const existing = await getPaperByStorageId(env, storageId);
+      if (existing) return existing;
+    }
+  }
+
+  const matching = await findMatchingPaper(env, fetched.paper, null);
+  if (matching) {
+    const storageId = await attachIdentifiers(env, matching.arxiv_id, fetched.identifiers);
+    const existing = await getPaperByStorageId(env, storageId);
+    if (existing) return existing;
   }
 
   await env.DB.prepare(
@@ -568,19 +610,245 @@ async function ensurePaper(env: Env, paperId: string): Promise<Paper> {
      VALUES (?, ?, ?, ?, ?, ?)`,
   )
     .bind(
-      paper.arxiv_id,
-      paper.title,
-      paper.authors_json,
-      paper.abstract,
-      paper.published_at,
-      paper.updated_at,
+      fetched.paper.arxiv_id,
+      fetched.paper.title,
+      fetched.paper.authors_json,
+      fetched.paper.abstract,
+      fetched.paper.published_at,
+      fetched.paper.updated_at,
     )
     .run();
 
+  const storageId = await attachIdentifiers(env, fetched.paper.arxiv_id, fetched.identifiers);
+  const paper = await getPaperByStorageId(env, storageId);
+  if (!paper) throw new Error("Could not store paper");
   return paper;
 }
 
-async function fetchPaperFromAbs(arxivId: string): Promise<Paper> {
+async function getPaperByStorageId(env: Env, storageId: string): Promise<Paper | null> {
+  return env.DB.prepare(
+    "SELECT arxiv_id, title, authors_json, abstract, published_at, updated_at FROM papers WHERE arxiv_id = ?",
+  )
+    .bind(storageId)
+    .first<Paper>();
+}
+
+async function getPaperIdentifiers(env: Env, storageId: string): Promise<PaperIdentifier[]> {
+  await ensurePaperIdentifierSchema(env);
+  const result = await env.DB.prepare(
+    `SELECT type, value, paper_id, label, url
+       FROM paper_identifiers
+      WHERE paper_id = ?
+      ORDER BY CASE type WHEN 'doi' THEN 0 WHEN 'arxiv' THEN 1 ELSE 2 END, created_at ASC`,
+  )
+    .bind(storageId)
+    .all<PaperIdentifier>();
+  return result.results ?? [];
+}
+
+async function findStorageIdByIdentifier(
+  env: Env,
+  identifier: PaperIdentifier,
+): Promise<string | null> {
+  const row = await env.DB.prepare(
+    "SELECT paper_id FROM paper_identifiers WHERE type = ? AND value = ?",
+  )
+    .bind(identifier.type, identifier.value)
+    .first<{ paper_id: string }>();
+  return row?.paper_id ?? null;
+}
+
+async function attachIdentifiers(
+  env: Env,
+  initialStorageId: string,
+  identifiers: PaperIdentifier[],
+): Promise<string> {
+  let storageId = initialStorageId;
+
+  for (const identifier of dedupeIdentifiers(identifiers)) {
+    const existingStorageId = await findStorageIdByIdentifier(env, identifier);
+    if (existingStorageId && existingStorageId !== storageId) {
+      storageId = await mergePaperRows(env, storageId, existingStorageId);
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO paper_identifiers (type, value, paper_id, label, url)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(type, value) DO UPDATE SET
+         label = COALESCE(paper_identifiers.label, excluded.label),
+         url = COALESCE(paper_identifiers.url, excluded.url)`,
+    )
+      .bind(identifier.type, identifier.value, storageId, identifier.label, identifier.url)
+      .run();
+  }
+
+  return storageId;
+}
+
+async function mergePaperRows(env: Env, firstId: string, secondId: string): Promise<string> {
+  if (firstId === secondId) return firstId;
+
+  const targetId = storagePriority(firstId) <= storagePriority(secondId) ? firstId : secondId;
+  const duplicateId = targetId === firstId ? secondId : firstId;
+
+  await env.DB.prepare("UPDATE comments SET paper_id = ? WHERE paper_id = ?")
+    .bind(targetId, duplicateId)
+    .run();
+  await env.DB.prepare("UPDATE OR IGNORE paper_identifiers SET paper_id = ? WHERE paper_id = ?")
+    .bind(targetId, duplicateId)
+    .run();
+  await env.DB.prepare("DELETE FROM paper_identifiers WHERE paper_id = ?")
+    .bind(duplicateId)
+    .run();
+  await env.DB.prepare("DELETE FROM papers WHERE arxiv_id = ?")
+    .bind(duplicateId)
+    .run();
+
+  return targetId;
+}
+
+function storagePriority(storageId: string): number {
+  if (normalizeArxivInput(storageId) === storageId) return 0;
+  if (storageId.startsWith("doi:")) return 1;
+  return 2;
+}
+
+async function findMatchingPaper(
+  env: Env,
+  paper: Paper,
+  excludeStorageId: string | null,
+): Promise<Paper | null> {
+  const result = await env.DB.prepare(
+    `SELECT arxiv_id, title, authors_json, abstract, published_at, updated_at
+       FROM papers
+      WHERE lower(trim(title)) = lower(trim(?))
+        AND (? IS NULL OR arxiv_id <> ?)
+      LIMIT 12`,
+  )
+    .bind(paper.title, excludeStorageId, excludeStorageId)
+    .all<Paper>();
+
+  for (const candidate of result.results ?? []) {
+    if (sameAuthorList(paper.authors_json, candidate.authors_json)) return candidate;
+  }
+
+  return null;
+}
+
+function sameAuthorList(firstJson: string, secondJson: string): boolean {
+  const first = safeJsonArray(firstJson).map(authorFingerprint).filter(Boolean);
+  const second = safeJsonArray(secondJson).map(authorFingerprint).filter(Boolean);
+  if (!first.length || first.length !== second.length) return false;
+  return first.every((author, index) => author === second[index]);
+}
+
+function authorFingerprint(value: string): string {
+  return normalizeAuthorName(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function dedupeIdentifiers(identifiers: PaperIdentifier[]): PaperIdentifier[] {
+  const seen = new Set<string>();
+  return identifiers.filter((identifier) => {
+    const key = `${identifier.type}:${identifier.value}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function identifierFromPaperId(paperId: string): PaperIdentifier | null {
+  if (paperId.startsWith("doi:")) {
+    const doi = paperId.slice(4);
+    return { type: "doi", value: doi, label: null, url: `https://doi.org/${doi}` };
+  }
+
+  if (paperId.startsWith("url:")) {
+    const url = decodeUrlPaperId(paperId);
+    if (!url) return null;
+    return { type: "url", value: url, label: sourceHost(url), url };
+  }
+
+  const arxiv = normalizeArxivInput(paperId);
+  if (!arxiv) return null;
+  return {
+    type: "arxiv",
+    value: arxiv,
+    label: "arXiv",
+    url: `https://arxiv.org/abs/${encodeURIComponent(arxiv)}`,
+  };
+}
+
+function preferredPaperId(identifiers: PaperIdentifier[], fallbackStorageId: string): string {
+  const doi = identifiers.find((identifier) => identifier.type === "doi" && !isArxivIssuedDoi(identifier.value));
+  if (doi) return `doi:${doi.value}`;
+  const arxiv = identifiers.find((identifier) => identifier.type === "arxiv");
+  if (arxiv) return arxiv.value;
+  const url = identifiers.find((identifier) => identifier.type === "url");
+  if (url) return `url:${encodeURIComponent(url.value)}`;
+  return fallbackStorageId;
+}
+
+function renderPaperSources(identifiers: PaperIdentifier[]): string {
+  const doi = identifiers.find((identifier) => identifier.type === "doi" && !isArxivIssuedDoi(identifier.value));
+  const arxiv = identifiers.find((identifier) => identifier.type === "arxiv");
+  const source = identifiers.find((identifier) => identifier.type === "url");
+
+  if (doi) {
+    const venue = doi.label && doi.label !== "Published version" ? doi.label : "Published version";
+    return `<p class="paper-venue">${escapeHtml(venue)}</p>
+      <div class="paper-links">
+        <a class="paper-source" href="${escapeAttr(doi.url)}" rel="noreferrer">published version ↗</a>
+        ${arxiv ? `<a class="paper-source" href="${escapeAttr(arxiv.url)}" rel="noreferrer">arXiv preprint ↗</a>` : ""}
+      </div>
+      <p class="paper-doi">DOI ${escapeHtml(doi.value)}</p>`;
+  }
+
+  if (arxiv) {
+    return `<p class="paper-id">arXiv:${escapeHtml(arxiv.value)}</p>
+      <a class="paper-source" href="${escapeAttr(arxiv.url)}" rel="noreferrer">open on arXiv ↗</a>`;
+  }
+
+  if (source) {
+    return `<p class="paper-id">${escapeHtml(source.label ?? sourceHost(source.value))}</p>
+      <a class="paper-source" href="${escapeAttr(source.url)}" rel="noreferrer">open source ↗</a>`;
+  }
+
+  return `<p class="paper-id">paper</p>`;
+}
+
+function sourceHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "source";
+  }
+}
+
+async function fetchPaperByInput(paperId: string): Promise<FetchedPaper> {
+  if (paperId.startsWith("doi:")) {
+    return fetchPaperFromCrossref(paperId.slice(4), paperId);
+  }
+
+  if (paperId.startsWith("url:")) {
+    const sourceUrl = decodeUrlPaperId(paperId);
+    if (!sourceUrl) throw new Error("Invalid paper URL");
+    return fetchPaperFromUrl(sourceUrl, paperId);
+  }
+
+  try {
+    return await fetchPaperFromAbs(paperId);
+  } catch (error) {
+    console.warn("Fast arXiv metadata lookup failed; falling back to Atom API", error);
+    return fetchPaperFromAtom(paperId);
+  }
+}
+
+async function fetchPaperFromAbs(arxivId: string): Promise<FetchedPaper> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 4500);
 
@@ -593,15 +861,12 @@ async function fetchPaperFromAbs(arxivId: string): Promise<Paper> {
       signal: controller.signal,
     });
 
-    if (!response.ok) {
-      throw new Error(`arXiv abstract page returned HTTP ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`arXiv abstract page returned HTTP ${response.status}`);
 
     const html = await response.text();
     const title = metaContent(html, "citation_title");
     const authors = metaContents(html, "citation_author").map(normalizeAuthorName);
     const published = metaContent(html, "citation_date") || null;
-
     const abstractMatch = html.match(
       /<blockquote[^>]*class=["'][^"']*abstract[^"']*["'][^>]*>([\s\S]*?)<\/blockquote>/i,
     );
@@ -618,20 +883,63 @@ async function fetchPaperFromAbs(arxivId: string): Promise<Paper> {
       throw new Error("Could not parse arXiv abstract page metadata");
     }
 
+    let relations: PaperIdentifier[] = [];
+    try {
+      relations = await fetchArxivRelations(arxivId);
+    } catch (error) {
+      console.warn("Could not fetch arXiv publication relations", error);
+    }
+
     return {
-      arxiv_id: arxivId,
-      title,
-      authors_json: JSON.stringify(authors),
-      abstract,
-      published_at: published,
-      updated_at: published,
+      paper: {
+        arxiv_id: arxivId,
+        title,
+        authors_json: JSON.stringify(authors),
+        abstract,
+        published_at: published,
+        updated_at: published,
+      },
+      identifiers: dedupeIdentifiers([
+        {
+          type: "arxiv",
+          value: arxivId,
+          label: "arXiv",
+          url: `https://arxiv.org/abs/${encodeURIComponent(arxivId)}`,
+        },
+        ...relations,
+      ]),
     };
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function fetchPaperFromAtom(arxivId: string): Promise<Paper> {
+async function fetchArxivRelations(arxivId: string): Promise<PaperIdentifier[]> {
+  const endpoint = new URL("https://export.arxiv.org/api/query");
+  endpoint.searchParams.set("id_list", arxivId);
+  const response = await fetch(endpoint, {
+    headers: {
+      "User-Agent": "Scholia/0.1 (+https://github.com/llui2/scholia)",
+      Accept: "application/atom+xml",
+    },
+  });
+  if (!response.ok) return [];
+
+  const xml = await response.text();
+  const entry = xml.match(/<entry>([\s\S]*?)<\/entry>/)?.[1] ?? "";
+  const doi = normalizePublicationDoi(cleanXmlText(extractTag(entry, "arxiv:doi")));
+  const journalRef = cleanXmlText(extractTag(entry, "arxiv:journal_ref"));
+  if (!doi) return [];
+
+  return [{
+    type: "doi",
+    value: doi,
+    label: journalRef || "Published version",
+    url: `https://doi.org/${doi}`,
+  }];
+}
+
+async function fetchPaperFromAtom(arxivId: string): Promise<FetchedPaper> {
   const endpoint = new URL("https://export.arxiv.org/api/query");
   endpoint.searchParams.set("id_list", arxivId);
 
@@ -642,9 +950,7 @@ async function fetchPaperFromAtom(arxivId: string): Promise<Paper> {
     },
   });
 
-  if (!response.ok) {
-    throw new Error(`arXiv returned HTTP ${response.status}`);
-  }
+  if (!response.ok) throw new Error(`arXiv returned HTTP ${response.status}`);
 
   const xml = await response.text();
   const entry = xml.match(/<entry>([\s\S]*?)<\/entry>/)?.[1];
@@ -657,20 +963,38 @@ async function fetchPaperFromAtom(arxivId: string): Promise<Paper> {
   const authors = [...entry.matchAll(/<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/g)]
     .map((match) => normalizeAuthorName(cleanXmlText(match[1])))
     .filter(Boolean);
+  const doi = normalizePublicationDoi(cleanXmlText(extractTag(entry, "arxiv:doi")));
+  const journalRef = cleanXmlText(extractTag(entry, "arxiv:journal_ref"));
 
   if (!title) throw new Error(`Could not parse arXiv metadata for ${arxivId}`);
 
+  const identifiers: PaperIdentifier[] = [{
+    type: "arxiv",
+    value: arxivId,
+    label: "arXiv",
+    url: `https://arxiv.org/abs/${encodeURIComponent(arxivId)}`,
+  }];
+  if (doi) identifiers.push({
+    type: "doi",
+    value: doi,
+    label: journalRef || "Published version",
+    url: `https://doi.org/${doi}`,
+  });
+
   return {
-    arxiv_id: arxivId,
-    title,
-    authors_json: JSON.stringify(authors),
-    abstract,
-    published_at: published,
-    updated_at: updated,
+    paper: {
+      arxiv_id: arxivId,
+      title,
+      authors_json: JSON.stringify(authors),
+      abstract,
+      published_at: published,
+      updated_at: updated,
+    },
+    identifiers,
   };
 }
 
-async function fetchPaperFromCrossref(doi: string, storageId = `doi:${doi.toLowerCase()}`): Promise<Paper> {
+async function fetchPaperFromCrossref(doi: string, storageId = `doi:${doi.toLowerCase()}`): Promise<FetchedPaper> {
   const response = await fetch(`https://api.crossref.org/works/${encodeURIComponent(doi)}`, {
     headers: {
       "User-Agent": "Scholia/0.1 (+https://github.com/llui2/scholia)",
@@ -678,15 +1002,15 @@ async function fetchPaperFromCrossref(doi: string, storageId = `doi:${doi.toLowe
     },
   });
 
-  if (!response.ok) {
-    throw new Error(`Crossref returned HTTP ${response.status}`);
-  }
+  if (!response.ok) throw new Error(`Crossref returned HTTP ${response.status}`);
 
   const payload = await response.json() as {
     message?: {
       title?: string[];
       author?: Array<{ given?: string; family?: string; name?: string }>;
       abstract?: string;
+      URL?: string;
+      "container-title"?: string[];
       published?: { "date-parts"?: number[][] };
       "published-print"?: { "date-parts"?: number[][] };
       "published-online"?: { "date-parts"?: number[][] };
@@ -699,29 +1023,45 @@ async function fetchPaperFromCrossref(doi: string, storageId = `doi:${doi.toLowe
 
   const title = cleanHtmlText(message.title?.[0] ?? "");
   const authors = (message.author ?? [])
-    .map((author) => {
-      if (author.name) return normalizeAuthorName(author.name);
-      return [author.given, author.family].filter(Boolean).join(" ").trim();
-    })
+    .map((author) => author.name ? normalizeAuthorName(author.name) : [author.given, author.family].filter(Boolean).join(" ").trim())
     .filter(Boolean);
   const abstract = cleanHtmlText(message.abstract ?? "");
   const published = crossrefDate(
     message["published-print"] ?? message["published-online"] ?? message.published,
   ) ?? message.created?.["date-time"] ?? null;
+  const venue = cleanHtmlText(message["container-title"]?.[0] ?? "") || "Published version";
 
   if (!title) throw new Error(`Could not parse Crossref metadata for ${doi}`);
 
+  const normalizedDoi = doi.toLowerCase();
+  const identifiers: PaperIdentifier[] = [{
+    type: "doi",
+    value: normalizedDoi,
+    label: venue,
+    url: `https://doi.org/${normalizedDoi}`,
+  }];
+  const publisherUrl = message.URL ? normalizePaperUrl(message.URL) : null;
+  if (publisherUrl) identifiers.push({
+    type: "url",
+    value: publisherUrl,
+    label: venue,
+    url: publisherUrl,
+  });
+
   return {
-    arxiv_id: storageId,
-    title,
-    authors_json: JSON.stringify(authors),
-    abstract,
-    published_at: published,
-    updated_at: published,
+    paper: {
+      arxiv_id: storageId,
+      title,
+      authors_json: JSON.stringify(authors),
+      abstract,
+      published_at: published,
+      updated_at: published,
+    },
+    identifiers,
   };
 }
 
-async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<Paper> {
+async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<FetchedPaper> {
   if (!isSafePaperUrl(sourceUrl)) throw new Error("Only public HTTPS paper URLs are supported");
 
   const controller = new AbortController();
@@ -739,8 +1079,8 @@ async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<
 
     if (!response.ok) throw new Error(`Paper page returned HTTP ${response.status}`);
 
-    const finalUrl = response.url || sourceUrl;
-    if (!isSafePaperUrl(finalUrl)) throw new Error("Paper URL redirected to an unsupported address");
+    const finalUrl = normalizePaperUrl(response.url || sourceUrl);
+    if (!finalUrl) throw new Error("Paper URL redirected to an unsupported address");
 
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
@@ -751,10 +1091,18 @@ async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<
     if (contentLength > 3_000_000) throw new Error("Paper page is too large to inspect");
 
     const html = await response.text();
-    const doi = normalizeDoiInput(metaContent(html, "citation_doi"));
+    const doi = normalizePublicationDoi(metaContent(html, "citation_doi"));
     if (doi) {
       try {
-        return await fetchPaperFromCrossref(doi, storageId);
+        const crossref = await fetchPaperFromCrossref(doi, storageId);
+        crossref.identifiers.push({
+          type: "url",
+          value: finalUrl,
+          label: sourceHost(finalUrl),
+          url: finalUrl,
+        });
+        crossref.identifiers = dedupeIdentifiers(crossref.identifiers);
+        return crossref;
       } catch (error) {
         console.warn("Crossref lookup from paper URL failed; using page metadata", error);
       }
@@ -777,16 +1125,33 @@ async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<
     if (!title) throw new Error("Could not find paper metadata at this URL");
 
     return {
-      arxiv_id: storageId,
-      title,
-      authors_json: JSON.stringify(authors),
-      abstract,
-      published_at: published,
-      updated_at: published,
+      paper: {
+        arxiv_id: storageId,
+        title,
+        authors_json: JSON.stringify(authors),
+        abstract,
+        published_at: published,
+        updated_at: published,
+      },
+      identifiers: [{
+        type: "url",
+        value: finalUrl,
+        label: sourceHost(finalUrl),
+        url: finalUrl,
+      }],
     };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function normalizePublicationDoi(raw: string): string | null {
+  const doi = normalizeDoiInput(raw);
+  return doi && !isArxivIssuedDoi(doi) ? doi : null;
+}
+
+function isArxivIssuedDoi(doi: string): boolean {
+  return /^10\.48550\/arxiv\./i.test(doi);
 }
 
 function crossrefDate(value?: { "date-parts"?: number[][] }): string | null {
