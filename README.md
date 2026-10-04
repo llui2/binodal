@@ -65,11 +65,17 @@ For production, configure `ORCID_REDIRECT_URI` as a Worker variable or use the d
 
 ## Principles
 
-1. arXiv remains the canonical paper source.
-2. Reading is public.
-3. Posting requires a persistent ORCID identity.
-4. Comments are generic; structure can emerge later from usage.
-5. Keep the first version small enough to test whether researchers actually use a discussion layer.
+Scholia is researcher-first infrastructure for discovering, understanding, and interacting around scientific work.
+
+1. Papers remain where they already live; Scholia adds a public record around them.
+2. Researchers and scientific interaction are the primary actors and value.
+3. Participation should be low-friction and structured where useful; long-form discussion is secondary.
+4. Discovery should prioritize relevance rather than virality or time spent on the platform.
+5. Ranking and recommendation should be inspectable and controllable where practical.
+6. Agent features should reduce search and coordination costs while strengthening researcher-to-researcher interaction.
+7. Prefer open identifiers, exportable public contributions, and minimal platform lock-in.
+
+See [docs/PRODUCT_PRINCIPLES.md](docs/PRODUCT_PRINCIPLES.md) for the full product direction.
 
 ## License
 
