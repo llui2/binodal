@@ -121,10 +121,10 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
       <h1>A public discussion record for scientific papers.</h1>
       ${error ? `<p class="notice">${escapeHtml(error)}</p>` : ""}
       <form class="lookup" action="/go" method="get">
-        <label for="arxiv">arXiv paper</label>
-        <div class="lookup-row">
-          <input id="arxiv" name="arxiv" placeholder="2601.12345 or arxiv.org/abs/2601.12345" autocomplete="off" required>
-          <button type="submit">Open discussion</button>
+        <label for="arxiv">arXiv</label>
+        <div class="lookup-control">
+          <input id="arxiv" name="arxiv" placeholder="Paste an arXiv ID or URL" autocomplete="off" required>
+          <button type="submit">Open</button>
         </div>
       </form>
     </main>`,
@@ -706,24 +706,46 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .home h1 { max-width: 760px; font-size: clamp(1.9rem, 4vw, 2.8rem); margin: 12px 0 24px; }
     .lede { max-width: 700px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 1.08rem; color: #52504b; }
     .kicker { text-transform: uppercase; letter-spacing: .12em; font-size: .76rem; color: #77736a; }
-    .lookup { margin-top: 48px; max-width: 760px; }
-    .lookup label { display: block; margin-bottom: 8px; font-size: .82rem; }
-    .lookup-row { display: flex; gap: 8px; }
+    .lookup { margin-top: 42px; max-width: 700px; }
+    .lookup label {
+      display: block;
+      margin: 0 0 9px 3px;
+      font-size: .76rem;
+      color: #77736a;
+      letter-spacing: .04em;
+    }
+    .lookup-control {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px;
+      background: #e9e5da;
+      border-radius: 12px;
+    }
     input, textarea {
       width: 100%;
-      border: 1px solid #bbb6aa;
+      border: 0;
+      outline: 0;
       background: #fffefa;
       color: #171717;
-      padding: 12px 13px;
-      border-radius: 4px;
+      padding: 13px 14px;
+      border-radius: 8px;
+    }
+    .lookup input {
+      min-width: 0;
+      background: transparent;
+      padding: 13px 12px;
+    }
+    input:focus-visible, textarea:focus-visible {
+      box-shadow: 0 0 0 3px rgba(23, 23, 23, .10);
     }
     textarea { resize: vertical; }
     button, .button-link {
-      border: 1px solid #171717;
+      border: 0;
       background: #171717;
       color: #fff;
-      padding: 10px 14px;
-      border-radius: 4px;
+      padding: 12px 15px;
+      border-radius: 8px;
       text-decoration: none;
       white-space: nowrap;
     }
@@ -757,9 +779,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .identity-link { font-size: .8rem; }
     .identity form { margin: 0; }
     .text-button { background: none; border: 0; color: #77736a; padding: 0; text-decoration: underline; text-underline-offset: 3px; }
-    .notice { padding: 10px 12px; border: 1px solid #b86b63; max-width: 760px; }
+    .notice { padding: 10px 12px; background: #efe3df; border-radius: 8px; max-width: 760px; }
     @media (max-width: 680px) {
-      .lookup-row, .signin-box { flex-direction: column; align-items: stretch; }
+      .lookup-control, .signin-box { flex-direction: column; align-items: stretch; }
       .comment { margin-left: calc(min(var(--depth), 2) * 12px); }
       .comment-head span { display: none; }
     }
