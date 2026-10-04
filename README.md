@@ -1,26 +1,26 @@
 <p align="center">
-  <img src="assets/binodal-logo.svg" width="104" alt="binodal">
+  <img src="assets/bluepaper-logo.svg" width="104" alt="bluepaper">
 </p>
 
-<h1 align="center">binodal</h1>
+<h1 align="center">bluepaper</h1>
 
 <p align="center"><strong>A public record of scientific activity around papers.</strong></p>
 
 <p align="center">
-  <a href="https://binodal.llui2.workers.dev">binodal.llui2.workers.dev</a>
+  <a href="https://bluepaper.llui2.workers.dev">bluepaper.llui2.workers.dev</a>
 </p>
 
 ## About
 
-binodal is open, researcher-first infrastructure for finding scientific work and interacting around it.
+bluepaper is open, researcher-first infrastructure for finding scientific work and interacting around it.
 
-The paper remains the stable reference. binodal records what develops around it: discussion, clarification, connections, follow-up work, and the researchers engaging with it. The aim is a durable public scientific record rather than another feed, publisher workflow, or generic comment section.
+The paper remains the stable reference. bluepaper records what develops around it: discussion, clarification, connections, follow-up work, and the researchers engaging with it. The aim is a durable public scientific record rather than another feed, publisher workflow, or generic comment section.
 
 The current beta is intentionally small. It starts with arXiv papers and ORCID identity so the basic interaction can be tested before imposing richer structures.
 
 ## Current beta
 
-- Resolve an arXiv ID or URL into a binodal paper page.
+- Resolve an arXiv ID or URL into a bluepaper paper page.
 - Fetch and cache paper metadata from arXiv.
 - Read discussion without an account.
 - Sign in with ORCID to contribute under a persistent scientific identity.
@@ -32,7 +32,7 @@ References and related-paper indexing are not implemented yet.
 
 ## Principles
 
-binodal is built for researchers rather than publishers, advertisers, or engagement metrics.
+bluepaper is built for researchers rather than publishers, advertisers, or engagement metrics.
 
 - **Researchers are the primary actors.** Papers provide a shared coordinate system for scientific interaction.
 - **Scientific usefulness comes before engagement.** Ranking should help decide what deserves attention, not maximize time on site.
@@ -68,15 +68,15 @@ The Worker serves both the HTML interface and the small JSON/API surface. Paper 
 Requirements: Node.js and a Cloudflare account.
 
 ```bash
-git clone https://github.com/llui2/binodal.git
-cd binodal
+git clone https://github.com/llui2/bluepaper.git
+cd bluepaper
 npm install
 ```
 
 Create a D1 database:
 
 ```bash
-npx wrangler d1 create binodal --binding DB --update-config
+npx wrangler d1 create bluepaper --binding DB --update-config
 ```
 
 Add the returned database ID to `wrangler.toml`, then initialize the local database:
