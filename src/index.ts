@@ -571,11 +571,19 @@ async function ensurePaper(env: Env, rawPaperId: string): Promise<Paper> {
     const existingIdentifiers = await getPaperIdentifiers(env, cached.arxiv_id);
     const discovered: PaperIdentifier[] = [requestedIdentifier];
 
-    if (requestedIdentifier.type === "arxiv" && existingIdentifiers.length === 0) {
+    if (existingIdentifiers.length === 0) {
       try {
-        discovered.push(...await fetchArxivRelations(requestedIdentifier.value));
+        if (requestedIdentifier.type === "arxiv") {
+          discovered.push(...await fetchArxivRelations(requestedIdentifier.value));
+        } else if (requestedIdentifier.type === "doi") {
+          const refreshed = await fetchPaperFromCrossref(requestedIdentifier.value, cached.arxiv_id);
+          discovered.push(...refreshed.identifiers);
+        } else {
+          const refreshed = await fetchPaperFromUrl(requestedIdentifier.value, cached.arxiv_id);
+          discovered.push(...refreshed.identifiers);
+        }
       } catch (error) {
-        console.warn("Could not enrich cached arXiv identifiers", error);
+        console.warn("Could not enrich cached paper identifiers", error);
       }
     }
 
