@@ -127,11 +127,6 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
           <button type="submit">Open discussion</button>
         </div>
       </form>
-      <section class="principles">
-        <div><strong>Canonical source</strong><span>The paper stays on arXiv.</span></div>
-        <div><strong>Persistent identity</strong><span>Posting requires ORCID.</span></div>
-        <div><strong>Generic discussion</strong><span>No forced taxonomy of scientific interaction.</span></div>
-      </section>
     </main>`,
   );
 }
@@ -464,6 +459,87 @@ async function ensurePaper(env: Env, arxivId: string): Promise<Paper> {
 
   if (cached) return cached;
 
+  let paper: Paper | null = null;
+
+  try {
+    paper = await fetchPaperFromAbs(arxivId);
+  } catch (error) {
+    console.warn("Fast arXiv metadata lookup failed; falling back to Atom API", error);
+  }
+
+  if (!paper) {
+    paper = await fetchPaperFromAtom(arxivId);
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO papers (arxiv_id, title, authors_json, abstract, published_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      paper.arxiv_id,
+      paper.title,
+      paper.authors_json,
+      paper.abstract,
+      paper.published_at,
+      paper.updated_at,
+    )
+    .run();
+
+  return paper;
+}
+
+async function fetchPaperFromAbs(arxivId: string): Promise<Paper> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4500);
+
+  try {
+    const response = await fetch(`https://arxiv.org/abs/${encodeURIComponent(arxivId)}`, {
+      headers: {
+        "User-Agent": "Scholia/0.1 (+https://github.com/llui2/scholia)",
+        Accept: "text/html",
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`arXiv abstract page returned HTTP ${response.status}`);
+    }
+
+    const html = await response.text();
+    const title = metaContent(html, "citation_title");
+    const authors = metaContents(html, "citation_author");
+    const published = metaContent(html, "citation_date") || null;
+
+    const abstractMatch = html.match(
+      /<blockquote[^>]*class=["'][^"']*abstract[^"']*["'][^>]*>([\\s\\S]*?)<\\/blockquote>/i,
+    );
+    const abstract = abstractMatch
+      ? cleanHtmlText(
+          abstractMatch[1].replace(
+            /<span[^>]*class=["'][^"']*descriptor[^"']*["'][^>]*>[\\s\\S]*?<\\/span>/i,
+            "",
+          ),
+        )
+      : "";
+
+    if (!title || !authors.length || !abstract) {
+      throw new Error("Could not parse arXiv abstract page metadata");
+    }
+
+    return {
+      arxiv_id: arxivId,
+      title,
+      authors_json: JSON.stringify(authors),
+      abstract,
+      published_at: published,
+      updated_at: published,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchPaperFromAtom(arxivId: string): Promise<Paper> {
   const endpoint = new URL("https://export.arxiv.org/api/query");
   endpoint.searchParams.set("id_list", arxivId);
 
@@ -479,25 +555,18 @@ async function ensurePaper(env: Env, arxivId: string): Promise<Paper> {
   }
 
   const xml = await response.text();
-  const entry = xml.match(/<entry>([\s\S]*?)<\/entry>/)?.[1];
+  const entry = xml.match(/<entry>([\\s\\S]*?)<\\/entry>/)?.[1];
   if (!entry) throw new Error(`No arXiv paper found for ${arxivId}`);
 
   const title = cleanXmlText(extractTag(entry, "title"));
   const abstract = cleanXmlText(extractTag(entry, "summary"));
   const published = extractTag(entry, "published") || null;
   const updated = extractTag(entry, "updated") || null;
-  const authors = [...entry.matchAll(/<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/g)]
+  const authors = [...entry.matchAll(/<author>[\\s\\S]*?<name>([\\s\\S]*?)<\\/name>[\\s\\S]*?<\\/author>/g)]
     .map((match) => cleanXmlText(match[1]))
     .filter(Boolean);
 
   if (!title) throw new Error(`Could not parse arXiv metadata for ${arxivId}`);
-
-  await env.DB.prepare(
-    `INSERT INTO papers (arxiv_id, title, authors_json, abstract, published_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(arxivId, title, JSON.stringify(authors), abstract, published, updated)
-    .run();
 
   return {
     arxiv_id: arxivId,
@@ -507,6 +576,52 @@ async function ensurePaper(env: Env, arxivId: string): Promise<Paper> {
     published_at: published,
     updated_at: updated,
   };
+}
+
+function metaContent(html: string, name: string): string {
+  const escaped = name.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(`<meta[^>]+name=["']${escaped}["'][^>]+content=["']([\\s\\S]*?)["'][^>]*>`, "i"),
+    new RegExp(`<meta[^>]+content=["']([\\s\\S]*?)["'][^>]+name=["']${escaped}["'][^>]*>`, "i"),
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match) return decodeHtmlEntities(match[1]).trim();
+  }
+
+  return "";
+}
+
+function metaContents(html: string, name: string): string[] {
+  const escaped = name.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
+  const pattern = new RegExp(
+    `<meta[^>]+name=["']${escaped}["'][^>]+content=["']([\\s\\S]*?)["'][^>]*>`,
+    "gi",
+  );
+  return [...html.matchAll(pattern)]
+    .map((match) => decodeHtmlEntities(match[1]).trim())
+    .filter(Boolean);
+}
+
+function cleanHtmlText(value: string): string {
+  return decodeHtmlEntities(
+    value
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\\s+/g, " ")
+      .trim(),
+  );
+}
+
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#(\\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)));
 }
 
 function normalizeArxivInput(raw: string): string | null {
@@ -588,7 +703,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .shell { width: min(920px, calc(100% - 40px)); margin: 0 auto; }
     .home { padding: 12vh 0 80px; }
     .home h1, .paper-card h1 { letter-spacing: -.045em; line-height: 1.08; }
-    .home h1 { max-width: 760px; font-size: clamp(2.4rem, 7vw, 5.4rem); margin: 12px 0 24px; }
+    .home h1 { max-width: 760px; font-size: clamp(1.9rem, 4vw, 2.8rem); margin: 12px 0 24px; }
     .lede { max-width: 700px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 1.08rem; color: #52504b; }
     .kicker { text-transform: uppercase; letter-spacing: .12em; font-size: .76rem; color: #77736a; }
     .lookup { margin-top: 48px; max-width: 760px; }
@@ -612,15 +727,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       text-decoration: none;
       white-space: nowrap;
     }
-    .principles {
-      margin-top: 64px;
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 28px;
-    }
-    .principles div { padding: 18px 18px 18px 0; }
-    .principles strong, .principles span { display: block; }
-    .principles span { color: #6b675f; font-family: ui-sans-serif, system-ui, sans-serif; font-size: .9rem; margin-top: 4px; }
     .paper-page { padding: 36px 0 100px; }
     .back { color: #6b675f; font-size: .85rem; }
     .paper-card { padding: 42px 0 50px; }
@@ -654,7 +760,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .notice { padding: 10px 12px; border: 1px solid #b86b63; max-width: 760px; }
     @media (max-width: 680px) {
       .lookup-row, .signin-box { flex-direction: column; align-items: stretch; }
-      .principles { grid-template-columns: 1fr; }
       .comment { margin-left: calc(min(var(--depth), 2) * 12px); }
       .comment-head span { display: none; }
     }
