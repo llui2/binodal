@@ -1,8 +1,3 @@
-name = "binodal"
+name = "bluepaper"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "scholia"
-database_id = "f1caf254-5414-41be-91ab-9985b698ee63"
