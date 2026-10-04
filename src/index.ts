@@ -785,7 +785,7 @@ function metaPropertyContent(html: string, property: string): string {
 }
 
 function extractHtmlTitle(html: string): string {
-  return html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i)?.[1] ?? "";
+  return html.match(/<title[^>]*>([\\s\\S]*?)<\/title>/i)?.[1] ?? "";
 }
 
 function metaContent(html: string, name: string): string {
