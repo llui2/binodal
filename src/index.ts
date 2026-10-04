@@ -534,27 +534,7 @@ async function currentUser(request: Request, env: Env): Promise<User | null> {
   };
 }
 
-async function ensurePaperIdentifierSchema(env: Env): Promise<void> {
-  await env.DB.prepare(
-    `CREATE TABLE IF NOT EXISTS paper_identifiers (
-      type TEXT NOT NULL,
-      value TEXT NOT NULL,
-      paper_id TEXT NOT NULL,
-      label TEXT,
-      url TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (type, value),
-      FOREIGN KEY (paper_id) REFERENCES papers(arxiv_id) ON DELETE CASCADE
-    )`,
-  ).run();
-  await env.DB.prepare(
-    "CREATE INDEX IF NOT EXISTS idx_paper_identifiers_paper ON paper_identifiers(paper_id)",
-  ).run();
-}
-
 async function ensurePaper(env: Env, rawPaperId: string): Promise<Paper> {
-  await ensurePaperIdentifierSchema(env);
-
   const paperId = normalizePaperInput(rawPaperId);
   if (!paperId) throw new Error("Invalid paper identifier or URL");
   const requestedIdentifier = identifierFromPaperId(paperId);
@@ -662,7 +642,6 @@ async function getPaperByStorageId(env: Env, storageId: string): Promise<Paper |
 }
 
 async function getPaperIdentifiers(env: Env, storageId: string): Promise<PaperIdentifier[]> {
-  await ensurePaperIdentifierSchema(env);
   const result = await env.DB.prepare(
     `SELECT type, value, paper_id, label, url
        FROM paper_identifiers
