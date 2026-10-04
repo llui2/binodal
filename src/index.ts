@@ -749,9 +749,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       --wash: #ebe6dc;
       --surface: rgba(255, 255, 255, .52);
 
-      --font-display: Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Palatino, serif;
-      --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --font-main: Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
 
       --radius-sm: 8px;
       --radius-md: 12px;
@@ -759,9 +757,11 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
       color: var(--ink);
       background: var(--paper);
-      font-family: var(--font-body);
+      font-family: var(--font-main);
       font-size: 16px;
       line-height: 1.55;
+      font-kerning: normal;
+      text-rendering: optimizeLegibility;
     }
 
     * { box-sizing: border-box; }
@@ -773,7 +773,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
     h1, h2, h3, p { margin-top: 0; }
     h1, h2, h3 {
-      font-family: var(--font-display);
+      font-family: var(--font-main);
       font-weight: 400;
       color: var(--ink);
     }
@@ -792,7 +792,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       align-items: center;
       gap: 9px;
       text-decoration: none;
-      font-family: var(--font-display);
+      font-family: var(--font-main);
       font-size: 1.48rem;
       line-height: 1;
       letter-spacing: -.025em;
@@ -822,12 +822,11 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .eyebrow {
       display: block;
       margin: 0 0 8px 2px;
-      font-family: var(--font-mono);
-      font-size: .7rem;
+      font-family: var(--font-main);
+      font-size: .76rem;
       line-height: 1.3;
-      letter-spacing: .08em;
+      letter-spacing: .035em;
       color: var(--muted);
-      text-transform: uppercase;
     }
     .lookup-control {
       display: flex;
@@ -847,7 +846,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       color: var(--ink);
       padding: 13px 14px;
       border-radius: var(--radius-sm);
-      font-family: var(--font-body);
+      font-family: var(--font-main);
     }
     .lookup input {
       min-width: 0;
@@ -867,9 +866,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
       color: #fffaf5;
       padding: 11px 15px;
       border-radius: var(--radius-sm);
-      font-family: var(--font-body);
-      font-size: .9rem;
-      font-weight: 600;
+      font-family: var(--font-main);
+      font-size: .92rem;
+      font-weight: 500;
       text-decoration: none;
       white-space: nowrap;
     }
@@ -899,10 +898,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .paper-id {
       margin: 0 0 12px;
       color: var(--annotation);
-      font-family: var(--font-mono);
-      font-size: .7rem;
+      font-family: var(--font-main);
+      font-size: .78rem;
       line-height: 1.3;
-      letter-spacing: .045em;
+      letter-spacing: .015em;
     }
 
     .paper-summary h1 {
@@ -966,8 +965,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
       padding: 8px 12px;
       border-radius: 7px;
       color: var(--muted);
-      font-size: .86rem;
-      font-weight: 500;
+      font-size: .9rem;
+      font-weight: 400;
       text-decoration: none;
     }
     .paper-tabs a.active {
@@ -982,8 +981,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
       justify-content: flex-end;
       margin-bottom: 8px;
       color: var(--muted);
-      font-family: var(--font-mono);
-      font-size: .68rem;
+      font-family: var(--font-main);
+      font-size: .76rem;
     }
 
     .signin-box,
@@ -1046,14 +1045,14 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .comment-head a {
       color: var(--ink);
-      font-weight: 650;
+      font-weight: 600;
       text-decoration: none;
     }
     .comment-head span,
     .comment-head time {
       color: #8a867e;
-      font-family: var(--font-mono);
-      font-size: .67rem;
+      font-family: var(--font-main);
+      font-size: .73rem;
     }
     .comment-body {
       margin: 9px 0 10px;
