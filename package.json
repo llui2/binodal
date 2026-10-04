@@ -1,10 +1,10 @@
 {
-  "name": "papr",
+  "name": "trails",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "setup": "npm install && wrangler d1 execute DB --remote --file=./schema.sql && wrangler deploy",
+    "setup": "npm install && wrangler d1 create trails --binding DB --update-config && wrangler d1 execute DB --remote --file=./schema.sql && wrangler deploy",
     "dev": "wrangler dev",
     "deploy": "wrangler d1 execute DB --remote --file=./schema.sql && wrangler deploy",
     "db:migrate": "wrangler d1 execute DB --local --file=./schema.sql",
