@@ -1,3 +1,3 @@
-name = "bluepaper"
+name = "paper-tool"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
