@@ -1128,6 +1128,13 @@ async function fetchPaperFromCrossref(doi: string, storageId = `doi:${doi.toLowe
     url: publisherUrl,
   });
 
+  try {
+    const arxiv = await fetchArxivIdentifierForDoi(normalizedDoi);
+    if (arxiv) identifiers.push(arxiv);
+  } catch (error) {
+    console.warn("Could not resolve Crossref DOI to arXiv", error);
+  }
+
   return {
     paper: {
       arxiv_id: storageId,
