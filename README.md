@@ -1,6 +1,8 @@
-# research paper tool
+# trails
 
-Small beta for opening scientific papers and keeping activity around them in one place.
+*Through the maze.*
+
+Beta for opening scientific papers and keeping activity around them in one place.
 
 Current scope:
 
@@ -13,31 +15,21 @@ Current scope:
 
 References and related-paper indexing are not implemented yet.
 
-## Development
+## Setup
 
 Requirements: Node.js and a Cloudflare account.
 
 ```bash
-npm install
+npm run setup
 ```
 
-Create a D1 database and bind it as `DB`:
+This installs dependencies, creates the `trails` D1 database, initializes it, and deploys the Worker.
+
+Configure ORCID after the first deployment:
 
 ```bash
-npx wrangler d1 create papr --binding DB --update-config
-```
-
-Initialize the database:
-
-```bash
-npm run db:migrate
-```
-
-Configure ORCID:
-
-```bash
-npx wrangler secret put ORCID_CLIENT_ID
-npx wrangler secret put ORCID_CLIENT_SECRET
+npx wrangler secret put ORCID_CLIENT_ID --name trails
+npx wrangler secret put ORCID_CLIENT_SECRET --name trails
 ```
 
 For local development, use `.dev.vars`:
@@ -54,16 +46,16 @@ Run locally:
 npm run dev
 ```
 
+Deploy later changes:
+
+```bash
+npm run deploy
+```
+
 Type-check:
 
 ```bash
 npm run typecheck
-```
-
-Deploy:
-
-```bash
-npm run deploy
 ```
 
 ## Routes
