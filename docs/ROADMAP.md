@@ -1,6 +1,6 @@
-# Roadmap
+# Trails roadmap
 
-This document records the current implementation sequence for the tool. It is intentionally ordered around learning value: each step should make the product more useful while producing evidence for whether the next layer is justified.
+This document records the current implementation sequence for trails. It is intentionally ordered around learning value: each step should make the product more useful while producing evidence for whether the next layer is justified.
 
 The product principles remain the governing document. This roadmap is a working implementation order, not a commitment to ship every item.
 
@@ -28,7 +28,7 @@ Allow lookup by more than an arXiv identifier:
 - DOI
 - arXiv URL or ID
 
-The paper should eventually have a the tool-internal identity with external identifiers attached to it, rather than treating the arXiv ID as the permanent primary identity.
+The paper should eventually have a trails-internal identity with external identifiers attached to it, rather than treating the arXiv ID as the permanent primary identity.
 
 Why first: this removes the largest entry-point friction without changing the product model.
 
@@ -36,7 +36,7 @@ Why first: this removes the largest entry-point friction without changing the pr
 
 Make the References view real.
 
-Each reference should be compact, resolvable where possible, and open into its own the tool paper record. This creates the first useful literature graph inside the tool.
+Each reference should be compact, resolvable where possible, and open into its own trails paper record. This creates the first useful literature graph inside trails.
 
 Why next: references immediately turn a paper page from a destination into a navigation object.
 
@@ -76,7 +76,7 @@ A minimal activity record should support:
 - timestamp
 - optional parent activity
 
-This is deliberately generic. The URL can point to code, data, another paper, a derivation, replication, response, visualization, or other scientific material without the tool imposing a taxonomy prematurely.
+This is deliberately generic. The URL can point to code, data, another paper, a derivation, replication, response, visualization, or other scientific material without trails imposing a taxonomy prematurely.
 
 A likely model is:
 
@@ -104,7 +104,7 @@ A minimal page should show:
 
 Avoid follower counts, badges, reputation scores, or prestige metrics.
 
-Why: this starts connecting papers to people without turning the tool into a conventional social network.
+Why: this starts connecting papers to people without turning trails into a conventional social network.
 
 ### 7. Research sessions
 
@@ -131,7 +131,7 @@ Goal: replace browser-tab chaos with a persistent, navigable record of a researc
 
 ### 8. Personalized discovery
 
-Only after the earlier layers exist should the tool build a personalized feed or priority system.
+Only after the earlier layers exist should trails build a personalized feed or priority system.
 
 Possible inputs:
 
@@ -147,7 +147,7 @@ The question is not "what maximizes engagement?" but:
 
 > What new work is probably worth this researcher's attention?
 
-Where practical, the tool should expose why an item appeared and eventually allow researchers to modify ranking rules.
+Where practical, trails should expose why an item appeared and eventually allow researchers to modify ranking rules.
 
 ## Infrastructure work to add early
 
