@@ -1,48 +1,115 @@
-# Scholia
+<p align="center">
+  <img src="assets/scholia-logo.svg" width="104" alt="Scholia">
+</p>
 
-An open discussion layer for scientific papers.
+<h1 align="center">Scholia</h1>
 
-Scholia keeps papers where they already live and adds a persistent public discussion around them. The first version is intentionally small: resolve an arXiv paper, sign in with ORCID, and discuss it.
+<p align="center"><strong>A public record of scientific activity around papers.</strong></p>
 
-## Stack
+<p align="center">
+  <a href="https://scholia.llui2.workers.dev">scholia.llui2.workers.dev</a>
+</p>
 
-- Cloudflare Workers
-- Cloudflare D1
-- ORCID OAuth
-- arXiv metadata API
+## About
 
-## Local setup
+Scholia is open, researcher-first infrastructure for finding scientific work and interacting around it.
+
+The paper remains the stable reference. Scholia records what develops around it: discussion, clarification, connections, follow-up work, and the researchers engaging with it. The aim is a durable public scientific record rather than another feed, publisher workflow, or generic comment section.
+
+The current beta is intentionally small. It starts with arXiv papers and ORCID identity so the basic interaction can be tested before imposing richer structures.
+
+## Current beta
+
+- Resolve an arXiv ID or URL into a Scholia paper page.
+- Fetch and cache paper metadata from arXiv.
+- Read discussion without an account.
+- Sign in with ORCID to contribute under a persistent scientific identity.
+- Post threaded public comments.
+- Navigate paper-level views for discussion, references, and related work.
+- Store application data in Cloudflare D1.
+
+References and related-paper indexing are not implemented yet.
+
+## Principles
+
+Scholia is built for researchers rather than publishers, advertisers, or engagement metrics.
+
+- **Researchers are the primary actors.** Papers provide a shared coordinate system for scientific interaction.
+- **Scientific usefulness comes before engagement.** Ranking should help decide what deserves attention, not maximize time on site.
+- **Participation should stay lightweight.** A useful contribution should not always require writing a post.
+- **Algorithms should be inspectable.** Discovery and recommendation should be understandable and controllable where practical.
+- **Public contributions should remain durable.** Prefer open identifiers, addressable records, exportable data, and minimal lock-in.
+- **AI should reduce search and coordination costs.** It should reconnect researchers with papers and people rather than replace scientific interaction.
+
+The longer product direction is documented in [`docs/PRODUCT_PRINCIPLES.md`](docs/PRODUCT_PRINCIPLES.md).
+
+## Architecture
+
+```mermaid
+flowchart LR
+    B[Browser] --> W[Cloudflare Worker]
+    W --> D[(D1)]
+    W --> A[arXiv]
+    W --> O[ORCID]
+```
+
+| Component | Role |
+| --- | --- |
+| Cloudflare Workers | Application and HTTP layer |
+| Cloudflare D1 | Papers, users, sessions, and discussion |
+| arXiv | Canonical paper metadata and source links |
+| ORCID OAuth | Persistent researcher identity |
+| TypeScript | Application implementation |
+
+The Worker serves both the HTML interface and the small JSON/API surface. Paper metadata is cached locally after the first lookup.
+
+## Development
+
+Requirements: Node.js and a Cloudflare account.
 
 ```bash
+git clone https://github.com/llui2/scholia.git
+cd scholia
 npm install
+```
+
+Create a D1 database:
+
+```bash
 npx wrangler d1 create scholia
 ```
 
-Copy the returned D1 database id into `wrangler.toml`, then initialize the database:
+Add the returned database ID to `wrangler.toml`, then initialize the local database:
 
 ```bash
 npm run db:migrate
 ```
 
-Register an ORCID OAuth client and set the secrets:
+Register an ORCID OAuth client and configure:
 
 ```bash
 npx wrangler secret put ORCID_CLIENT_ID
 npx wrangler secret put ORCID_CLIENT_SECRET
 ```
 
-For local development, put non-secret values in `.dev.vars`:
+For local development, use `.dev.vars`:
 
-```
+```dotenv
 ORCID_CLIENT_ID=...
 ORCID_CLIENT_SECRET=...
 ORCID_REDIRECT_URI=http://localhost:8787/auth/orcid/callback
 ```
 
-Run:
+Run locally:
 
 ```bash
 npm run dev
+```
+
+Type-check:
+
+```bash
+npm run typecheck
 ```
 
 Deploy:
@@ -51,32 +118,31 @@ Deploy:
 npm run deploy
 ```
 
-For production, configure `ORCID_REDIRECT_URI` as a Worker variable or use the default `<origin>/auth/orcid/callback`.
+For production, `ORCID_REDIRECT_URI` can be configured explicitly or left unset to use `<origin>/auth/orcid/callback`.
 
-## Current routes
+## Routes
 
-- `/` — paper lookup
-- `/p/:arxivId` — paper + discussion
-- `/auth/orcid` — ORCID sign-in
-- `/auth/orcid/callback` — OAuth callback
-- `/logout`
-- `/api/comments` — create a comment
-- `/health`
+| Route | Purpose |
+| --- | --- |
+| `/` | Paper lookup |
+| `/p/:arxivId` | Paper record and activity |
+| `/auth/orcid` | Start ORCID authentication |
+| `/auth/orcid/callback` | ORCID OAuth callback |
+| `/logout` | End the current session |
+| `/api/papers/:id` | Paper metadata |
+| `/api/comments` | Create a comment |
+| `/health` | Service health |
 
-## Principles
+## Direction
 
-Scholia is researcher-first infrastructure for discovering, understanding, and interacting around scientific work.
+The beta begins with discussion because it is the smallest useful public interaction around a paper. The larger model is:
 
-1. Papers remain where they already live; Scholia adds a public record around them.
-2. Researchers and scientific interaction are the primary actors and value.
-3. Participation should be low-friction and structured where useful; long-form discussion is secondary.
-4. Discovery should prioritize relevance rather than virality or time spent on the platform.
-5. Ranking and recommendation should be inspectable and controllable where practical.
-6. Agent features should reduce search and coordination costs while strengthening researcher-to-researcher interaction.
-7. Prefer open identifiers, exportable public contributions, and minimal platform lock-in.
+**Discover → Understand → Interact**
 
-See [docs/PRODUCT_PRINCIPLES.md](docs/PRODUCT_PRINCIPLES.md) for the full product direction.
+Future work may include lightweight scientific signals, links to code and data, references and related-work structure, personalized literature prioritization, research sessions, researcher connections, transparent ranking, and agent-assisted literature monitoring.
+
+These are directions rather than commitments. The product should remain small until real researcher behavior justifies additional structure.
 
 ## License
 
-MIT
+[MIT](LICENSE)
