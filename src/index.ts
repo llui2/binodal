@@ -15,6 +15,21 @@ interface Paper {
   updated_at: string | null;
 }
 
+type PaperIdentifierType = "arxiv" | "doi" | "url";
+
+interface PaperIdentifier {
+  type: PaperIdentifierType;
+  value: string;
+  paper_id?: string;
+  label: string | null;
+  url: string;
+}
+
+interface FetchedPaper {
+  paper: Paper;
+  identifiers: PaperIdentifier[];
+}
+
 interface User {
   id: number;
   orcid: string;
