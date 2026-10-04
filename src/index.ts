@@ -1245,7 +1245,10 @@ function normalizePaperInput(raw: string): string | null {
   }
 
   const doi = normalizeDoiInput(value);
-  if (doi) return `doi:${doi}`;
+  if (doi) {
+    const arxivFromDoi = arxivIdFromDoi(doi);
+    return arxivFromDoi ?? `doi:${doi}`;
+  }
 
   const url = normalizePaperUrl(value);
   return url ? `url:${encodeURIComponent(url)}` : null;
@@ -1280,6 +1283,11 @@ function normalizeDoiInput(raw: string): string | null {
 
   const embedded = value.match(/10\.\d{4,9}\/[^\s"'<>]+/i)?.[0];
   return embedded ? embedded.replace(/[\s.]+$/, "").toLowerCase() : null;
+}
+
+function arxivIdFromDoi(doi: string): string | null {
+  const match = doi.match(/^10\.48550\/arxiv\.(.+)$/i);
+  return match ? normalizeArxivInput(match[1]) : null;
 }
 
 function normalizePaperUrl(raw: string): string | null {
@@ -1344,46 +1352,6 @@ function normalizeAuthorName(raw: string): string {
   }
 
   return value;
-}
-
-function paperSource(paperId: string): {
-  kind: "arxiv" | "doi" | "url";
-  idLabel: string;
-  url: string;
-  openLabel: string;
-} {
-  if (paperId.startsWith("doi:")) {
-    const doi = paperId.slice(4);
-    return {
-      kind: "doi",
-      idLabel: `DOI:${doi}`,
-      url: `https://doi.org/${doi}`,
-      openLabel: "open DOI ↗",
-    };
-  }
-
-  if (paperId.startsWith("url:")) {
-    const url = decodeUrlPaperId(paperId) ?? "#";
-    let label = "source";
-    try {
-      label = new URL(url).hostname.replace(/^www\./, "");
-    } catch {
-      // Keep the generic source label.
-    }
-    return {
-      kind: "url",
-      idLabel: label,
-      url,
-      openLabel: "open source ↗",
-    };
-  }
-
-  return {
-    kind: "arxiv",
-    idLabel: `arXiv:${paperId}`,
-    url: `https://arxiv.org/abs/${encodeURIComponent(paperId)}`,
-    openLabel: "open on arXiv ↗",
-  };
 }
 
 function extractTag(xml: string, tag: string): string {
