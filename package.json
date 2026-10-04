@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "setup": "npm install && wrangler d1 execute DB --remote --file=./schema.sql && wrangler deploy",
     "dev": "wrangler dev",
     "deploy": "wrangler d1 execute DB --remote --file=./schema.sql && wrangler deploy",
     "db:migrate": "wrangler d1 execute DB --local --file=./schema.sql",
