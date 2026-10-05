@@ -8,7 +8,7 @@
       "name": "trails-local",
       "source": {
         "source": "local",
-        "path": "./plugins/trails-local"
+        "path": "./trails-local"
       },
       "policy": {
         "installation": "AVAILABLE",
