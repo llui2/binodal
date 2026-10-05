@@ -7,8 +7,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..");
 const source = join(repoRoot, "plugins", "trails-local");
 const home = homedir();
-const destination = join(home, ".codex", "plugins", "trails-local");
-const marketplacePath = join(home, ".agents", "plugins", "marketplace.json");
+const marketplaceRoot = join(home, ".agents", "plugins");
+const destination = join(marketplaceRoot, "trails-local");
+const marketplacePath = join(marketplaceRoot, "marketplace.json");
 
 await mkdir(dirname(destination), { recursive: true });
 await rm(destination, { recursive: true, force: true });
@@ -34,7 +35,7 @@ marketplace.plugins.push({
   name: "trails-local",
   source: {
     source: "local",
-    path: "./.codex/plugins/trails-local",
+    path: "./trails-local",
   },
   policy: {
     installation: "AVAILABLE",
