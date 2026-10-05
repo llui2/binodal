@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "trails": {
+      "type": "http",
+      "url": "https://trails.llui2.workers.dev/mcp"
+    }
+  }
+}
