@@ -1418,14 +1418,16 @@ async function fetchPaperFromGoogleScholarUrl(sourceUrl: string, storageId: stri
     }
   }
 
+  const scholarFetchUrl = canonicalScholarFetchUrl(url);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 3500);
 
   try {
-    const response = await fetch(sourceUrl, {
+    const response = await fetch(scholarFetchUrl, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; trails/0.1; scholarly metadata resolver)",
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36",
         Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.8",
       },
       redirect: "follow",
       signal: controller.signal,
@@ -1457,6 +1459,19 @@ async function fetchPaperFromGoogleScholarUrl(sourceUrl: string, storageId: stri
     clearTimeout(timeout);
   }
 
+  const citationId = scholarCitationId(url);
+  if (citationId) {
+    try {
+      const profileTitle = await fetchScholarProfileCitationTitle(citationId);
+      if (profileTitle) {
+        const resolved = await resolveScholarMetadata(profileTitle, [], storageId, sourceUrl);
+        if (resolved) return resolved;
+      }
+    } catch (error) {
+      console.warn("Google Scholar profile fallback failed", error);
+    }
+  }
+
   if (query) {
     const crossref = await fetchPaperFromCrossrefSearch(query, storageId, sourceUrl);
     if (crossref) return crossref;
@@ -1465,6 +1480,68 @@ async function fetchPaperFromGoogleScholarUrl(sourceUrl: string, storageId: stri
   throw new Error(
     "Could not resolve this Google Scholar link to a paper. Paste a Scholar lookup/result link with a title, or the paper DOI, arXiv link, or publisher page.",
   );
+}
+
+function scholarCitationId(url: URL): string | null {
+  const value = decodeURIComponentSafe(url.searchParams.get("citation_for_view") ?? "").trim();
+  return /^[A-Za-z0-9_-]+:[A-Za-z0-9_-]+$/.test(value) ? value : null;
+}
+
+function canonicalScholarFetchUrl(url: URL): string {
+  const citationId = scholarCitationId(url);
+  if (!citationId) return url.toString();
+
+  const canonical = new URL("https://scholar.google.com/citations");
+  canonical.searchParams.set("view_op", "view_citation");
+  canonical.searchParams.set("hl", "en");
+  canonical.searchParams.set("citation_for_view", citationId);
+  return canonical.toString();
+}
+
+async function fetchScholarProfileCitationTitle(citationId: string): Promise<string | null> {
+  const authorId = citationId.split(":", 1)[0];
+  if (!authorId) return null;
+
+  const profileUrl = new URL("https://scholar.google.com/citations");
+  profileUrl.searchParams.set("user", authorId);
+  profileUrl.searchParams.set("hl", "en");
+  profileUrl.searchParams.set("pagesize", "100");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2500);
+
+  try {
+    const response = await fetch(profileUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.8",
+      },
+      redirect: "follow",
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+
+    const html = await response.text();
+    for (const match of html.matchAll(
+      /<a[^>]+class=["'][^"']*gsc_a_at[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+    )) {
+      const href = decodeHtmlEntities(match[1]);
+      let candidate: URL;
+      try {
+        candidate = new URL(href, "https://scholar.google.com");
+      } catch {
+        continue;
+      }
+      if (scholarCitationId(candidate) !== citationId) continue;
+
+      const title = cleanHtmlText(match[2]).trim();
+      if (title) return title;
+    }
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function scholarTargetUrl(url: URL): string | null {
