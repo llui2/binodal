@@ -1399,16 +1399,27 @@ async function fetchPaperFromGoogleScholarUrl(sourceUrl: string, storageId: stri
     return fetchPaperFromUrl(nested, storageId);
   }
 
+  const metadata = scholarMetadataFromUrl(url);
+  if (metadata.title) {
+    const resolved = await resolveScholarMetadata(
+      metadata.title,
+      metadata.authors,
+      storageId,
+      sourceUrl,
+    );
+    if (resolved) return resolved;
+  }
+
   const query = cleanScholarQuery(url.searchParams.get("q") ?? "");
   if (query) {
     const direct = normalizePaperInput(query);
     if (direct && !direct.startsWith("url:")) {
-      return fetchPaperByInput(direct);
+      return addPaperSourceIdentifier(await fetchPaperByInput(direct), sourceUrl);
     }
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const timeout = setTimeout(() => controller.abort(), 3500);
 
   try {
     const response = await fetch(sourceUrl, {
@@ -1425,14 +1436,19 @@ async function fetchPaperFromGoogleScholarUrl(sourceUrl: string, storageId: stri
       const result = firstGoogleScholarResult(html);
       if (result?.url) {
         try {
-          return await fetchPaperFromUrl(result.url, storageId);
+          return addPaperSourceIdentifier(await fetchPaperFromUrl(result.url, storageId), sourceUrl);
         } catch (error) {
           console.warn("Scholar result target lookup failed", error);
         }
       }
       if (result?.title) {
-        const crossref = await fetchPaperFromCrossrefSearch(result.title, storageId, sourceUrl);
-        if (crossref) return crossref;
+        const resolved = await resolveScholarMetadata(
+          result.title,
+          result.authors,
+          storageId,
+          sourceUrl,
+        );
+        if (resolved) return resolved;
       }
     }
   } catch (error) {
@@ -1447,7 +1463,7 @@ async function fetchPaperFromGoogleScholarUrl(sourceUrl: string, storageId: stri
   }
 
   throw new Error(
-    "This Google Scholar link does not expose enough paper information. Open the result itself and copy its title link, DOI, or arXiv link.",
+    "Could not resolve this Google Scholar link to a paper. Paste a Scholar lookup/result link with a title, or the paper DOI, arXiv link, or publisher page.",
   );
 }
 
@@ -1466,6 +1482,71 @@ function scholarTargetUrl(url: URL): string | null {
   return null;
 }
 
+function scholarMetadataFromUrl(url: URL): { title: string; authors: string[] } {
+  const title = [
+    url.searchParams.get("title"),
+    url.searchParams.get("citation_title"),
+    url.searchParams.get("as_epq"),
+  ]
+    .map((value) => cleanScholarQuery(value ?? ""))
+    .find(Boolean) ?? "";
+
+  const authors = [
+    ...url.searchParams.getAll("author"),
+    ...url.searchParams.getAll("citation_author"),
+    url.searchParams.get("as_sauthors") ?? "",
+  ]
+    .map((value) => decodeURIComponentSafe(value).replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+  return { title, authors };
+}
+
+async function resolveScholarMetadata(
+  title: string,
+  authors: string[],
+  storageId: string,
+  sourceUrl: string,
+): Promise<FetchedPaper | null> {
+  const direct = normalizePaperInput(title);
+  if (direct && !direct.startsWith("url:")) {
+    try {
+      return addPaperSourceIdentifier(await fetchPaperByInput(direct), sourceUrl);
+    } catch (error) {
+      console.warn("Direct Scholar metadata lookup failed", error);
+    }
+  }
+
+  try {
+    const crossref = await fetchPaperFromCrossrefSearch(title, storageId, sourceUrl, authors);
+    if (crossref) return crossref;
+  } catch (error) {
+    console.warn("Crossref Scholar metadata lookup failed", error);
+  }
+
+  try {
+    const arxiv = await findArxivByTitleAndAuthors(title, authors);
+    if (arxiv) {
+      return addPaperSourceIdentifier(await fetchPaperByInput(arxiv.value), sourceUrl);
+    }
+  } catch (error) {
+    console.warn("arXiv Scholar metadata lookup failed", error);
+  }
+
+  return null;
+}
+
+function addPaperSourceIdentifier(fetched: FetchedPaper, sourceUrl: string): FetchedPaper {
+  fetched.identifiers.push({
+    type: "url",
+    value: sourceUrl,
+    label: sourceHost(sourceUrl),
+    url: sourceUrl,
+  });
+  fetched.identifiers = dedupeIdentifiers(fetched.identifiers);
+  return fetched;
+}
+
 function cleanScholarQuery(raw: string): string {
   return decodeURIComponentSafe(raw)
     .replace(/^allintitle:\s*/i, "")
@@ -1475,14 +1556,37 @@ function cleanScholarQuery(raw: string): string {
     .trim();
 }
 
-function firstGoogleScholarResult(html: string): { title: string; url: string | null } | null {
+function firstGoogleScholarResult(
+  html: string,
+): { title: string; url: string | null; authors: string[] } | null {
+  const citationTitle = cleanHtmlText(metaContent(html, "citation_title"));
+  const citationAuthors = metaContents(html, "citation_author")
+    .map(normalizeAuthorName)
+    .filter(Boolean);
+  if (citationTitle) {
+    const citationUrl =
+      normalizePaperUrl(metaContent(html, "citation_public_url")) ||
+      normalizePaperUrl(metaContent(html, "citation_pdf_url"));
+    return { title: citationTitle, url: citationUrl, authors: citationAuthors };
+  }
+
+  const detail = html.match(
+    /<[^>]+(?:id=["']gsc_oci_title["']|class=["'][^"']*gsc_oci_title_link[^"']*["'])[^>]*>([\s\S]*?)<\/[^>]+>/i,
+  )?.[0];
+  if (detail) {
+    const anchor = detail.match(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+    const title = cleanHtmlText(anchor?.[2] ?? detail).trim();
+    const target = anchor?.[1] ? normalizePaperUrl(decodeHtmlEntities(anchor[1])) : null;
+    if (title) return { title, url: target, authors: citationAuthors };
+  }
+
   const block = html.match(/<h3[^>]*class=["'][^"']*gs_rt[^"']*["'][^>]*>([\s\S]*?)<\/h3>/i)?.[1];
   if (!block) return null;
 
   const anchor = block.match(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
   const title = cleanHtmlText(anchor?.[2] ?? block).replace(/^\[[^\]]+\]\s*/, "").trim();
-  const url = anchor?.[1] ? normalizePaperUrl(decodeHtmlEntities(anchor[1])) : null;
-  return title ? { title, url } : null;
+  const target = anchor?.[1] ? normalizePaperUrl(decodeHtmlEntities(anchor[1])) : null;
+  return title ? { title, url: target, authors: [] } : null;
 }
 
 async function fetchPaperFromCrossrefAlternativeId(
