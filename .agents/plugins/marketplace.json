@@ -1,0 +1,20 @@
+{
+  "name": "trails-dev",
+  "interface": {
+    "displayName": "Trails Development"
+  },
+  "plugins": [
+    {
+      "name": "trails-local",
+      "source": {
+        "source": "local",
+        "path": "./plugins/trails-local"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
