@@ -1745,16 +1745,7 @@ function metaContent(html: string, name: string): string {
 }
 
 function metaContents(html: string, name: string): string[] {
-  const escaped = name.replace(/[.*+?^$()|[\\]{}]/g, "\\function metaContents(html: string, name: string): string[] {
-  const escaped = name;
-  const pattern = new RegExp(
-    `<meta[^>]+name=["']${escaped}["'][^>]+content=["']([\\s\\S]*?)["'][^>]*>`,
-    "gi",
-  );
-  return [...html.matchAll(pattern)]
-    .map((match) => decodeHtmlEntities(match[1]).trim())
-    .filter(Boolean);
-}");
+  const escaped = name.replace(/[.*+?^$()|[\]{}]/g, "\$&");
   const patterns = [
     new RegExp(`<meta[^>]+name=["']${escaped}["'][^>]+content=["']([\\s\\S]*?)["'][^>]*>`, "gi"),
     new RegExp(`<meta[^>]+content=["']([\\s\\S]*?)["'][^>]+name=["']${escaped}["'][^>]*>`, "gi"),
