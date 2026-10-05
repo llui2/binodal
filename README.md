@@ -1,5 +1,5 @@
 <h1>
-  <img src="assets/trails-logo.png" width="44" alt="Trails logo">
+  <img src="assets/trails-logo.svg" width="44" alt="Trails logo">
   trails
 </h1>
 
