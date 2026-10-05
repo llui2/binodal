@@ -119,11 +119,11 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
 
 
-  if (request.method === "GET" && path === "/favicon.svg") {
+  if (request.method === "GET" && path === "/trails-logo.svg") {
     return new Response(TRAILS_LOGO_SVG, {
       headers: {
         "Content-Type": "image/svg+xml; charset=utf-8",
-        "Cache-Control": "public, max-age=604800, immutable",
+        "Cache-Control": "no-store, max-age=0",
       },
     });
   }
@@ -1484,7 +1484,7 @@ function decodeXmlEntities(value: string): string {
 
 function renderBrand(): string {
   return `<a class="brand" href="/" aria-label="trails home">
-    <img class="brand-mark" src="/favicon.svg" alt="" aria-hidden="true">
+    <img class="brand-mark" src="/trails-logo.svg?v=3" alt="" aria-hidden="true">
     <span>trails</span>
   </a>`;
 }
@@ -1509,7 +1509,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#F7F4ED">
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/trails-logo.svg?v=3" type="image/svg+xml">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400..700&display=swap">
   <title>${escapeHtml(title)}</title>
   <style>
