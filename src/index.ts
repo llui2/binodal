@@ -7,6 +7,7 @@ interface Env {
   ORCID_CLIENT_SECRET: string;
   ORCID_REDIRECT_URI?: string;
   ORCID_BASE_URL?: string;
+  OPENAI_APPS_CHALLENGE?: string;
 }
 
 interface Paper {
@@ -98,6 +99,47 @@ async function route(request: Request, env: Env): Promise<Response> {
   const mcpMatch = path.match(/^\/mcp\/([a-f0-9]{24,48})$/);
   if (mcpMatch) {
     return handleTrailMcp(request, env, mcpMatch[1]);
+  }
+
+  if (request.method === "GET" && path === "/.well-known/openai-apps-challenge") {
+    const token = env.OPENAI_APPS_CHALLENGE?.trim();
+    if (!token) return new Response("Not configured", { status: 404 });
+    return new Response(token, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  if (request.method === "GET" && path === "/support") {
+    return renderPolicyPage(
+      "Support",
+      `<p>Trails is an experimental research tool for building and revisiting research paths.</p>
+       <p>For bugs, connection problems, or feature requests, use the project issue tracker.</p>
+       <p><a href="https://github.com/llui2/trails/issues">github.com/llui2/trails/issues ↗</a></p>`,
+    );
+  }
+
+  if (request.method === "GET" && path === "/privacy") {
+    return renderPolicyPage(
+      "Privacy",
+      `<p>Trails stores the information needed to provide the service, including research trails and their items, paper metadata, discussion content, and account information when you sign in with ORCID.</p>
+       <p>Trails uses a browser cookie to keep the current research trail associated with your browser. A private trail key can also grant access to a specific trail through integrations, so it should be treated as a secret.</p>
+       <p>When Trails resolves a paper identifier or URL, it may contact the corresponding public scholarly service or publication page to retrieve metadata. Authentication through ORCID is handled through ORCID's authorization flow.</p>
+       <p>Do not put confidential, regulated, or sensitive personal information into a trail while the service remains experimental.</p>
+       <p>Questions or removal requests can be filed through the project issue tracker.</p>`,
+    );
+  }
+
+  if (request.method === "GET" && path === "/terms") {
+    return renderPolicyPage(
+      "Terms",
+      `<p>Trails is experimental research software provided for academic and research use. Features, storage formats, integrations, and availability may change while the project is under active development.</p>
+       <p>You are responsible for the material you add to Trails and for respecting applicable copyright, confidentiality, institutional, and data-protection requirements.</p>
+       <p>Do not rely on Trails as the sole copy of important research records. The service is provided without a guarantee of uninterrupted availability or permanent preservation.</p>
+       <p>Automated research tools may add or modify trail entries only when invoked through the available integration interfaces. Review important research decisions and source material independently.</p>`,
+    );
   }
 
   if (request.method === "GET" && path === "/") {
@@ -205,6 +247,20 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
 
   return notFound("Page not found.");
+}
+
+function renderPolicyPage(title: string, body: string): Response {
+  return htmlPage(
+    title.toLowerCase(),
+    `<header class="topbar">
+      ${renderBrand()}
+    </header>
+    <main class="shell utility-page">
+      <a class="back" href="/">← trails</a>
+      <h1>${escapeHtml(title)}</h1>
+      <div class="policy-copy">${body}</div>
+    </main>`,
+  );
 }
 
 async function renderHome(request: Request, env: Env): Promise<Response> {
@@ -3717,6 +3773,15 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .utility-page {
+  max-width: 720px;
+}
+.policy-copy {
+  max-width: 680px;
+  line-height: 1.65;
+}
+.policy-copy p + p {
+  margin-top: 1rem;
+}
       padding: 15vh 0 80px;
       max-width: 720px;
     }
