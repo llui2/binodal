@@ -1915,11 +1915,11 @@ function normalizePaperUrl(raw: string): string | null {
     if (url.protocol !== "https:") return null;
     url.hash = "";
 
-    for (const key of [...url.searchParams.keys()]) {
-      if (/^(?:utm_.+|gclid|fbclid|mc_cid|mc_eid)$/i.test(key)) {
-        url.searchParams.delete(key);
-      }
-    }
+    const trackingKeys: string[] = [];
+    url.searchParams.forEach((_value, key) => {
+      if (/^(?:utm_.+|gclid|fbclid|mc_cid|mc_eid)$/i.test(key)) trackingKeys.push(key);
+    });
+    for (const key of trackingKeys) url.searchParams.delete(key);
 
     const normalized = url.toString();
     return isSafePaperUrl(normalized) ? normalized : null;
