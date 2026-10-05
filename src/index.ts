@@ -2129,8 +2129,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#F7F4ED">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f7f4ed" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1d1e1c" media="(prefers-color-scheme: dark)">
   <link rel="icon" href="/trails-logo.svg?v=3" type="image/svg+xml">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400..700&display=swap">
   <title>${escapeHtml(title)}</title>
@@ -2143,6 +2144,16 @@ function htmlPage(title: string, body: string, status = 200): Response {
       --muted: #77736c;
       --wash: #ebe6dc;
       --surface: rgba(255, 255, 255, .52);
+      --field: #fbf9f3;
+      --field-muted: #ece7dc;
+      --field-focus: #f3ede3;
+      --button-ink: #fffaf5;
+      --soft: #8a867e;
+      --body-muted: #625f58;
+      --body-soft: #59564f;
+      --signin: #5f5b54;
+      --notice-bg: #e3eaf0;
+      --notice-ink: #3d5569;
 
       --font-main: "Source Serif 4", Georgia, serif;
 
@@ -2158,6 +2169,32 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-weight: 500;
       font-kerning: normal;
       text-rendering: optimizeLegibility;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --paper: #1d1e1c;
+        --ink: #e7e2d8;
+        --annotation: #7e9fbd;
+        --stone: #76756f;
+        --muted: #aaa59b;
+        --wash: #292a26;
+        --surface: rgba(255, 255, 255, .035);
+        --field: #252622;
+        --field-muted: #292a26;
+        --field-focus: #30312c;
+        --button-ink: #f7f4ed;
+        --soft: #969289;
+        --body-muted: #c5c0b6;
+        --body-soft: #bbb6ac;
+        --signin: #b9b4aa;
+        --notice-bg: #26333e;
+        --notice-ink: #adc4d7;
+      }
+
+      .brand-mark {
+        filter: brightness(1.75) saturate(.72);
+      }
     }
 
     * { box-sizing: border-box; }
@@ -2244,7 +2281,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       width: 100%;
       border: 0;
       outline: 0;
-      background: #fbf9f3;
+      background: var(--field);
       color: var(--ink);
       padding: 13px 14px;
       border-radius: var(--radius-sm);
@@ -2252,12 +2289,12 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .lookup input {
       min-width: 0;
-      background: #ece7dc;
+      background: var(--field-muted);
       padding: 13px 14px;
     }
     input:focus-visible,
     textarea:focus-visible {
-      background: #f3ede3;
+      background: var(--field-focus);
     }
     textarea { resize: vertical; }
 
@@ -2265,7 +2302,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .button-link {
       border: 0;
       background: var(--annotation);
-      color: #fffaf5;
+      color: var(--button-ink);
       padding: 11px 16px;
       border-radius: 2px;
       font-family: var(--font-main);
@@ -2276,7 +2313,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     button:hover,
     .button-link:hover {
-      color: #fffaf5;
+      color: var(--button-ink);
       filter: brightness(.96);
     }
 
@@ -2337,7 +2374,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
     .paper-doi {
       margin: 12px 0 0;
-      color: #8a867e;
+      color: var(--soft);
       font-size: .68rem;
       line-height: 1.25;
       overflow-wrap: anywhere;
@@ -2358,7 +2395,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .authors {
       margin: 20px 0 0;
       max-width: 720px;
-      color: #625f58;
+      color: var(--body-muted);
       font-size: .98rem;
       font-weight: 520;
       line-height: 1.55;
@@ -2367,7 +2404,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .abstract-disclosure {
       max-width: 720px;
       margin-top: 20px;
-      color: #59564f;
+      color: var(--body-soft);
     }
     .abstract-disclosure summary {
       cursor: pointer;
@@ -2425,7 +2462,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .signin-plain p {
       margin: 0;
-      color: #5f5b54;
+      color: var(--signin);
       font-size: .95rem;
     }
 
@@ -2482,7 +2519,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .comment-head span,
     .comment-head time {
-      color: #8a867e;
+      color: var(--soft);
       font-family: var(--font-main);
       font-size: .73rem;
     }
@@ -2494,7 +2531,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .comment-actions {
       display: flex;
       gap: 12px;
-      color: #8a867e;
+      color: var(--soft);
       font-size: .74rem;
       font-weight: 500;
     }
@@ -2533,7 +2570,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
     .text-button {
       background: none;
-      color: #8a867e;
+      color: var(--soft);
       padding: 0;
       border-radius: 0;
       font-size: .78rem;
@@ -2549,9 +2586,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
       max-width: 640px;
       margin-top: 22px;
       padding: 11px 13px;
-      background: #e3eaf0;
+      background: var(--notice-bg);
       border-radius: 2px;
-      color: #3d5569;
+      color: var(--notice-ink);
       font-size: .9rem;
     }
 
