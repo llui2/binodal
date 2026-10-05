@@ -69,3 +69,41 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user
 
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry
   ON sessions(expires_at);
+
+
+CREATE TABLE IF NOT EXISTS trails (
+  id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS trail_sessions (
+  token TEXT PRIMARY KEY,
+  trail_id TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (trail_id) REFERENCES trails(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS trail_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  trail_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  url TEXT,
+  content TEXT,
+  note TEXT,
+  source_ref TEXT,
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (trail_id) REFERENCES trails(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_trail_sessions_trail
+  ON trail_sessions(trail_id);
+
+CREATE INDEX IF NOT EXISTS idx_trail_items_trail_position
+  ON trail_items(trail_id, position, id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trail_items_source
+  ON trail_items(trail_id, source_ref)
+  WHERE source_ref IS NOT NULL;
