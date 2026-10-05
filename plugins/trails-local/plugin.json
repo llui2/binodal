@@ -1,0 +1,22 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "trails-local",
+  "version": "0.1.0",
+  "description": "Local development plugin for Trails research paths.",
+  "author": {
+    "name": "Trails"
+  },
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Trails Local",
+        "shortDescription": "Trace a research path locally",
+        "longDescription": "Local development connection to the Trails MCP server. Create, read, and extend live research trails from ChatGPT Desktop while using the existing Trails Cloudflare backend.",
+        "developerName": "Trails",
+        "category": "Productivity",
+        "capabilities": ["Interactive"],
+        "defaultPrompt": "Create or open a Trails research path and help me extend it."
+      }
+    }
+  }
+}
