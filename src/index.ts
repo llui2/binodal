@@ -1,3 +1,6 @@
+import { McpServer, WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
+import * as z from "zod/v4";
+
 interface Env {
   DB: D1Database;
   ORCID_CLIENT_ID: string;
@@ -88,12 +91,29 @@ async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
 
+  const mcpMatch = path.match(/^\/mcp\/([a-f0-9]{48})$/);
+  if (mcpMatch) {
+    return handleTrailMcp(request, env, mcpMatch[1]);
+  }
+
   if (request.method === "GET" && path === "/") {
     return renderHome(request, env);
   }
 
   if (request.method === "GET" && path === "/trail") {
     return renderTrail(request, env);
+  }
+
+  if (request.method === "POST" && path === "/trail/question") {
+    return updateTrailQuestion(request, env);
+  }
+
+  if (request.method === "GET" && path === "/trail/connect") {
+    return renderTrailConnect(request, env);
+  }
+
+  if (request.method === "POST" && path === "/trail/connect/rotate") {
+    return rotateTrailIntegration(request, env);
   }
 
   if (request.method === "POST" && path === "/trail/add") {
@@ -309,12 +329,15 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
 
 async function renderTrail(request: Request, env: Env): Promise<Response> {
   const trail = await ensureCurrentTrail(request, env);
-  const items = await listTrailItems(env, trail.id);
-  const user = await currentUser(request, env);
+  const [items, question, user] = await Promise.all([
+    listTrailItems(env, trail.id),
+    getTrailQuestion(env, trail.id),
+    currentUser(request, env),
+  ]);
 
   const itemHtml = items.length
-    ? items.map(renderTrailItem).join("")
-    : `<p class="trail-empty">Nothing here yet.</p>`;
+    ? items.map((item, index) => renderTrailItem(item, index)).join("")
+    : `<p class="trail-empty">The path is empty. Add papers from their paper pages, or add a thought below.</p>`;
 
   const response = htmlPage(
     "trail",
@@ -324,58 +347,160 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
     </header>
     <main class="shell trail-page">
       <div class="trail-heading">
-        <h1>trail</h1>
-        <p>Open anything from here and Trails reuses one reader tab.</p>
+        <div>
+          <span class="eyebrow">research path</span>
+          <h1>trail</h1>
+        </div>
+        <a class="trail-connect-link" href="/trail/connect">connect ChatGPT</a>
       </div>
 
-      <form class="trail-add" action="/trail/add" method="post">
-        <input name="value" placeholder="Paste a link or write a note" autocomplete="off" required>
-        <button type="submit">Add</button>
+      <form class="trail-question" action="/trail/question" method="post">
+        <label for="trail-question">question</label>
+        <textarea id="trail-question" name="question" rows="2" maxlength="600" placeholder="What are you trying to understand?">${escapeHtml(question ?? "")}</textarea>
+        <button class="text-button" type="submit">save</button>
       </form>
 
-      <section class="trail-items" aria-label="Trail">
+      <section class="trail-path" aria-label="Research path">
         ${itemHtml}
       </section>
+
+      <form class="trail-note-add" action="/trail/add" method="post">
+        <input type="hidden" name="kind" value="note">
+        <label for="trail-note">next thought</label>
+        <div>
+          <textarea id="trail-note" name="value" rows="2" maxlength="10000" placeholder="Add a thought, connection, or next question" required></textarea>
+          <button type="submit">Add note</button>
+        </div>
+      </form>
     </main>`,
   );
 
   return withTrailCookie(response, trail.cookie);
 }
 
-function renderTrailItem(item: TrailItemRow): string {
+function renderTrailItem(item: TrailItemRow, index: number): string {
   const isOpenable = Boolean(item.url);
   const title = item.title || item.content || "untitled";
   const body = item.kind === "note" && item.content
     ? `<p class="trail-content">${escapeHtml(item.content)}</p>`
     : "";
 
-  return `<article class="trail-card">
-    <div class="trail-card-main">
+  return `<article class="trail-step">
+    <div class="trail-step-index">${index + 1}</div>
+    <div class="trail-step-body">
+      <div class="trail-step-kind">${escapeHtml(item.kind === "paper" ? "paper" : item.kind === "note" ? "note" : "link")}</div>
       ${isOpenable
-        ? `<a class="trail-card-title" href="${escapeAttr(item.url)}" target="trail-reader" rel="noreferrer">${escapeHtml(title)}</a>`
-        : `<div class="trail-card-title">${escapeHtml(title)}</div>`}
+        ? `<a class="trail-step-title" href="${escapeAttr(item.url)}">${escapeHtml(title)}</a>`
+        : `<div class="trail-step-title">${escapeHtml(title)}</div>`}
       ${body}
       ${item.note ? `<p class="trail-note">${escapeHtml(item.note)}</p>` : ""}
-    </div>
 
-    <div class="trail-card-actions">
-      ${isOpenable ? `<a href="${escapeAttr(item.url)}" target="trail-reader" rel="noreferrer">open</a>` : ""}
-      <details class="trail-note-edit">
-        <summary>note</summary>
-        <form action="/trail/items/${item.id}/note" method="post">
-          <textarea name="note" rows="3" maxlength="2000" placeholder="Why does this matter?">${escapeHtml(item.note ?? "")}</textarea>
-          <button type="submit">save</button>
+      <div class="trail-step-actions">
+        <details class="trail-note-edit">
+          <summary>${item.note ? "edit why" : "why here?"}</summary>
+          <form action="/trail/items/${item.id}/note" method="post">
+            <textarea name="note" rows="3" maxlength="2000" placeholder="What does this add to the path?">${escapeHtml(item.note ?? "")}</textarea>
+            <button type="submit">save</button>
+          </form>
+        </details>
+        <form action="/trail/items/${item.id}/move" method="post">
+          <button class="trail-mini" type="submit" name="direction" value="-1" aria-label="Move up">↑</button>
+          <button class="trail-mini" type="submit" name="direction" value="1" aria-label="Move down">↓</button>
         </form>
-      </details>
-      <form action="/trail/items/${item.id}/move" method="post">
-        <button class="trail-mini" type="submit" name="direction" value="-1" aria-label="Move left">←</button>
-        <button class="trail-mini" type="submit" name="direction" value="1" aria-label="Move right">→</button>
-      </form>
-      <form action="/trail/items/${item.id}/remove" method="post">
-        <button class="trail-mini" type="submit">remove</button>
-      </form>
+        <form action="/trail/items/${item.id}/remove" method="post">
+          <button class="trail-mini" type="submit">remove</button>
+        </form>
+      </div>
     </div>
   </article>`;
+}
+
+async function getTrailQuestion(env: Env, trailId: string): Promise<string | null> {
+  const row = await env.DB.prepare(
+    "SELECT question FROM trail_contexts WHERE trail_id = ?",
+  )
+    .bind(trailId)
+    .first<{ question: string | null }>();
+  return row?.question ?? null;
+}
+
+async function setTrailQuestion(env: Env, trailId: string, question: string): Promise<void> {
+  const clean = question.replace(/\s+/g, " ").trim().slice(0, 600);
+  await env.DB.prepare(
+    `INSERT INTO trail_contexts (trail_id, question, updated_at)
+     VALUES (?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(trail_id) DO UPDATE SET
+       question = excluded.question,
+       updated_at = CURRENT_TIMESTAMP`,
+  )
+    .bind(trailId, clean || null)
+    .run();
+}
+
+async function updateTrailQuestion(request: Request, env: Env): Promise<Response> {
+  assertSameOrigin(request);
+  const trail = await ensureCurrentTrail(request, env);
+  const form = await request.formData();
+  await setTrailQuestion(env, trail.id, String(form.get("question") ?? ""));
+  return withTrailCookie(redirect("/trail", 303), trail.cookie);
+}
+
+async function ensureTrailIntegration(env: Env, trailId: string): Promise<string> {
+  const existing = await env.DB.prepare(
+    "SELECT token FROM trail_integrations WHERE trail_id = ? ORDER BY created_at DESC LIMIT 1",
+  )
+    .bind(trailId)
+    .first<{ token: string }>();
+  if (existing?.token) return existing.token;
+
+  const token = randomToken();
+  await env.DB.prepare(
+    "INSERT INTO trail_integrations (token, trail_id) VALUES (?, ?)",
+  )
+    .bind(token, trailId)
+    .run();
+  return token;
+}
+
+async function renderTrailConnect(request: Request, env: Env): Promise<Response> {
+  const trail = await ensureCurrentTrail(request, env);
+  const [token, user] = await Promise.all([
+    ensureTrailIntegration(env, trail.id),
+    currentUser(request, env),
+  ]);
+  const endpoint = `${new URL(request.url).origin}/mcp/${token}`;
+
+  const response = htmlPage(
+    "connect trail",
+    `<header class="topbar">
+      ${renderBrand()}
+      ${renderIdentity(user)}
+    </header>
+    <main class="shell trail-connect-page">
+      <a class="back" href="/trail">← trail</a>
+      <span class="eyebrow">development connection</span>
+      <h1>Connect this trail to ChatGPT</h1>
+      <p class="muted">This private endpoint points only to the current trail.</p>
+      <label class="trail-endpoint-label" for="trail-endpoint">MCP endpoint</label>
+      <input id="trail-endpoint" class="trail-endpoint" value="${escapeAttr(endpoint)}" readonly>
+      <p class="trail-connect-help">In ChatGPT developer mode, add a plugin connection using this HTTPS endpoint. The tools are: read the trail, set its question, add a note, and add a paper.</p>
+      <form action="/trail/connect/rotate" method="post">
+        <button class="text-button" type="submit">rotate endpoint</button>
+      </form>
+    </main>`,
+  );
+
+  return withTrailCookie(response, trail.cookie);
+}
+
+async function rotateTrailIntegration(request: Request, env: Env): Promise<Response> {
+  assertSameOrigin(request);
+  const trail = await ensureCurrentTrail(request, env);
+  await env.DB.prepare("DELETE FROM trail_integrations WHERE trail_id = ?")
+    .bind(trail.id)
+    .run();
+  await ensureTrailIntegration(env, trail.id);
+  return withTrailCookie(redirect("/trail/connect", 303), trail.cookie);
 }
 
 async function ensureCurrentTrail(request: Request, env: Env): Promise<TrailContext> {
@@ -451,11 +576,29 @@ async function addToTrail(request: Request, env: Env): Promise<Response> {
   const trail = await ensureCurrentTrail(request, env);
   const form = await request.formData();
   const value = String(form.get("value") ?? "").trim();
+  const kind = String(form.get("kind") ?? "");
 
   if (!value) return withTrailCookie(redirect("/trail", 303), trail.cookie);
 
-  await insertTrailValue(env, trail.id, value);
+  if (kind === "note") {
+    await insertTrailNote(env, trail.id, value);
+  } else {
+    await insertTrailValue(env, trail.id, value);
+  }
   return withTrailCookie(redirect("/trail", 303), trail.cookie);
+}
+
+async function insertTrailNote(env: Env, trailId: string, value: string, note: string | null = null): Promise<void> {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (!compact) return;
+  const title = compact.length > 90 ? `${compact.slice(0, 87)}…` : compact;
+  const position = await nextTrailPosition(env, trailId);
+  await env.DB.prepare(
+    `INSERT INTO trail_items (trail_id, kind, title, content, note, position)
+     VALUES (?, 'note', ?, ?, ?, ?)`,
+  )
+    .bind(trailId, title, value.slice(0, 10000), note ? note.slice(0, 2000) : null, position)
+    .run();
 }
 
 async function insertTrailValue(env: Env, trailId: string, value: string): Promise<void> {
@@ -483,13 +626,40 @@ async function insertTrailValue(env: Env, trailId: string, value: string): Promi
     return;
   }
 
-  const compact = value.replace(/\s+/g, " ").trim();
-  const title = compact.length > 90 ? `${compact.slice(0, 87)}…` : compact;
+  await insertTrailNote(env, trailId, value);
+}
+
+async function insertPaperIntoTrail(
+  env: Env,
+  trailId: string,
+  rawPaper: string,
+  note: string | null = null,
+): Promise<void> {
+  const paperId = normalizePaperInput(rawPaper);
+  if (!paperId) throw new Error("Invalid paper identifier or URL");
+
+  const paper = await ensurePaper(env, paperId);
+  const identifiers = await getPaperIdentifiers(env, paper.arxiv_id);
+  const publicPaperId = preferredPaperId(identifiers, paper.arxiv_id);
+  const position = await nextTrailPosition(env, trailId);
+  const itemUrl = `/p/${encodeURIComponent(publicPaperId)}`;
+
   await env.DB.prepare(
-    `INSERT INTO trail_items (trail_id, kind, title, content, position)
-     VALUES (?, 'note', ?, ?, ?)`,
+    `INSERT INTO trail_items (trail_id, kind, title, url, note, source_ref, position)
+     VALUES (?, 'paper', ?, ?, ?, ?, ?)
+     ON CONFLICT(trail_id, source_ref) DO UPDATE SET
+       title = excluded.title,
+       url = excluded.url,
+       note = COALESCE(excluded.note, trail_items.note)`,
   )
-    .bind(trailId, title, value.slice(0, 10000), position)
+    .bind(
+      trailId,
+      paper.title,
+      itemUrl,
+      note ? note.slice(0, 2000) : null,
+      `paper:${paper.arxiv_id}`,
+      position,
+    )
     .run();
 }
 
@@ -500,24 +670,12 @@ async function addPaperToTrail(request: Request, env: Env): Promise<Response> {
   const rawPaper = String(form.get("paper_id") ?? "");
   const nextRaw = String(form.get("next") ?? "/trail");
   const next = nextRaw.startsWith("/") && !nextRaw.startsWith("//") ? nextRaw : "/trail";
-  const paperId = normalizePaperInput(rawPaper);
-  if (!paperId) return new Response("Invalid paper identifier or URL", { status: 400 });
 
-  const paper = await ensurePaper(env, paperId);
-  const identifiers = await getPaperIdentifiers(env, paper.arxiv_id);
-  const publicPaperId = preferredPaperId(identifiers, paper.arxiv_id);
-  const position = await nextTrailPosition(env, trail.id);
-  const itemUrl = `/p/${encodeURIComponent(publicPaperId)}`;
-
-  await env.DB.prepare(
-    `INSERT INTO trail_items (trail_id, kind, title, url, source_ref, position)
-     VALUES (?, 'paper', ?, ?, ?, ?)
-     ON CONFLICT(trail_id, source_ref) DO UPDATE SET
-       title = excluded.title,
-       url = excluded.url`,
-  )
-    .bind(trail.id, paper.title, itemUrl, `paper:${paper.arxiv_id}`, position)
-    .run();
+  try {
+    await insertPaperIntoTrail(env, trail.id, rawPaper);
+  } catch {
+    return new Response("Invalid paper identifier or URL", { status: 400 });
+  }
 
   return withTrailCookie(redirect(next, 303), trail.cookie);
 }
@@ -679,6 +837,141 @@ async function handleTrailApi(
   }
 
   return withTrailCookie(json({ error: "method not allowed" }, 405), trail.cookie);
+}
+
+async function handleTrailMcp(request: Request, env: Env, token: string): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, GET, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "content-type, mcp-session-id, mcp-protocol-version",
+        "Access-Control-Expose-Headers": "Mcp-Session-Id",
+      },
+    });
+  }
+
+  const integration = await env.DB.prepare(
+    "SELECT trail_id FROM trail_integrations WHERE token = ?",
+  )
+    .bind(token)
+    .first<{ trail_id: string }>();
+
+  if (!integration) return new Response("Unknown trail connection", { status: 404 });
+
+  const origin = new URL(request.url).origin;
+  const server = new McpServer(
+    { name: "trails", version: "0.1.0" },
+    {
+      instructions:
+        "This server edits one small research trail. Use the trail as a record of how a research question develops, not as a general bookmark list. Read the trail before adding context-sensitive steps.",
+    },
+  );
+
+  server.registerTool(
+    "get_trail",
+    {
+      description: "Read the current research trail, including its question and ordered paper/note steps.",
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async () => {
+      const [question, items] = await Promise.all([
+        getTrailQuestion(env, integration.trail_id),
+        listTrailItems(env, integration.trail_id),
+      ]);
+      const snapshot = {
+        question,
+        items: items.map((item, index) => ({
+          step: index + 1,
+          id: item.id,
+          kind: item.kind,
+          title: item.title,
+          url: item.url
+            ? new URL(item.url, origin).toString()
+            : null,
+          content: item.content,
+          note: item.note,
+        })),
+      };
+      return {
+        content: [{ type: "text", text: JSON.stringify(snapshot) }],
+        structuredContent: snapshot,
+      };
+    },
+  );
+
+  server.registerTool(
+    "set_trail_question",
+    {
+      description: "Set or replace the research question that anchors the current trail.",
+      inputSchema: z.object({
+        question: z.string().min(1).max(600),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ question }) => {
+      await setTrailQuestion(env, integration.trail_id, question);
+      return {
+        content: [{ type: "text", text: `Trail question set to: ${question}` }],
+        structuredContent: { question },
+      };
+    },
+  );
+
+  server.registerTool(
+    "add_trail_note",
+    {
+      description: "Append a short thought, connection, interpretation, or next question to the current research trail.",
+      inputSchema: z.object({
+        text: z.string().min(1).max(10000),
+        why: z.string().max(2000).optional(),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ text, why }) => {
+      await insertTrailNote(env, integration.trail_id, text, why ?? null);
+      return {
+        content: [{ type: "text", text: "Added note to the trail." }],
+        structuredContent: { ok: true },
+      };
+    },
+  );
+
+  server.registerTool(
+    "add_trail_paper",
+    {
+      description: "Resolve a DOI, arXiv ID, paper URL, or Google Scholar link and append that paper to the current research trail. Use the optional why field to record why it belongs in the path.",
+      inputSchema: z.object({
+        paper: z.string().min(1),
+        why: z.string().max(2000).optional(),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ paper, why }) => {
+      await insertPaperIntoTrail(env, integration.trail_id, paper, why ?? null);
+      return {
+        content: [{ type: "text", text: "Added paper to the trail." }],
+        structuredContent: { ok: true },
+      };
+    },
+  );
+
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true,
+  });
+  await server.connect(transport);
+  const response = await transport.handleRequest(request);
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", "*");
+  headers.set("Access-Control-Expose-Headers", "Mcp-Session-Id");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 function normalizeTrailUrl(raw: string): string | null {
@@ -3142,68 +3435,115 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-page {
+      max-width: 760px;
       padding: 48px 0 90px;
     }
     .trail-heading {
       display: flex;
-      align-items: baseline;
+      align-items: flex-end;
       justify-content: space-between;
-      gap: 20px;
+      gap: 24px;
     }
+    .trail-heading .eyebrow { margin-bottom: 9px; }
     .trail-heading h1 {
       margin: 0;
-      font-size: clamp(1.9rem, 4vw, 2.7rem);
+      font-size: clamp(2rem, 4vw, 2.8rem);
       line-height: 1;
       letter-spacing: -.025em;
     }
-    .trail-heading p {
-      margin: 0;
+    .trail-connect-link {
       color: var(--muted);
-      font-size: .8rem;
+      font-size: .78rem;
+      white-space: nowrap;
     }
-    .trail-add {
-      display: flex;
-      gap: 8px;
-      max-width: 640px;
-      margin-top: 32px;
-    }
-    .trail-add input {
-      min-width: 0;
-      background: var(--field-muted);
-    }
-    .trail-items {
-      display: flex;
+
+    .trail-question {
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr) auto;
       gap: 10px;
+      align-items: start;
       margin-top: 34px;
-      padding: 2px 2px 16px;
-      overflow-x: auto;
-      align-items: stretch;
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--wash);
     }
-    .trail-card {
-      flex: 0 0 270px;
-      min-height: 190px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      gap: 20px;
-      padding: 16px;
-      background: var(--surface);
-      border: 1px solid var(--wash);
-      border-radius: var(--radius-md);
+    .trail-question label,
+    .trail-note-add label,
+    .trail-endpoint-label {
+      padding-top: 10px;
+      color: var(--muted);
+      font-size: .76rem;
     }
-    .trail-card-title {
+    .trail-question textarea {
+      min-height: 68px;
+      background: transparent;
+      padding: 8px 0;
+      border-radius: 0;
+      font-size: 1.08rem;
+      line-height: 1.45;
+    }
+    .trail-question textarea:focus-visible { background: transparent; }
+    .trail-question .text-button {
+      margin-top: 9px;
+      color: var(--annotation);
+    }
+
+    .trail-path {
+      margin-top: 26px;
+    }
+    .trail-step {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 16px;
+      position: relative;
+      padding: 0 0 30px;
+    }
+    .trail-step:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      left: 16px;
+      top: 29px;
+      bottom: 1px;
+      width: 1px;
+      background: var(--wash);
+    }
+    .trail-step-index {
+      width: 33px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      position: relative;
+      z-index: 1;
+      background: var(--paper);
+      border: 1px solid var(--stone);
+      border-radius: 50%;
+      color: var(--muted);
+      font-size: .72rem;
+    }
+    .trail-step-body {
+      min-width: 0;
+      padding-top: 2px;
+    }
+    .trail-step-kind {
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: .7rem;
+      letter-spacing: .04em;
+    }
+    .trail-step-title {
       display: block;
-      font-size: 1rem;
+      max-width: 680px;
+      font-size: 1.05rem;
       font-weight: 620;
-      line-height: 1.28;
+      line-height: 1.34;
       overflow-wrap: anywhere;
     }
     .trail-content,
     .trail-note {
-      margin: 12px 0 0;
+      max-width: 650px;
+      margin: 8px 0 0;
       color: var(--body-muted);
-      font-size: .84rem;
-      line-height: 1.45;
+      font-size: .88rem;
+      line-height: 1.52;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
@@ -3211,34 +3551,29 @@ function htmlPage(title: string, body: string, status = 200): Response {
       color: var(--muted);
       font-style: italic;
     }
-    .trail-card-actions {
+    .trail-step-actions {
       display: flex;
       align-items: center;
       flex-wrap: wrap;
-      gap: 9px;
+      gap: 10px;
+      margin-top: 9px;
       color: var(--muted);
-      font-size: .74rem;
+      font-size: .72rem;
     }
-    .trail-card-actions form {
+    .trail-step-actions form {
       display: inline-flex;
-      gap: 5px;
+      gap: 6px;
       margin: 0;
     }
-    .trail-card-actions a,
     .trail-note-edit summary {
       cursor: pointer;
-      color: var(--muted);
-    }
-    .trail-note-edit {
-      position: relative;
-    }
-    .trail-note-edit summary {
       list-style: none;
+      color: var(--muted);
     }
     .trail-note-edit summary::-webkit-details-marker { display: none; }
     .trail-note-edit[open] {
-      width: 100%;
-      margin-top: 8px;
+      width: min(100%, 520px);
+      margin: 7px 0;
     }
     .trail-note-edit form {
       display: grid;
@@ -3267,9 +3602,56 @@ function htmlPage(title: string, body: string, status = 200): Response {
       filter: none;
     }
     .trail-empty {
-      margin: 0;
+      margin: 8px 0 30px 50px;
       color: var(--muted);
+      font-size: .88rem;
+    }
+
+    .trail-note-add {
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr);
+      gap: 10px;
+      margin: 8px 0 0 50px;
+      padding-top: 24px;
+      border-top: 1px solid var(--wash);
+    }
+    .trail-note-add > div {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: start;
+    }
+    .trail-note-add textarea {
+      min-height: 64px;
+      background: var(--field-muted);
+    }
+
+    .trail-connect-page {
+      max-width: 720px;
+      padding: 48px 0 90px;
+    }
+    .trail-connect-page h1 {
+      margin: 8px 0 12px;
+      font-size: clamp(2rem, 4vw, 2.8rem);
+      line-height: 1.08;
+      letter-spacing: -.025em;
+    }
+    .trail-endpoint-label {
+      display: block;
+      margin-top: 30px;
+      padding: 0;
+    }
+    .trail-endpoint {
+      margin-top: 7px;
+      background: var(--field-muted);
+      font-size: .82rem;
+    }
+    .trail-connect-help {
+      max-width: 620px;
+      margin-top: 16px;
+      color: var(--body-muted);
       font-size: .9rem;
+      line-height: 1.55;
     }
 
     @media (max-width: 680px) {
@@ -3316,16 +3698,28 @@ function htmlPage(title: string, body: string, status = 200): Response {
       .comment-head span { display: none; }
       .composer-actions { align-items: flex-end; }
       .trail-heading {
-        display: block;
+        align-items: flex-start;
       }
-      .trail-heading p {
-        margin-top: 8px;
+      .trail-question {
+        grid-template-columns: 1fr;
       }
-      .trail-add {
-        align-items: stretch;
+      .trail-question label,
+      .trail-note-add label {
+        padding-top: 0;
       }
-      .trail-card {
-        flex-basis: min(82vw, 300px);
+      .trail-question .text-button {
+        justify-self: start;
+        margin-top: 0;
+      }
+      .trail-note-add {
+        grid-template-columns: 1fr;
+        margin-left: 0;
+      }
+      .trail-note-add > div {
+        grid-template-columns: 1fr;
+      }
+      .trail-empty {
+        margin-left: 0;
       }
     }
   </style>
