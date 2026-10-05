@@ -683,9 +683,16 @@ async function handleTrailApi(
 
 function normalizeTrailUrl(raw: string): string | null {
   try {
-    const url = new URL(raw.trim());
+    const value = extractPastedPaperValue(raw);
+    const url = new URL(value);
     if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-    url.hash = "";
+
+    const trackingKeys: string[] = [];
+    url.searchParams.forEach((_value, key) => {
+      if (/^(?:utm_.+|gclid|fbclid|mc_cid|mc_eid)$/i.test(key)) trackingKeys.push(key);
+    });
+    for (const key of trackingKeys) url.searchParams.delete(key);
+
     return url.toString();
   } catch {
     return null;
