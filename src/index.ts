@@ -3773,17 +3773,15 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .utility-page {
-  max-width: 720px;
-}
-.policy-copy {
-  max-width: 680px;
-  line-height: 1.65;
-}
-.policy-copy p + p {
-  margin-top: 1rem;
-}
       padding: 15vh 0 80px;
       max-width: 720px;
+    }
+    .policy-copy {
+      max-width: 680px;
+      line-height: 1.65;
+    }
+    .policy-copy p + p {
+      margin-top: 1rem;
     }
     .utility-page h1 {
       margin: 0 0 14px;
