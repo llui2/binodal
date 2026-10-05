@@ -1,4 +1,7 @@
-# trails
+<h1>
+  <img src="assets/trails-logo.svg" width="44" alt="Trails logo">
+  trails
+</h1>
 
 *Through the maze.*
 
