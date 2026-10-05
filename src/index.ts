@@ -78,7 +78,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     const raw = url.searchParams.get("paper") ?? url.searchParams.get("arxiv") ?? "";
     const id = normalizePaperInput(raw);
     if (!id) {
-      return redirect("/?error=Enter+a+valid+arXiv+ID,+DOI,+or+paper+URL");
+      return redirect("/?error=Could+not+identify+that+paper.+Try+a+DOI,+arXiv+ID,+paper+URL,+or+Google+Scholar+link");
     }
     return redirect(`/p/${encodeURIComponent(id)}`);
   }
@@ -152,7 +152,7 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
       <form class="lookup" action="/go" method="get">
         <label for="paper">paper</label>
         <div class="lookup-control">
-          <input id="paper" name="paper" placeholder="Paste an arXiv ID, DOI, or paper URL" autocomplete="off" required>
+          <input id="paper" name="paper" placeholder="Paste a DOI, arXiv ID, paper URL, or Google Scholar link" autocomplete="off" required>
           <button type="submit">Open</button>
         </div>
       </form>
@@ -1170,14 +1170,35 @@ async function findArxivByTitleAndAuthors(
 async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<FetchedPaper> {
   if (!isSafePaperUrl(sourceUrl)) throw new Error("Only public HTTPS paper URLs are supported");
 
+  if (isGoogleScholarUrl(sourceUrl)) {
+    return fetchPaperFromGoogleScholarUrl(sourceUrl, storageId);
+  }
+
+  const alternativeId = crossrefAlternativeIdFromUrl(sourceUrl);
+  if (alternativeId) {
+    try {
+      const resolved = await fetchPaperFromCrossrefAlternativeId(alternativeId, storageId);
+      resolved.identifiers.push({
+        type: "url",
+        value: sourceUrl,
+        label: sourceHost(sourceUrl),
+        url: sourceUrl,
+      });
+      resolved.identifiers = dedupeIdentifiers(resolved.identifiers);
+      return resolved;
+    } catch (error) {
+      console.warn("Crossref alternative-id lookup failed; falling back to page fetch", error);
+    }
+  }
+
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 6000);
+  const timeout = setTimeout(() => controller.abort(), 6500);
 
   try {
     const response = await fetch(sourceUrl, {
       headers: {
         "User-Agent": "trails/0.1",
-        Accept: "text/html,application/xhtml+xml",
+        Accept: "text/html,application/xhtml+xml,application/pdf;q=0.8,*/*;q=0.2",
       },
       redirect: "follow",
       signal: controller.signal,
@@ -1188,16 +1209,86 @@ async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<
     const finalUrl = normalizePaperUrl(response.url || sourceUrl);
     if (!finalUrl) throw new Error("Paper URL redirected to an unsupported address");
 
-    const contentType = response.headers.get("content-type") ?? "";
+    const arxivFromUrl = normalizeArxivInput(finalUrl);
+    if (arxivFromUrl) {
+      const fetched = await fetchPaperByInput(arxivFromUrl);
+      fetched.identifiers.push({
+        type: "url",
+        value: finalUrl,
+        label: sourceHost(finalUrl),
+        url: finalUrl,
+      });
+      fetched.identifiers = dedupeIdentifiers(fetched.identifiers);
+      return fetched;
+    }
+
+    const doiFromUrl = normalizePublicationDoi(finalUrl);
+    if (doiFromUrl) {
+      const fetched = await fetchPaperFromCrossref(doiFromUrl, storageId);
+      fetched.identifiers.push({
+        type: "url",
+        value: finalUrl,
+        label: sourceHost(finalUrl),
+        url: finalUrl,
+      });
+      fetched.identifiers = dedupeIdentifiers(fetched.identifiers);
+      return fetched;
+    }
+
+    const redirectedAlternativeId = crossrefAlternativeIdFromUrl(finalUrl);
+    if (redirectedAlternativeId) {
+      try {
+        const fetched = await fetchPaperFromCrossrefAlternativeId(redirectedAlternativeId, storageId);
+        fetched.identifiers.push({
+          type: "url",
+          value: finalUrl,
+          label: sourceHost(finalUrl),
+          url: finalUrl,
+        });
+        fetched.identifiers = dedupeIdentifiers(fetched.identifiers);
+        return fetched;
+      } catch (error) {
+        console.warn("Crossref redirect alternative-id lookup failed", error);
+      }
+    }
+
+    const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+    const disposition = response.headers.get("content-disposition") ?? "";
+    const doiFromHeaders = normalizePublicationDoi(disposition);
+    if (doiFromHeaders) {
+      const fetched = await fetchPaperFromCrossref(doiFromHeaders, storageId);
+      fetched.identifiers.push({
+        type: "url",
+        value: finalUrl,
+        label: sourceHost(finalUrl),
+        url: finalUrl,
+      });
+      fetched.identifiers = dedupeIdentifiers(fetched.identifiers);
+      return fetched;
+    }
+
     if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
-      throw new Error("Paper URL did not return an HTML page");
+      if (contentType.includes("application/pdf")) {
+        throw new Error("This is a direct PDF link without a resolvable DOI or arXiv ID. Paste the article page or its DOI instead.");
+      }
+      throw new Error("Paper URL did not return a readable HTML page");
     }
 
     const contentLength = Number(response.headers.get("content-length") ?? "0");
     if (contentLength > 3_000_000) throw new Error("Paper page is too large to inspect");
 
     const html = await response.text();
-    const doi = normalizePublicationDoi(metaContent(html, "citation_doi"));
+    const structured = extractScholarlyJsonLd(html);
+
+    const doi =
+      normalizePublicationDoi(metaContent(html, "citation_doi")) ||
+      normalizePublicationDoi(metaContent(html, "dc.identifier")) ||
+      normalizePublicationDoi(metaContent(html, "DC.Identifier")) ||
+      normalizePublicationDoi(metaContent(html, "prism.doi")) ||
+      normalizePublicationDoi(metaContent(html, "bepress_citation_doi")) ||
+      normalizePublicationDoi(structured?.doi ?? "") ||
+      findDoiInHtml(html);
+
     if (doi) {
       try {
         const crossref = await fetchPaperFromCrossref(doi, storageId);
@@ -1207,6 +1298,14 @@ async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<
           label: sourceHost(finalUrl),
           url: finalUrl,
         });
+        if (sourceUrl !== finalUrl) {
+          crossref.identifiers.push({
+            type: "url",
+            value: sourceUrl,
+            label: sourceHost(sourceUrl),
+            url: sourceUrl,
+          });
+        }
         crossref.identifiers = dedupeIdentifiers(crossref.identifiers);
         return crossref;
       } catch (error) {
@@ -1214,21 +1313,68 @@ async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<
       }
     }
 
+    const arxivMeta =
+      normalizeArxivInput(metaContent(html, "citation_arxiv_id")) ||
+      findArxivInHtml(html);
+    if (arxivMeta) {
+      try {
+        const fetched = await fetchPaperByInput(arxivMeta);
+        fetched.identifiers.push({
+          type: "url",
+          value: finalUrl,
+          label: sourceHost(finalUrl),
+          url: finalUrl,
+        });
+        fetched.identifiers = dedupeIdentifiers(fetched.identifiers);
+        return fetched;
+      } catch (error) {
+        console.warn("arXiv lookup from paper URL failed; using page metadata", error);
+      }
+    }
+
     const title =
       metaContent(html, "citation_title") ||
+      structured?.title ||
       metaPropertyContent(html, "og:title") ||
       cleanHtmlText(extractHtmlTitle(html));
-    const authors = metaContents(html, "citation_author").map(normalizeAuthorName);
+    const authors = (
+      metaContents(html, "citation_author").length
+        ? metaContents(html, "citation_author")
+        : structured?.authors ?? []
+    ).map(normalizeAuthorName).filter(Boolean);
     const abstract =
       metaContent(html, "citation_abstract") ||
+      structured?.abstract ||
       metaContent(html, "description") ||
       metaPropertyContent(html, "og:description");
     const published =
       metaContent(html, "citation_publication_date") ||
       metaContent(html, "citation_date") ||
+      structured?.published ||
       null;
 
     if (!title) throw new Error("Could not find paper metadata at this URL");
+
+    try {
+      const crossref = await fetchPaperFromCrossrefSearch(title, storageId, finalUrl, authors);
+      if (crossref) return crossref;
+    } catch (error) {
+      console.warn("Crossref title lookup failed; keeping page metadata", error);
+    }
+
+    const identifiers: PaperIdentifier[] = [{
+      type: "url",
+      value: finalUrl,
+      label: sourceHost(finalUrl),
+      url: finalUrl,
+    }];
+
+    try {
+      const arxiv = await findArxivByTitleAndAuthors(title, authors);
+      if (arxiv) identifiers.push(arxiv);
+    } catch (error) {
+      console.warn("Could not resolve page metadata to arXiv", error);
+    }
 
     return {
       paper: {
@@ -1239,15 +1385,311 @@ async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<
         published_at: published,
         updated_at: published,
       },
-      identifiers: [{
-        type: "url",
-        value: finalUrl,
-        label: sourceHost(finalUrl),
-        url: finalUrl,
-      }],
+      identifiers: dedupeIdentifiers(identifiers),
     };
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function fetchPaperFromGoogleScholarUrl(sourceUrl: string, storageId: string): Promise<FetchedPaper> {
+  const url = new URL(sourceUrl);
+  const nested = scholarTargetUrl(url);
+  if (nested && nested !== sourceUrl) {
+    return fetchPaperFromUrl(nested, storageId);
+  }
+
+  const query = cleanScholarQuery(url.searchParams.get("q") ?? "");
+  if (query) {
+    const direct = normalizePaperInput(query);
+    if (direct && !direct.startsWith("url:")) {
+      return fetchPaperByInput(direct);
+    }
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const response = await fetch(sourceUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; trails/0.1; scholarly metadata resolver)",
+        Accept: "text/html,application/xhtml+xml",
+      },
+      redirect: "follow",
+      signal: controller.signal,
+    });
+
+    if (response.ok) {
+      const html = await response.text();
+      const result = firstGoogleScholarResult(html);
+      if (result?.url) {
+        try {
+          return await fetchPaperFromUrl(result.url, storageId);
+        } catch (error) {
+          console.warn("Scholar result target lookup failed", error);
+        }
+      }
+      if (result?.title) {
+        const crossref = await fetchPaperFromCrossrefSearch(result.title, storageId, sourceUrl);
+        if (crossref) return crossref;
+      }
+    }
+  } catch (error) {
+    console.warn("Google Scholar page lookup failed", error);
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (query) {
+    const crossref = await fetchPaperFromCrossrefSearch(query, storageId, sourceUrl);
+    if (crossref) return crossref;
+  }
+
+  throw new Error(
+    "This Google Scholar link does not expose enough paper information. Open the result itself and copy its title link, DOI, or arXiv link.",
+  );
+}
+
+function scholarTargetUrl(url: URL): string | null {
+  const candidates = [
+    url.searchParams.get("url"),
+    url.pathname.includes("scholar_url") ? url.searchParams.get("q") : null,
+  ].filter((value): value is string => Boolean(value));
+
+  for (const candidate of candidates) {
+    const decoded = decodeURIComponentSafe(candidate).trim();
+    const normalized = normalizePaperUrl(decoded);
+    if (normalized && !isGoogleScholarUrl(normalized)) return normalized;
+  }
+
+  return null;
+}
+
+function cleanScholarQuery(raw: string): string {
+  return decodeURIComponentSafe(raw)
+    .replace(/^allintitle:\s*/i, "")
+    .replace(/^intitle:\s*/i, "")
+    .replace(/^["']|["']$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function firstGoogleScholarResult(html: string): { title: string; url: string | null } | null {
+  const block = html.match(/<h3[^>]*class=["'][^"']*gs_rt[^"']*["'][^>]*>([\s\S]*?)<\/h3>/i)?.[1];
+  if (!block) return null;
+
+  const anchor = block.match(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+  const title = cleanHtmlText(anchor?.[2] ?? block).replace(/^\[[^\]]+\]\s*/, "").trim();
+  const url = anchor?.[1] ? normalizePaperUrl(decodeHtmlEntities(anchor[1])) : null;
+  return title ? { title, url } : null;
+}
+
+async function fetchPaperFromCrossrefAlternativeId(
+  alternativeId: string,
+  storageId: string,
+): Promise<FetchedPaper> {
+  const endpoint = new URL("https://api.crossref.org/works");
+  endpoint.searchParams.set("filter", `alternative-id:${alternativeId}`);
+  endpoint.searchParams.set("rows", "3");
+
+  const response = await fetch(endpoint, {
+    headers: {
+      "User-Agent": "trails/0.1",
+      Accept: "application/json",
+    },
+  });
+  if (!response.ok) throw new Error(`Crossref returned HTTP ${response.status}`);
+
+  const payload = await response.json() as {
+    message?: { items?: Array<{ DOI?: string }> };
+  };
+  const doi = normalizePublicationDoi(payload.message?.items?.[0]?.DOI ?? "");
+  if (!doi) throw new Error(`No Crossref paper found for alternative ID ${alternativeId}`);
+  return fetchPaperFromCrossref(doi, storageId);
+}
+
+async function fetchPaperFromCrossrefSearch(
+  query: string,
+  storageId: string,
+  sourceUrl?: string,
+  expectedAuthors: string[] = [],
+): Promise<FetchedPaper | null> {
+  const cleaned = cleanHtmlText(query).replace(/\s+/g, " ").trim();
+  if (cleaned.length < 6) return null;
+
+  const endpoint = new URL("https://api.crossref.org/works");
+  endpoint.searchParams.set("query.bibliographic", cleaned);
+  endpoint.searchParams.set("rows", "5");
+
+  const response = await fetch(endpoint, {
+    headers: {
+      "User-Agent": "trails/0.1",
+      Accept: "application/json",
+    },
+  });
+  if (!response.ok) return null;
+
+  const payload = await response.json() as {
+    message?: {
+      items?: Array<{
+        DOI?: string;
+        title?: string[];
+        author?: Array<{ given?: string; family?: string; name?: string }>;
+      }>;
+    };
+  };
+
+  let best: { doi: string; score: number } | null = null;
+  for (const item of payload.message?.items ?? []) {
+    const doi = normalizePublicationDoi(item.DOI ?? "");
+    const title = cleanHtmlText(item.title?.[0] ?? "");
+    if (!doi || !title) continue;
+
+    let score = bibliographicTitleScore(cleaned, title);
+    if (expectedAuthors.length && item.author?.length) {
+      const candidateAuthors = item.author
+        .map((author) => author.name ?? [author.given, author.family].filter(Boolean).join(" "))
+        .map(authorFingerprint)
+        .filter(Boolean);
+      const expected = expectedAuthors.map(authorFingerprint).filter(Boolean);
+      const candidateSet = new Set(candidateAuthors);
+      const overlap = expected.filter((author) => candidateSet.has(author)).length;
+      if (overlap) score += Math.min(0.2, overlap * 0.1);
+    }
+
+    if (!best || score > best.score) best = { doi, score };
+  }
+
+  if (!best || best.score < 0.62) return null;
+
+  const fetched = await fetchPaperFromCrossref(best.doi, storageId);
+  if (sourceUrl) {
+    fetched.identifiers.push({
+      type: "url",
+      value: sourceUrl,
+      label: sourceHost(sourceUrl),
+      url: sourceUrl,
+    });
+    fetched.identifiers = dedupeIdentifiers(fetched.identifiers);
+  }
+  return fetched;
+}
+
+function bibliographicTitleScore(query: string, title: string): number {
+  const queryFingerprint = titleFingerprint(query);
+  const titleValue = titleFingerprint(title);
+  if (queryFingerprint === titleValue) return 1;
+  if (queryFingerprint.includes(titleValue) || titleValue.includes(queryFingerprint)) return 0.94;
+
+  const queryTokens = new Set(bibliographicTokens(query));
+  const titleTokens = bibliographicTokens(title);
+  if (!titleTokens.length) return 0;
+  const overlap = titleTokens.filter((token) => queryTokens.has(token)).length;
+  return overlap / titleTokens.length;
+}
+
+function bibliographicTokens(value: string): string[] {
+  const stop = new Set(["the", "and", "for", "with", "from", "into", "using", "via", "its", "their", "that", "this"]);
+  return decodeHtmlEntities(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .match(/[a-z0-9]+/g)
+    ?.filter((token) => token.length > 2 && !stop.has(token)) ?? [];
+}
+
+function crossrefAlternativeIdFromUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase();
+    if (host.includes("sciencedirect.com") || host.includes("elsevier.com")) {
+      return url.pathname.match(/\/pii\/([A-Za-z0-9]+)/i)?.[1] ?? null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function findDoiInHtml(html: string): string | null {
+  const candidates = [
+    ...html.matchAll(/(?:doi\.org\/|doi:\s*)(10\.\d{4,9}\/[^\s"'<>\\]+)/gi),
+    ...html.matchAll(/["']doi["']\s*:\s*["'](10\.\d{4,9}\/[^"']+)["']/gi),
+  ];
+  for (const match of candidates) {
+    const doi = normalizePublicationDoi(match[1] ?? match[0]);
+    if (doi) return doi;
+  }
+  return null;
+}
+
+function findArxivInHtml(html: string): string | null {
+  const match = html.match(/(?:arxiv\.org\/(?:abs|pdf|html)\/|arXiv:\s*)([A-Za-z0-9.\/-]+(?:v\d+)?)/i);
+  return match ? normalizeArxivInput(match[1]) : null;
+}
+
+function extractScholarlyJsonLd(
+  html: string,
+): { title: string; authors: string[]; abstract: string; published: string | null; doi: string } | null {
+  for (const match of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    try {
+      const parsed = JSON.parse(decodeHtmlEntities(match[1]).trim());
+      const stack: unknown[] = Array.isArray(parsed) ? [...parsed] : [parsed];
+
+      while (stack.length) {
+        const node = stack.shift();
+        if (!node || typeof node !== "object") continue;
+        const record = node as Record<string, unknown>;
+        const type = Array.isArray(record["@type"]) ? record["@type"].join(" ") : String(record["@type"] ?? "");
+        if (/ScholarlyArticle|Article/i.test(type)) {
+          const authorRaw = Array.isArray(record.author) ? record.author : record.author ? [record.author] : [];
+          const authors = authorRaw.map((author) => {
+            if (typeof author === "string") return author;
+            if (author && typeof author === "object") {
+              const item = author as Record<string, unknown>;
+              return String(item.name ?? [item.givenName, item.familyName].filter(Boolean).join(" "));
+            }
+            return "";
+          }).filter(Boolean);
+
+          const identifier = Array.isArray(record.identifier) ? record.identifier : [record.identifier];
+          const doi = identifier
+            .map((item) => {
+              if (typeof item === "string") return normalizePublicationDoi(item);
+              if (item && typeof item === "object") {
+                const obj = item as Record<string, unknown>;
+                return normalizePublicationDoi(String(obj.value ?? obj["@id"] ?? ""));
+              }
+              return null;
+            })
+            .find(Boolean) ?? "";
+
+          return {
+            title: cleanHtmlText(String(record.headline ?? record.name ?? "")),
+            authors,
+            abstract: cleanHtmlText(String(record.abstract ?? record.description ?? "")),
+            published: record.datePublished ? String(record.datePublished) : null,
+            doi,
+          };
+        }
+
+        if (Array.isArray(record["@graph"])) stack.push(...record["@graph"]);
+      }
+    } catch {
+      // Ignore malformed JSON-LD and continue with meta tags.
+    }
+  }
+  return null;
+}
+
+function isGoogleScholarUrl(raw: string): boolean {
+  try {
+    const host = new URL(raw).hostname.toLowerCase();
+    return host === "scholar.google.com" || host.endsWith(".scholar.google.com") ||
+      /^scholar\.google\.[a-z.]+$/.test(host);
+  } catch {
+    return false;
   }
 }
 
@@ -1303,6 +1745,7 @@ function metaContent(html: string, name: string): string {
 }
 
 function metaContents(html: string, name: string): string[] {
+  const escaped = name.replace(/[.*+?^$()|[\\]{}]/g, "\\function metaContents(html: string, name: string): string[] {
   const escaped = name;
   const pattern = new RegExp(
     `<meta[^>]+name=["']${escaped}["'][^>]+content=["']([\\s\\S]*?)["'][^>]*>`,
@@ -1311,6 +1754,20 @@ function metaContents(html: string, name: string): string[] {
   return [...html.matchAll(pattern)]
     .map((match) => decodeHtmlEntities(match[1]).trim())
     .filter(Boolean);
+}");
+  const patterns = [
+    new RegExp(`<meta[^>]+name=["']${escaped}["'][^>]+content=["']([\\s\\S]*?)["'][^>]*>`, "gi"),
+    new RegExp(`<meta[^>]+content=["']([\\s\\S]*?)["'][^>]+name=["']${escaped}["'][^>]*>`, "gi"),
+  ];
+
+  const values: string[] = [];
+  for (const pattern of patterns) {
+    for (const match of html.matchAll(pattern)) {
+      const value = decodeHtmlEntities(match[1]).trim();
+      if (value && !values.includes(value)) values.push(value);
+    }
+  }
+  return values;
 }
 
 function cleanHtmlText(value: string): string {
@@ -1334,8 +1791,10 @@ function decodeHtmlEntities(value: string): string {
 }
 
 function normalizePaperInput(raw: string): string | null {
-  const value = raw.trim();
+  let value = extractPastedPaperValue(raw);
   if (!value) return null;
+
+  value = unwrapKnownRedirectUrl(value);
 
   const arxiv = normalizeArxivInput(value);
   if (arxiv) return arxiv;
@@ -1362,14 +1821,70 @@ function normalizePaperInput(raw: string): string | null {
   return url ? `url:${encodeURIComponent(url)}` : null;
 }
 
-function normalizeArxivInput(raw: string): string | null {
+function extractPastedPaperValue(raw: string): string {
   let value = raw.trim();
+  if (!value) return "";
+
+  const markdown = value.match(/^\[[^\]]*\]\((https?:\/\/[^\s)]+)\)$/i);
+  if (markdown) value = markdown[1];
+
+  const angle = value.match(/^<\s*(https?:\/\/[^>]+)\s*>$/i);
+  if (angle) value = angle[1];
+
+  const embeddedUrl = value.match(/https?:\/\/[^\s<>"']+/i)?.[0];
+  if (embeddedUrl && value !== embeddedUrl && !normalizeDoiInput(value)) {
+    value = embeddedUrl;
+  }
+
+  if (/^(?:www\.)?(?:arxiv\.org|doi\.org|dx\.doi\.org|scholar\.google\.[a-z.]+)\//i.test(value)) {
+    value = `https://${value.replace(/^www\./i, "www.")}`;
+  }
+
+  return value.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
+}
+
+function unwrapKnownRedirectUrl(raw: string): string {
+  let current = raw;
+
+  for (let depth = 0; depth < 3; depth += 1) {
+    let url: URL;
+    try {
+      url = new URL(current);
+    } catch {
+      return current;
+    }
+
+    const host = url.hostname.toLowerCase();
+    let candidate: string | null = null;
+
+    if (isGoogleScholarUrl(current) && url.pathname.includes("scholar_url")) {
+      candidate = url.searchParams.get("url") ?? url.searchParams.get("q");
+    } else if (
+      (host === "google.com" || host === "www.google.com" || host.startsWith("www.google.")) &&
+      url.pathname === "/url"
+    ) {
+      candidate = url.searchParams.get("q") ?? url.searchParams.get("url");
+    }
+
+    if (!candidate) return current;
+    const decoded = decodeURIComponentSafe(candidate).trim();
+    const normalized = normalizePaperUrl(decoded);
+    if (!normalized || normalized === current) return current;
+    current = normalized;
+  }
+
+  return current;
+}
+
+function normalizeArxivInput(raw: string): string | null {
+  let value = decodeURIComponentSafe(raw.trim());
   if (!value) return null;
 
-  value = value.replace(/^https?:\/\/(?:www\.)?arxiv\.org\/(?:abs|pdf)\//i, "");
+  value = value.split(/[?#]/, 1)[0];
+  value = value.replace(/^https?:\/\/(?:www\.)?(?:export\.)?arxiv\.org\/(?:abs|pdf|html|format)\//i, "");
+  value = value.replace(/^https?:\/\/ar5iv\.labs\.arxiv\.org\/html\//i, "");
   value = value.replace(/^arXiv:/i, "");
   value = value.replace(/\.pdf$/i, "");
-  value = value.split(/[?#]/, 1)[0];
   value = value.replace(/v\d+$/i, "");
 
   const modern = /^\d{4}\.\d{4,5}$/;
@@ -1387,10 +1902,10 @@ function normalizeDoiInput(raw: string): string | null {
   value = value.split(/[?#]/, 1)[0];
 
   const direct = value.match(/^10\.\d{4,9}\/\S+$/i)?.[0];
-  if (direct) return direct.replace(/[\s.]+$/, "").toLowerCase();
+  if (direct) return direct.replace(/[\s.,;]+$/, "").toLowerCase();
 
-  const embedded = value.match(/10\.\d{4,9}\/[^\s"'<>]+/i)?.[0];
-  return embedded ? embedded.replace(/[\s.]+$/, "").toLowerCase() : null;
+  const embedded = value.match(/10\.\d{4,9}\/[^\s"'<>?#]+/i)?.[0];
+  return embedded ? embedded.replace(/[\s.,;]+$/, "").toLowerCase() : null;
 }
 
 function arxivIdFromDoi(doi: string): string | null {
@@ -1400,9 +1915,21 @@ function arxivIdFromDoi(doi: string): string | null {
 
 function normalizePaperUrl(raw: string): string | null {
   try {
-    const url = new URL(raw);
+    let value = raw.trim();
+    if (!/^https?:\/\//i.test(value) && /^(?:www\.)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}\//.test(value)) {
+      value = `https://${value}`;
+    }
+
+    const url = new URL(value);
     if (url.protocol !== "https:") return null;
     url.hash = "";
+
+    for (const key of [...url.searchParams.keys()]) {
+      if (/^(?:utm_.+|gclid|fbclid|mc_cid|mc_eid)$/i.test(key)) {
+        url.searchParams.delete(key);
+      }
+    }
+
     const normalized = url.toString();
     return isSafePaperUrl(normalized) ? normalized : null;
   } catch {
