@@ -9,7 +9,8 @@
     "deploy": "wrangler d1 execute DB --remote --file=./schema.sql --yes && wrangler deploy",
     "db:migrate": "wrangler d1 execute DB --local --file=./schema.sql",
     "db:migrate:remote": "wrangler d1 execute DB --remote --file=./schema.sql",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "plugin:install-local": "node scripts/install-local-plugin.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261003.1",
