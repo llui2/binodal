@@ -108,3 +108,21 @@ DROP INDEX IF EXISTS idx_trail_items_source;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_trail_items_source
   ON trail_items(trail_id, source_ref);
+
+
+CREATE TABLE IF NOT EXISTS trail_contexts (
+  trail_id TEXT PRIMARY KEY,
+  question TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (trail_id) REFERENCES trails(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS trail_integrations (
+  token TEXT PRIMARY KEY,
+  trail_id TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (trail_id) REFERENCES trails(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_trail_integrations_trail
+  ON trail_integrations(trail_id);
