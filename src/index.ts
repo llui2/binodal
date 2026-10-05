@@ -91,7 +91,11 @@ async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
 
-  const mcpMatch = path.match(/^\/mcp\/([a-f0-9]{48})$/);
+  if (path === "/mcp") {
+    return handleSharedTrailMcp(request, env);
+  }
+
+  const mcpMatch = path.match(/^\/mcp\/([a-f0-9]{24,48})$/);
   if (mcpMatch) {
     return handleTrailMcp(request, env, mcpMatch[1]);
   }
@@ -453,7 +457,7 @@ async function ensureTrailIntegration(env: Env, trailId: string): Promise<string
     .first<{ token: string }>();
   if (existing?.token) return existing.token;
 
-  const token = randomToken();
+  const token = randomTrailKey();
   await env.DB.prepare(
     "INSERT INTO trail_integrations (token, trail_id) VALUES (?, ?)",
   )
@@ -468,8 +472,6 @@ async function renderTrailConnect(request: Request, env: Env): Promise<Response>
     ensureTrailIntegration(env, trail.id),
     currentUser(request, env),
   ]);
-  const endpoint = `${new URL(request.url).origin}/mcp/${token}`;
-
   const response = htmlPage(
     "connect trail",
     `<header class="topbar">
@@ -478,14 +480,14 @@ async function renderTrailConnect(request: Request, env: Env): Promise<Response>
     </header>
     <main class="shell trail-connect-page">
       <a class="back" href="/trail">← trail</a>
-      <span class="eyebrow">development connection</span>
-      <h1>Connect this trail to ChatGPT</h1>
-      <p class="muted">This private endpoint points only to the current trail.</p>
-      <label class="trail-endpoint-label" for="trail-endpoint">MCP endpoint</label>
-      <input id="trail-endpoint" class="trail-endpoint" value="${escapeAttr(endpoint)}" readonly>
-      <p class="trail-connect-help">In ChatGPT developer mode, add a plugin connection using this HTTPS endpoint. The tools are: read the trail, set its question, add a note, and add a paper.</p>
+      <span class="eyebrow">ChatGPT connection</span>
+      <h1>Connect this trail</h1>
+      <p class="muted">Use this private key when you want ChatGPT to work on this trail.</p>
+      <label class="trail-endpoint-label" for="trail-endpoint">trail key</label>
+      <input id="trail-endpoint" class="trail-endpoint" value="${escapeAttr(token)}" readonly>
+      <p class="trail-connect-help">The Trails plugin stays installed once. Give it this key to read or extend this specific research path.</p>
       <form action="/trail/connect/rotate" method="post">
-        <button class="text-button" type="submit">rotate endpoint</button>
+        <button class="text-button" type="submit">rotate key</button>
       </form>
     </main>`,
   );
@@ -837,6 +839,156 @@ async function handleTrailApi(
   }
 
   return withTrailCookie(json({ error: "method not allowed" }, 405), trail.cookie);
+}
+
+async function trailIdForIntegrationKey(env: Env, key: string): Promise<string | null> {
+  const clean = key.trim().toLowerCase();
+  if (!/^[a-f0-9]{24,48}$/.test(clean)) return null;
+  const row = await env.DB.prepare(
+    "SELECT trail_id FROM trail_integrations WHERE token = ?",
+  )
+    .bind(clean)
+    .first<{ trail_id: string }>();
+  return row?.trail_id ?? null;
+}
+
+async function handleSharedTrailMcp(request: Request, env: Env): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, GET, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "content-type, mcp-session-id, mcp-protocol-version",
+        "Access-Control-Expose-Headers": "Mcp-Session-Id",
+      },
+    });
+  }
+
+  const origin = new URL(request.url).origin;
+  const keySchema = z.string().regex(/^[a-fA-F0-9]{24,48}$/, "Invalid trail key");
+  const resolveTrail = async (key: string): Promise<string> => {
+    const trailId = await trailIdForIntegrationKey(env, key);
+    if (!trailId) throw new Error("Unknown trail key");
+    return trailId;
+  };
+
+  const server = new McpServer(
+    { name: "trails", version: "0.1.0" },
+    {
+      instructions:
+        "Trails records how a research question develops. Ask for or reuse the user's private trail key. Read the trail before adding context-sensitive steps. Add only material that contributes to the research path.",
+    },
+  );
+
+  server.registerTool(
+    "get_trail",
+    {
+      description: "Read one research trail from its private trail key.",
+      inputSchema: z.object({ key: keySchema }),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ key }) => {
+      const trailId = await resolveTrail(key);
+      const [question, items] = await Promise.all([
+        getTrailQuestion(env, trailId),
+        listTrailItems(env, trailId),
+      ]);
+      const snapshot = {
+        question,
+        items: items.map((item, index) => ({
+          step: index + 1,
+          id: item.id,
+          kind: item.kind,
+          title: item.title,
+          url: item.url ? new URL(item.url, origin).toString() : null,
+          content: item.content,
+          note: item.note,
+        })),
+      };
+      return {
+        content: [{ type: "text", text: JSON.stringify(snapshot) }],
+        structuredContent: snapshot,
+      };
+    },
+  );
+
+  server.registerTool(
+    "set_trail_question",
+    {
+      description: "Set the research question anchoring a trail.",
+      inputSchema: z.object({
+        key: keySchema,
+        question: z.string().min(1).max(600),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ key, question }) => {
+      const trailId = await resolveTrail(key);
+      await setTrailQuestion(env, trailId, question);
+      return {
+        content: [{ type: "text", text: `Trail question set to: ${question}` }],
+        structuredContent: { question },
+      };
+    },
+  );
+
+  server.registerTool(
+    "add_trail_note",
+    {
+      description: "Append a thought, connection, interpretation, or next question to a research trail.",
+      inputSchema: z.object({
+        key: keySchema,
+        text: z.string().min(1).max(10000),
+        why: z.string().max(2000).optional(),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ key, text, why }) => {
+      const trailId = await resolveTrail(key);
+      await insertTrailNote(env, trailId, text, why ?? null);
+      return {
+        content: [{ type: "text", text: "Added note to the trail." }],
+        structuredContent: { ok: true },
+      };
+    },
+  );
+
+  server.registerTool(
+    "add_trail_paper",
+    {
+      description: "Resolve a DOI, arXiv ID, paper URL, or Google Scholar link and append that paper to a research trail.",
+      inputSchema: z.object({
+        key: keySchema,
+        paper: z.string().min(1),
+        why: z.string().max(2000).optional(),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ key, paper, why }) => {
+      const trailId = await resolveTrail(key);
+      await insertPaperIntoTrail(env, trailId, paper, why ?? null);
+      return {
+        content: [{ type: "text", text: "Added paper to the trail." }],
+        structuredContent: { ok: true },
+      };
+    },
+  );
+
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true,
+  });
+  await server.connect(transport);
+  const response = await transport.handleRequest(request);
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", "*");
+  headers.set("Access-Control-Expose-Headers", "Mcp-Session-Id");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 async function handleTrailMcp(request: Request, env: Env, token: string): Promise<Response> {
@@ -3805,6 +3957,12 @@ function parseCookies(header: string): Map<string, string> {
 function sessionCookie(token: string, request: Request, maxAge: number): string {
   const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
   return `session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+}
+
+function randomTrailKey(): string {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function randomToken(): string {
