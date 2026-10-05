@@ -108,6 +108,15 @@ async function route(request: Request, env: Env): Promise<Response> {
     return renderTrail(request, env);
   }
 
+  const trailJoin = path.match(/^\/trail\/open\/([a-f0-9]{24,48})$/);
+  if (request.method === "GET" && trailJoin) {
+    return openTrailByIntegrationKey(request, env, trailJoin[1]);
+  }
+
+  if (request.method === "GET" && path === "/trail-live.js") {
+    return trailLiveScript();
+  }
+
   if (request.method === "POST" && path === "/trail/question") {
     return updateTrailQuestion(request, env);
   }
@@ -219,6 +228,7 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
           <button type="submit">Open</button>
         </div>
       </form>
+      <script src="/trail-live.js" defer></script>
     </main>`,
   );
 }
@@ -364,7 +374,7 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
         <button class="text-button" type="submit">save</button>
       </form>
 
-      <section class="trail-path" aria-label="Research path">
+      <section class="trail-path" data-trail-live aria-label="Research path">
         ${itemHtml}
       </section>
 
@@ -503,6 +513,107 @@ async function rotateTrailIntegration(request: Request, env: Env): Promise<Respo
     .run();
   await ensureTrailIntegration(env, trail.id);
   return withTrailCookie(redirect("/trail/connect", 303), trail.cookie);
+}
+
+async function createStandaloneTrail(
+  env: Env,
+  question: string | null = null,
+): Promise<{ id: string; key: string }> {
+  const trailId = `trail_${randomToken()}`;
+  const key = randomTrailKey();
+
+  await env.DB.prepare("INSERT INTO trails (id) VALUES (?)").bind(trailId).run();
+  await env.DB.prepare("INSERT INTO trail_integrations (token, trail_id) VALUES (?, ?)")
+    .bind(key, trailId)
+    .run();
+
+  if (question?.trim()) {
+    await setTrailQuestion(env, trailId, question);
+  }
+
+  return { id: trailId, key };
+}
+
+async function openTrailByIntegrationKey(
+  request: Request,
+  env: Env,
+  key: string,
+): Promise<Response> {
+  const trailId = await trailIdForIntegrationKey(env, key);
+  if (!trailId) return notFound("This trail link is no longer valid.");
+
+  const token = randomToken();
+  await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
+    .bind(token, trailId)
+    .run();
+
+  const response = redirect("/trail", 303);
+  const headers = new Headers(response.headers);
+  headers.append("Set-Cookie", trailCookie(token, request));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function trailLiveScript(): Response {
+  const source = `
+(() => {
+  const path = document.querySelector("[data-trail-live]");
+  const question = document.getElementById("trail-question");
+  if (!path) return;
+
+  let last = "";
+  let stopped = false;
+
+  const tick = async () => {
+    if (stopped || document.hidden) return;
+    try {
+      const response = await fetch("/api/trail", {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      const fingerprint = JSON.stringify([data.question, data.items]);
+      if (fingerprint === last) return;
+      last = fingerprint;
+
+      if (typeof data.html === "string") {
+        path.innerHTML = data.html;
+      }
+      if (
+        question &&
+        document.activeElement !== question &&
+        typeof data.question === "string" &&
+        question.value !== data.question
+      ) {
+        question.value = data.question;
+      }
+    } catch {
+      // A transient network failure should not disturb the research session.
+    }
+  };
+
+  const interval = window.setInterval(tick, 1200);
+  window.addEventListener("pagehide", () => {
+    stopped = true;
+    window.clearInterval(interval);
+  }, { once: true });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) tick();
+  });
+  tick();
+})();
+`;
+  return new Response(source, {
+    headers: {
+      "Content-Type": "text/javascript; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }
 
 async function ensureCurrentTrail(request: Request, env: Env): Promise<TrailContext> {
@@ -752,8 +863,14 @@ async function handleTrailApi(
   const trail = await ensureCurrentTrail(request, env);
 
   if (request.method === "GET" && path === "/api/trail") {
-    const items = await listTrailItems(env, trail.id);
-    return withTrailCookie(json({ id: trail.id, items }), trail.cookie);
+    const [items, question] = await Promise.all([
+      listTrailItems(env, trail.id),
+      getTrailQuestion(env, trail.id),
+    ]);
+    const html = items.length
+      ? items.map((item, index) => renderTrailItem(item, index)).join("")
+      : `<p class="trail-empty">The path is empty. Add papers from their paper pages, or add a thought below.</p>`;
+    return withTrailCookie(json({ id: trail.id, question: question ?? "", items, html }), trail.cookie);
   }
 
   if (request.method === "POST" && path === "/api/trail/items") {
@@ -877,7 +994,34 @@ async function handleSharedTrailMcp(request: Request, env: Env): Promise<Respons
     { name: "trails", version: "0.1.0" },
     {
       instructions:
-        "Trails records how a research question develops. Ask for or reuse the user's private trail key. Read the trail before adding context-sensitive steps. Add only material that contributes to the research path.",
+        "Trails records how a research question develops. When the user asks to start a new trail, create one and return its open_url. For an existing trail, ask for or reuse its private key. Read the trail before adding context-sensitive steps. Add only material that contributes to the research path.",
+    },
+  );
+
+  server.registerTool(
+    "create_trail",
+    {
+      description: "Create a new research trail, optionally anchored by a research question. Returns a private trail key and an open_url that binds the browser to the new live trail.",
+      inputSchema: z.object({
+        question: z.string().max(600).optional(),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ question }) => {
+      const created = await createStandaloneTrail(env, question ?? null);
+      const openUrl = `${origin}/trail/open/${created.key}`;
+      const result = {
+        key: created.key,
+        question: question?.trim() || null,
+        open_url: openUrl,
+      };
+      return {
+        content: [{
+          type: "text",
+          text: `Created a new trail. Open it here: ${openUrl}`,
+        }],
+        structuredContent: result,
+      };
     },
   );
 
