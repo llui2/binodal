@@ -104,6 +104,7 @@ CREATE INDEX IF NOT EXISTS idx_trail_sessions_trail
 CREATE INDEX IF NOT EXISTS idx_trail_items_trail_position
   ON trail_items(trail_id, position, id);
 
+DROP INDEX IF EXISTS idx_trail_items_source;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_trail_items_source
-  ON trail_items(trail_id, source_ref)
-  WHERE source_ref IS NOT NULL;
+  ON trail_items(trail_id, source_ref);
