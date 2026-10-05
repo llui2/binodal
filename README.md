@@ -1,5 +1,5 @@
 <h1>
-  <img src="https://trails.llui2.workers.dev/favicon.png" width="44" alt="Trails logo">
+  <img src="assets/trails-logo.png" width="44" alt="Trails logo">
   trails
 </h1>
 
