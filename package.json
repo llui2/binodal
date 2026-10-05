@@ -6,7 +6,7 @@
   "scripts": {
     "setup": "npm install && node scripts/setup.mjs",
     "dev": "wrangler dev",
-    "deploy": "wrangler d1 execute DB --remote --file=./schema.sql && wrangler deploy",
+    "deploy": "wrangler d1 execute DB --remote --file=./schema.sql --yes && wrangler deploy",
     "db:migrate": "wrangler d1 execute DB --local --file=./schema.sql",
     "db:migrate:remote": "wrangler d1 execute DB --remote --file=./schema.sql",
     "typecheck": "tsc --noEmit"
