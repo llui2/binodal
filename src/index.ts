@@ -417,16 +417,12 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
     </header>
     <main class="shell trail-page">
       <div class="trail-heading">
-        <div>
-          <span class="eyebrow">research path</span>
-          <h1>trail</h1>
-        </div>
+        <h1>trail</h1>
         <a class="trail-connect-link" href="/trail/connect">connect ChatGPT</a>
       </div>
 
       <form class="trail-question" action="/trail/question" method="post">
-        <label for="trail-question">question</label>
-        <textarea id="trail-question" name="question" rows="2" maxlength="600" placeholder="What are you trying to understand?">${escapeHtml(question ?? "")}</textarea>
+        <textarea id="trail-question" name="question" rows="2" maxlength="600" aria-label="Research question" placeholder="What are you trying to understand?">${escapeHtml(question ?? "")}</textarea>
         <button class="text-button" type="submit">save</button>
       </form>
 
@@ -436,9 +432,8 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
 
       <form class="trail-note-add" action="/trail/add" method="post">
         <input type="hidden" name="kind" value="note">
-        <label for="trail-note">next thought</label>
         <div>
-          <textarea id="trail-note" name="value" rows="2" maxlength="10000" placeholder="Add a thought, connection, or next question" required></textarea>
+          <textarea id="trail-note" name="value" rows="2" maxlength="10000" aria-label="Add a thought, connection, or next question" placeholder="Add a thought, connection, or next question" required></textarea>
           <button type="submit">Add note</button>
         </div>
       </form>
@@ -3837,7 +3832,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       justify-content: space-between;
       gap: 24px;
     }
-    .trail-heading .eyebrow { margin-bottom: 9px; }
     .trail-heading h1 {
       margin: 0;
       font-size: clamp(2rem, 4vw, 2.8rem);
@@ -3852,15 +3846,13 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
     .trail-question {
       display: grid;
-      grid-template-columns: 72px minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr) auto;
       gap: 10px;
       align-items: start;
       margin-top: 34px;
       padding-bottom: 28px;
       border-bottom: 1px solid var(--wash);
     }
-    .trail-question label,
-    .trail-note-add label,
     .trail-endpoint-label {
       padding-top: 10px;
       color: var(--muted);
@@ -4064,9 +4056,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-note-add {
-      display: grid;
-      grid-template-columns: 72px minmax(0, 1fr);
-      gap: 10px;
       margin: 8px 0 0 20px;
       padding-top: 24px;
       border-top: 1px solid var(--wash);
@@ -4164,10 +4153,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       }
       .trail-question {
         grid-template-columns: 1fr;
-      }
-      .trail-question label,
-      .trail-note-add label {
-        padding-top: 0;
       }
       .trail-question .text-button {
         justify-self: start;
