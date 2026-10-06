@@ -141,6 +141,14 @@ CREATE TABLE IF NOT EXISTS trail_contexts (
   FOREIGN KEY (trail_id) REFERENCES trails(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS trail_metadata (
+  trail_id TEXT PRIMARY KEY,
+  title TEXT,
+  description TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (trail_id) REFERENCES trails(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS trail_integrations (
   token TEXT PRIMARY KEY,
   trail_id TEXT NOT NULL,
