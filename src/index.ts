@@ -650,9 +650,7 @@ function renderTrailItem(
         </button>
       </span>`}
       <span class="trail-step-line">
-        <button class="trail-step-title-button" type="button" data-item-toggle="${item.id}" aria-expanded="false">
-          <span class="trail-step-title-display">${escapeHtml(title)}</span>
-        </button>
+        <span class="trail-step-title-display">${escapeHtml(title)}</span>
         <input class="trail-step-title-input" value="${escapeAttr(title)}" maxlength="300" aria-label="Node title" data-item-title="${item.id}" hidden>
       </span>
       ${kind && item.url
@@ -1150,7 +1148,7 @@ function trailLiveScript(): Response {
   const TRAIL_MAP_NODE_SHAPE =
     "M10 1.2 C15.1 1.1 18.6 5 18.4 10.1 C18.6 15 14.8 18.8 9.8 18.6 C4.8 18.9 1.4 15.1 1.6 10 C1.3 5.1 4.9 1.4 10 1.2 Z";
 
-  const drawPath = (points, className, branchId, label) => {
+  const drawPath = (points, className, branchId, label, itemIds = []) => {
     const group = svgNode("g", {
       class: "trail-map-branch " + className,
       "data-branch-select": branchId,
@@ -1191,13 +1189,17 @@ function trailLiveScript(): Response {
         "translate(" + (point.x - 10 * scale).toFixed(2) + " " +
         (point.y - 10 * scale).toFixed(2) + ") scale(" + scale + ") " +
         "rotate(" + rotation + " 10 10)";
+      const itemId = itemIds[index] || null;
 
-      group.appendChild(svgNode("path", {
+      const nodeAttrs = {
         d: TRAIL_MAP_NODE_SHAPE,
         transform,
         class: "trail-map-brush-node",
         "data-branch-select": branchId,
-      }));
+      };
+      if (itemId) nodeAttrs["data-item-toggle-map"] = itemId;
+
+      group.appendChild(svgNode("path", nodeAttrs));
       group.appendChild(svgNode("path", {
         d: TRAIL_MAP_NODE_SHAPE,
         transform,
@@ -1279,7 +1281,16 @@ function trailLiveScript(): Response {
 
         const parentId = meta.dataset.branchAnchor;
         const branchName = meta.dataset.branchName || "branch";
-        const itemCount = Math.max(1, Number(meta.dataset.branchCount || 0));
+        const branchPanel = workspace.querySelector(
+          '[data-path-panel="' + branchId + '"]',
+        );
+        const branchSteps = Array.from(
+          branchPanel?.querySelectorAll(".trail-step") || [],
+        );
+        const branchItemIds = branchSteps
+          .map((step) => step.dataset.trailItem)
+          .filter(Boolean);
+        const itemCount = Math.max(1, branchItemIds.length);
         const parentIndex = mainSteps.findIndex(
           (step) => step.dataset.trailItem === parentId,
         );
@@ -1308,6 +1319,7 @@ function trailLiveScript(): Response {
           branchId,
           branchName,
           points,
+          itemIds: branchItemIds,
           selected: activeBranchId === branchId,
         });
       });
@@ -1325,6 +1337,9 @@ function trailLiveScript(): Response {
           pathId: "0",
           label: "main",
           points: mainYs.map((y) => ({ x: mainX, y })),
+          itemIds: mainSteps
+            .map((step) => step.dataset.trailItem)
+            .filter(Boolean),
           selected: !activeBranchId,
         });
       }
@@ -1334,6 +1349,7 @@ function trailLiveScript(): Response {
           pathId: branch.branchId,
           label: branch.branchName,
           points: branch.points,
+          itemIds: branch.itemIds,
           selected: branch.selected,
         });
       });
@@ -1348,6 +1364,7 @@ function trailLiveScript(): Response {
             "trail-map-path trail-map-path-muted",
             geometry.pathId,
             geometry.label,
+            geometry.itemIds,
           );
         });
 
@@ -1359,6 +1376,7 @@ function trailLiveScript(): Response {
             "trail-map-path trail-map-path-active",
             geometry.pathId,
             geometry.label,
+            geometry.itemIds,
           );
         });
     });
@@ -1419,11 +1437,36 @@ function trailLiveScript(): Response {
       mapSvg.addEventListener("click", (event) => {
         const rawTarget = event.target;
         if (!(rawTarget instanceof Element)) return;
-        const target = rawTarget.closest("[data-branch-select]");
-        if (!target) return;
-        const selected = target.getAttribute("data-branch-select");
+
+        const pathTarget = rawTarget.closest("[data-branch-select]");
+        if (!pathTarget) return;
+
+        const selected = pathTarget.getAttribute("data-branch-select");
         activeBranchId = selected && selected !== "0" ? selected : null;
         applyActiveBranch();
+
+        // The topology node is the control for the second, closable mark block.
+        // The permanent mark text remains visible; clicking its brush node
+        // opens/closes the extra detail block on the currently focused path.
+        const nodeTarget = rawTarget.closest("[data-item-toggle-map]");
+        const itemId = nodeTarget?.getAttribute("data-item-toggle-map");
+        if (!itemId) return;
+
+        const pathId = selected || "0";
+        const panel = workspace.querySelector(
+          '[data-path-panel="' + pathId + '"]',
+        );
+        const step = panel?.querySelector(
+          '.trail-step[data-trail-item="' + itemId + '"]',
+        );
+        if (!step) return;
+
+        const opening = step.dataset.open !== "true";
+        setStepOpen(step, opening);
+        if (opening) {
+          const titleField = step.querySelector("[data-item-title]");
+          requestAnimationFrame(() => titleField?.focus());
+        }
       });
     }
   };
@@ -6336,22 +6379,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-    }
-    .trail-step-title-button {
-      display: block;
-      width: 100%;
-      padding: 0;
-      border: 0;
-      border-radius: 0;
-      background: transparent;
-      color: inherit;
-      text-align: left;
-    }
-    .trail-step-title-button:hover,
-    .trail-step-title-button:focus-visible {
-      color: var(--annotation);
-      filter: none;
-      outline: none;
     }
     .trail-step-title-display {
       display: block;
