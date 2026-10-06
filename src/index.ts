@@ -863,10 +863,10 @@ function trailLiveScript(): Response {
   const source = `
 (() => {
   const graph = document.querySelector("[data-trail-live]");
-  const map = graph?.querySelector("[data-trail-map]");
-  const mapSvg = graph?.querySelector("[data-trail-map-svg]");
-  const workspace = graph?.querySelector("[data-trail-workspace]");
-  const mapCaption = graph?.querySelector("[data-trail-map-caption]");
+  let map = graph?.querySelector("[data-trail-map]");
+  let mapSvg = graph?.querySelector("[data-trail-map-svg]");
+  let workspace = graph?.querySelector("[data-trail-workspace]");
+  let mapCaption = graph?.querySelector("[data-trail-map-caption]");
   const title = document.getElementById("trail-title");
   const description = document.getElementById("trail-description");
   const saveState = document.getElementById("trail-save-state");
@@ -1301,7 +1301,9 @@ function trailLiveScript(): Response {
     if (mapSvg.dataset.bound !== "true") {
       mapSvg.dataset.bound = "true";
       mapSvg.addEventListener("click", (event) => {
-        const target = event.target.closest("[data-branch-select]");
+        const rawTarget = event.target;
+        if (!(rawTarget instanceof Element)) return;
+        const target = rawTarget.closest("[data-branch-select]");
         if (!target) return;
         const selected = target.getAttribute("data-branch-select");
         activeBranchId = selected && selected !== "0" ? selected : null;
@@ -1391,8 +1393,10 @@ function trailLiveScript(): Response {
         const nextCaption = graph.querySelector("[data-trail-map-caption]");
         if (!nextMap || !nextSvg || !nextWorkspace) return;
 
-        map.replaceWith(nextMap);
-        workspace.replaceWith(nextWorkspace);
+        map = nextMap;
+        mapSvg = nextSvg;
+        workspace = nextWorkspace;
+        mapCaption = nextCaption;
 
         for (const step of graph.querySelectorAll(".trail-step")) {
           const key = (step.dataset.pathBranch || "0") + ":" + step.dataset.trailItem;
