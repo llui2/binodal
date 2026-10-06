@@ -969,10 +969,34 @@ function trailLiveScript(): Response {
     field.style.height = field.scrollHeight + "px";
   };
 
+  const TRAIL_TOP_Y = 24;
+  const TRAIL_ROW_STEP = 52;
+
   const activeKey = () => activeBranchId || "0";
 
   const activePanel = () =>
     workspace.querySelector('[data-path-panel="' + activeKey() + '"]');
+
+  const syncActivePanelOffset = () => {
+    workspace.querySelectorAll("[data-path-panel]").forEach((panel) => {
+      panel.style.paddingTop = "0px";
+    });
+
+    if (!activeBranchId) return;
+
+    const mainPanel = workspace.querySelector('[data-path-panel="0"]');
+    const mainSteps = Array.from(mainPanel?.querySelectorAll(".trail-step") || []);
+    const meta = graph.querySelector('[data-branch-meta="' + activeBranchId + '"]');
+    const panel = activePanel();
+    if (!meta || !panel) return;
+
+    const parentId = meta.dataset.branchAnchor;
+    const parentIndex = mainSteps.findIndex(
+      (step) => step.dataset.trailItem === parentId,
+    );
+    const offset = Math.max(0, parentIndex) * TRAIL_ROW_STEP;
+    panel.style.paddingTop = offset + "px";
+  };
 
   const setStepOpen = (step, open) => {
     const toggles = step.querySelectorAll("[data-item-toggle]");
@@ -1148,7 +1172,14 @@ function trailLiveScript(): Response {
   const TRAIL_MAP_NODE_SHAPE =
     "M10 1.2 C15.1 1.1 18.6 5 18.4 10.1 C18.6 15 14.8 18.8 9.8 18.6 C4.8 18.9 1.4 15.1 1.6 10 C1.3 5.1 4.9 1.4 10 1.2 Z";
 
-  const drawPath = (points, className, branchId, label, itemIds = []) => {
+  const drawPath = (
+    points,
+    className,
+    branchId,
+    label,
+    itemIds = [],
+    explicitNodePoints = null,
+  ) => {
     const group = svgNode("g", {
       class: "trail-map-branch " + className,
       "data-branch-select": branchId,
@@ -1181,7 +1212,8 @@ function trailLiveScript(): Response {
       );
     }
 
-    const nodePoints = branchId === "0" ? points : points.slice(1);
+    const nodePoints = explicitNodePoints ||
+      (branchId === "0" ? points : points.slice(1));
     nodePoints.forEach((point, index) => {
       const scale = 0.7;
       const rotation = ((index % 3) - 1) * 4;
@@ -1213,30 +1245,35 @@ function trailLiveScript(): Response {
   const drawTrailMap = () => {
     window.cancelAnimationFrame(drawFrame);
     drawFrame = window.requestAnimationFrame(() => {
+      syncActivePanelOffset();
+
       const panel = activePanel();
       if (!panel) return;
 
+      const graphRect = graph.getBoundingClientRect();
       const mainPanel = workspace.querySelector('[data-path-panel="0"]');
       const mainSteps = Array.from(mainPanel?.querySelectorAll(".trail-step") || []);
+      const activeSteps = Array.from(panel.querySelectorAll(".trail-step"));
       const branchMetas = Array.from(graph.querySelectorAll("[data-branch-meta]"));
       const width = Math.max(88, map.clientWidth);
       const rightX = width - 14;
-      const topY = 24;
-      const rowStep = 52;
 
-      // Rows are semantic. A node keeps its vertical level regardless of which
-      // branch is focused; only the horizontal lane changes.
-      const mainYs = mainSteps.map((_, index) => topY + index * rowStep);
+      const visibleStepYs = activeSteps.map((step) => {
+        const summary = step.querySelector(".trail-step-summary") || step;
+        const rect = summary.getBoundingClientRect();
+        return rect.top - graphRect.top + rect.height / 2;
+      });
+
+      const semanticMainYs = mainSteps.map(
+        (_, index) => TRAIL_TOP_Y + index * TRAIL_ROW_STEP,
+      );
+      const mainYs = activeBranchId ? semanticMainYs : visibleStepYs;
 
       const branchIds = branchMetas
         .map((meta) => meta.dataset.branchMeta)
         .filter(Boolean);
       const allPathIds = [...branchIds, "0"];
 
-      // Keep lane positions stable between selections. Focusing a path swaps
-      // only that path with the current right-most path instead of reordering
-      // the whole graph. This preserves spatial memory while ensuring that the
-      // visible text always corresponds to the right-most path.
       pathLaneOrder = pathLaneOrder.filter((pathId) => allPathIds.includes(pathId));
       allPathIds.forEach((pathId) => {
         if (!pathLaneOrder.includes(pathId)) pathLaneOrder.push(pathId);
@@ -1252,7 +1289,6 @@ function trailLiveScript(): Response {
       }
 
       const laneOrder = pathLaneOrder;
-
       const maxLaneGap = 22;
       const minLaneGap = 13;
       const laneGap = laneOrder.length > 1
@@ -1272,7 +1308,8 @@ function trailLiveScript(): Response {
       const branchGeometry = [];
       let requiredHeight = Math.max(
         150,
-        mainYs.length ? mainYs[mainYs.length - 1] + 30 : topY + 30,
+        panel.getBoundingClientRect().height + 8,
+        mainYs.length ? mainYs[mainYs.length - 1] + 30 : TRAIL_TOP_Y + 30,
       );
 
       branchMetas.forEach((meta) => {
@@ -1290,37 +1327,47 @@ function trailLiveScript(): Response {
         const branchItemIds = branchSteps
           .map((step) => step.dataset.trailItem)
           .filter(Boolean);
-        const itemCount = Math.max(1, branchItemIds.length);
         const parentIndex = mainSteps.findIndex(
           (step) => step.dataset.trailItem === parentId,
         );
         const anchorRow = parentIndex >= 0 ? parentIndex : 0;
-        const anchorY = topY + anchorRow * rowStep;
+        const anchorY = semanticMainYs[anchorRow] ?? TRAIL_TOP_Y;
         const branchX = Number(laneX.get(branchId) ?? mainX - laneGap);
+        const selected = activeBranchId === branchId;
+
+        const nodeYs = selected
+          ? visibleStepYs
+          : branchItemIds.map(
+              (_, itemIndex) => anchorY + itemIndex * TRAIL_ROW_STEP,
+            );
+        const nodePoints = nodeYs.map((y) => ({ x: branchX, y }));
 
         const points = [
           { x: mainX, y: anchorY },
           { x: branchX, y: anchorY },
         ];
+        nodePoints.forEach((point) => {
+          const last = points[points.length - 1];
+          if (
+            Math.abs(point.x - last.x) > 0.01 ||
+            Math.abs(point.y - last.y) > 0.01
+          ) {
+            points.push(point);
+          }
+        });
 
-        for (let itemIndex = 1; itemIndex < itemCount; itemIndex += 1) {
-          points.push({
-            x: branchX,
-            y: anchorY + itemIndex * rowStep,
-          });
-        }
-
-        requiredHeight = Math.max(
-          requiredHeight,
-          points[points.length - 1].y + 30,
-        );
+        const lastY = nodePoints.length
+          ? nodePoints[nodePoints.length - 1].y
+          : anchorY;
+        requiredHeight = Math.max(requiredHeight, lastY + 30);
 
         branchGeometry.push({
           branchId,
           branchName,
           points,
+          nodePoints,
           itemIds: branchItemIds,
-          selected: activeBranchId === branchId,
+          selected,
         });
       });
 
@@ -1333,10 +1380,12 @@ function trailLiveScript(): Response {
       const geometries = [];
 
       if (mainYs.length) {
+        const mainNodePoints = mainYs.map((y) => ({ x: mainX, y }));
         geometries.push({
           pathId: "0",
           label: "main",
-          points: mainYs.map((y) => ({ x: mainX, y })),
+          points: mainNodePoints,
+          nodePoints: mainNodePoints,
           itemIds: mainSteps
             .map((step) => step.dataset.trailItem)
             .filter(Boolean),
@@ -1349,13 +1398,12 @@ function trailLiveScript(): Response {
           pathId: branch.branchId,
           label: branch.branchName,
           points: branch.points,
+          nodePoints: branch.nodePoints,
           itemIds: branch.itemIds,
           selected: branch.selected,
         });
       });
 
-      // SVG paint order is z-order. Always draw the focused blue trail last so
-      // its links and nodes sit cleanly on top at every shared junction.
       geometries
         .filter((geometry) => !geometry.selected)
         .forEach((geometry) => {
@@ -1365,9 +1413,11 @@ function trailLiveScript(): Response {
             geometry.pathId,
             geometry.label,
             geometry.itemIds,
+            geometry.nodePoints,
           );
         });
 
+      // SVG paint order is z-order: active blue path always sits on top.
       geometries
         .filter((geometry) => geometry.selected)
         .forEach((geometry) => {
@@ -1377,6 +1427,7 @@ function trailLiveScript(): Response {
             geometry.pathId,
             geometry.label,
             geometry.itemIds,
+            geometry.nodePoints,
           );
         });
     });
@@ -1393,6 +1444,7 @@ function trailLiveScript(): Response {
     workspace.querySelectorAll("[data-path-panel]").forEach((panel) => {
       panel.hidden = panel.dataset.pathPanel !== activeKey();
     });
+    syncActivePanelOffset();
 
     if (persist) {
       window.localStorage.setItem(branchStorageKey, activeBranchId || "main");
