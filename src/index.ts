@@ -571,7 +571,9 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
         <span class="trail-step-title-display">${escapeHtml(title)}</span>
         <input class="trail-step-title-input" value="${escapeAttr(title)}" maxlength="300" aria-label="Node title" data-item-title="${item.id}" hidden>
       </span>
-      ${kind ? `<span class="trail-step-kind">${escapeHtml(kind)}</span>` : `<span class="trail-step-kind" aria-hidden="true"></span>`}
+      ${kind && item.url
+        ? `<a class="trail-step-kind" href="${escapeAttr(item.url)}"${item.kind === "link" ? ` target="_blank" rel="noreferrer"` : ""}>${escapeHtml(kind)}</a>`
+        : `<span class="trail-step-kind" aria-hidden="true"></span>`}
     </div>
 
     ${item.kind === "note"
@@ -2763,7 +2765,19 @@ function sourceHost(url: string): string {
 
 async function fetchPaperByInput(paperId: string): Promise<FetchedPaper> {
   if (paperId.startsWith("doi:")) {
-    return fetchPaperFromCrossref(paperId.slice(4), paperId);
+    const doi = paperId.slice(4);
+    try {
+      return await fetchPaperFromCrossref(doi, paperId);
+    } catch (crossrefError) {
+      for (const server of ["biorxiv", "medrxiv"] as const) {
+        try {
+          return await fetchPaperFromBioRxiv(doi, server, paperId);
+        } catch {
+          // Try the other preprint server before surfacing the Crossref error.
+        }
+      }
+      throw crossrefError;
+    }
   }
 
   if (paperId.startsWith("url:")) {
@@ -3078,8 +3092,121 @@ async function findArxivByTitleAndAuthors(
   }
 }
 
+type BioRxivServer = "biorxiv" | "medrxiv";
+
+function bioRxivPaperFromUrl(raw: string): { server: BioRxivServer; doi: string } | null {
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase();
+    let server: BioRxivServer | null = null;
+    if (host === "biorxiv.org" || host === "www.biorxiv.org") server = "biorxiv";
+    if (host === "medrxiv.org" || host === "www.medrxiv.org") server = "medrxiv";
+    if (!server) return null;
+
+    const match = decodeURIComponent(url.pathname).match(
+      /\/content\/(10\.\d{4,9}\/[A-Za-z0-9._;()/:+-]+?)(?:v\d+)?(?:\.full)?(?:\.pdf)?(?:\/)?$/i,
+    );
+    if (!match) return null;
+
+    const doi = normalizePublicationDoi(match[1]);
+    return doi ? { server, doi } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchPaperFromBioRxiv(
+  doi: string,
+  server: BioRxivServer,
+  storageId = `doi:${doi.toLowerCase()}`,
+  sourceUrl?: string,
+): Promise<FetchedPaper> {
+  const endpoint = `https://api.biorxiv.org/details/${server}/${encodeURIComponent(doi)}/na/json`;
+  const response = await fetch(endpoint, {
+    headers: {
+      "User-Agent": "trails/0.1",
+      Accept: "application/json",
+    },
+  });
+  if (!response.ok) throw new Error(`${server} returned HTTP ${response.status}`);
+
+  const payload = await response.json() as {
+    collection?: Array<{
+      doi?: string;
+      title?: string;
+      authors?: string;
+      abstract?: string;
+      date?: string;
+      version?: string | number;
+      published?: string;
+      server?: string;
+    }>;
+  };
+  const record = payload.collection?.[0];
+  if (!record?.title) throw new Error(`No ${server} paper found for DOI ${doi}`);
+
+  const resolvedDoi = normalizePublicationDoi(record.doi ?? doi) ?? doi.toLowerCase();
+  const version = String(record.version ?? "").replace(/^v/i, "").trim();
+  const canonicalUrl = `https://www.${server}.org/content/${resolvedDoi}${version ? `v${version}` : ""}`;
+  const authors = String(record.authors ?? "")
+    .split(/\s*;\s*/)
+    .map(normalizeAuthorName)
+    .filter(Boolean);
+
+  const identifiers: PaperIdentifier[] = [
+    {
+      type: "doi",
+      value: resolvedDoi,
+      label: server === "biorxiv" ? "bioRxiv" : "medRxiv",
+      url: canonicalUrl,
+    },
+    {
+      type: "url",
+      value: canonicalUrl,
+      label: server === "biorxiv" ? "bioRxiv" : "medRxiv",
+      url: canonicalUrl,
+    },
+  ];
+
+  if (sourceUrl && normalizePaperUrl(sourceUrl)) {
+    identifiers.push({
+      type: "url",
+      value: sourceUrl,
+      label: sourceHost(sourceUrl),
+      url: sourceUrl,
+    });
+  }
+
+  const publishedDoi = normalizePublicationDoi(record.published ?? "");
+  if (publishedDoi && publishedDoi !== resolvedDoi) {
+    identifiers.push({
+      type: "doi",
+      value: publishedDoi,
+      label: "published version",
+      url: `https://doi.org/${publishedDoi}`,
+    });
+  }
+
+  return {
+    paper: {
+      arxiv_id: storageId,
+      title: cleanHtmlText(record.title),
+      authors_json: JSON.stringify(authors),
+      abstract: cleanHtmlText(record.abstract ?? ""),
+      published_at: record.date ?? null,
+      updated_at: record.date ?? null,
+    },
+    identifiers: dedupeIdentifiers(identifiers),
+  };
+}
+
 async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<FetchedPaper> {
   if (!isSafePaperUrl(sourceUrl)) throw new Error("Only public HTTPS paper URLs are supported");
+
+  const bioRxiv = bioRxivPaperFromUrl(sourceUrl);
+  if (bioRxiv) {
+    return fetchPaperFromBioRxiv(bioRxiv.doi, bioRxiv.server, storageId, sourceUrl);
+  }
 
   if (isGoogleScholarUrl(sourceUrl)) {
     return fetchPaperFromGoogleScholarUrl(sourceUrl, storageId);
@@ -4942,6 +5069,11 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-weight: 520;
       letter-spacing: .035em;
       white-space: nowrap;
+    }
+    a.trail-step-kind:hover,
+    a.trail-step-kind:focus-visible {
+      color: var(--annotation);
+      outline: none;
     }
     .trail-step-body {
       position: relative;
