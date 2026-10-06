@@ -57,7 +57,7 @@ Use short, direct labels. Prefer plain verbs for actions. Avoid prototype or imp
 
 Keep interaction patterns consistent. If a topology node opens mark detail in one place, it should behave the same way everywhere.
 
-Editable trail and mark titles should look like ordinary typography. Editing is indicated by the text caret only: no underline, focus box, glow, tinted background, or other chrome. Use a short, thick horizontal caret with a fixed visual length and no blinking; do not rely on the browser's hairline or variable-width underscore caret. Browser spelling and grammar underlines are disabled inside the trail workspace because scientific terminology and notation make them noisy.
+Editable trail and mark titles should look like ordinary typography. Editing is indicated by the text caret only: no underline, focus box, glow, tinted background, or other chrome. Use a thick vertical caret with a stable visual weight and no blinking; do not rely on the browser's thin default caret. Browser spelling and grammar underlines are disabled inside the trail workspace because scientific terminology and notation make them noisy.
 
 ## Layout
 
