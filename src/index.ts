@@ -448,22 +448,32 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
   return withTrailCookie(response, trail.cookie);
 }
 
-function renderTrailItem(item: TrailItemRow, index: number): string {
+function renderTrailItem(item: TrailItemRow, _index: number): string {
   const isOpenable = Boolean(item.url);
   const title = item.title || item.content || "untitled";
-  const body = item.kind === "note" && item.content
+  const kind = item.kind === "paper" ? "paper" : item.kind === "note" ? "note" : "link";
+  const content = item.kind === "note" && item.content
     ? `<p class="trail-content">${escapeHtml(item.content)}</p>`
     : "";
+  const why = item.note
+    ? `<span class="trail-step-why"> — ${escapeHtml(item.note)}</span>`
+    : "";
 
-  return `<article class="trail-step">
-    <div class="trail-step-index">${index + 1}</div>
-    <div class="trail-step-body">
-      <div class="trail-step-kind">${escapeHtml(item.kind === "paper" ? "paper" : item.kind === "note" ? "note" : "link")}</div>
+  return `<details class="trail-step" data-trail-item="${item.id}">
+    <summary class="trail-step-summary">
+      <span class="trail-step-rail" aria-hidden="true"><span class="trail-step-dot"></span></span>
+      <span class="trail-step-line">
+        <span class="trail-step-title">${escapeHtml(title)}</span>${why}
+      </span>
+      <span class="trail-step-kind">${escapeHtml(kind)}</span>
+      <span class="trail-step-chevron" aria-hidden="true"></span>
+    </summary>
+
+    <div class="trail-step-detail">
+      ${content}
       ${isOpenable
-        ? `<a class="trail-step-title" href="${escapeAttr(item.url)}">${escapeHtml(title)}</a>`
-        : `<div class="trail-step-title">${escapeHtml(title)}</div>`}
-      ${body}
-      ${item.note ? `<p class="trail-note">${escapeHtml(item.note)}</p>` : ""}
+        ? `<a class="trail-step-open" href="${escapeAttr(item.url)}">open ${escapeHtml(kind)} ↗</a>`
+        : ""}
 
       <div class="trail-step-actions">
         <details class="trail-note-edit">
@@ -482,7 +492,7 @@ function renderTrailItem(item: TrailItemRow, index: number): string {
         </form>
       </div>
     </div>
-  </article>`;
+  </details>`;
 }
 
 async function getTrailQuestion(env: Env, trailId: string): Promise<string | null> {
@@ -623,6 +633,19 @@ function trailLiveScript(): Response {
   let last = "";
   let stopped = false;
 
+  const bindTrailItems = () => {
+    path.querySelectorAll("details.trail-step").forEach((step) => {
+      if (step.dataset.bound === "true") return;
+      step.dataset.bound = "true";
+      step.addEventListener("toggle", () => {
+        if (!step.open) return;
+        path.querySelectorAll("details.trail-step[open]").forEach((other) => {
+          if (other !== step) other.open = false;
+        });
+      });
+    });
+  };
+
   const tick = async () => {
     if (stopped || document.hidden) return;
     try {
@@ -637,7 +660,17 @@ function trailLiveScript(): Response {
       last = fingerprint;
 
       if (typeof data.html === "string") {
+        const openItem = path.querySelector("details.trail-step[open]")?.dataset.trailItem ?? null;
         path.innerHTML = data.html;
+        bindTrailItems();
+        if (openItem) {
+          for (const step of path.querySelectorAll("details.trail-step")) {
+            if (step.dataset.trailItem === openItem) {
+              step.open = true;
+              break;
+            }
+          }
+        }
       }
       if (
         question &&
@@ -652,6 +685,7 @@ function trailLiveScript(): Response {
     }
   };
 
+  bindTrailItems();
   const interval = window.setInterval(tick, 1200);
   window.addEventListener("pagehide", () => {
     stopped = true;
@@ -3847,68 +3881,124 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-path {
-      margin-top: 26px;
+      margin-top: 22px;
     }
     .trail-step {
-      display: grid;
-      grid-template-columns: 34px minmax(0, 1fr);
-      gap: 16px;
       position: relative;
-      padding: 0 0 30px;
+      margin: 0;
     }
     .trail-step:not(:last-child)::after {
       content: "";
       position: absolute;
-      left: 16px;
-      top: 29px;
-      bottom: 1px;
+      left: 4px;
+      top: 21px;
+      bottom: -1px;
       width: 1px;
       background: var(--wash);
+      pointer-events: none;
     }
-    .trail-step-index {
-      width: 33px;
-      height: 28px;
+    .trail-step-summary {
+      display: grid;
+      grid-template-columns: 10px minmax(0, 1fr) auto 10px;
+      gap: 10px;
+      align-items: center;
+      min-height: 36px;
+      padding: 7px 0;
+      cursor: pointer;
+      list-style: none;
+      border-radius: 2px;
+    }
+    .trail-step-summary::-webkit-details-marker { display: none; }
+    .trail-step-summary:hover {
+      background: var(--field-muted);
+    }
+    .trail-step-summary:focus-visible {
+      outline: none;
+      background: var(--field-focus);
+    }
+    .trail-step-rail {
+      width: 10px;
       display: grid;
       place-items: center;
       position: relative;
       z-index: 1;
-      background: var(--paper);
-      border: 1px solid var(--stone);
+    }
+    .trail-step-dot {
+      width: 8px;
+      height: 8px;
+      display: block;
       border-radius: 50%;
-      color: var(--muted);
-      font-size: .72rem;
+      background: var(--annotation);
+      box-shadow: 0 0 0 3px var(--paper);
     }
-    .trail-step-body {
+    .trail-step-summary:hover .trail-step-dot,
+    .trail-step-summary:focus-visible .trail-step-dot {
+      box-shadow: 0 0 0 3px var(--field-muted);
+    }
+    .trail-step-line {
       min-width: 0;
-      padding-top: 2px;
-    }
-    .trail-step-kind {
-      margin-bottom: 5px;
-      color: var(--muted);
-      font-size: .7rem;
-      letter-spacing: .04em;
+      display: flex;
+      align-items: baseline;
+      overflow: hidden;
+      white-space: nowrap;
     }
     .trail-step-title {
-      display: block;
-      max-width: 680px;
-      font-size: 1.05rem;
-      font-weight: 620;
-      line-height: 1.34;
-      overflow-wrap: anywhere;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--ink);
+      font-size: .93rem;
+      font-weight: 610;
+      line-height: 1.35;
     }
-    .trail-content,
-    .trail-note {
+    .trail-step-why {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--muted);
+      font-size: .82rem;
+      font-weight: 450;
+      line-height: 1.35;
+    }
+    .trail-step-kind {
+      color: var(--soft);
+      font-size: .66rem;
+      font-weight: 520;
+      letter-spacing: .035em;
+      white-space: nowrap;
+    }
+    .trail-step-chevron {
+      width: 6px;
+      height: 6px;
+      border-right: 1px solid var(--soft);
+      border-bottom: 1px solid var(--soft);
+      transform: rotate(45deg) translate(-1px, 1px);
+      transform-origin: center;
+      transition: transform 120ms ease;
+    }
+    .trail-step[open] > .trail-step-summary .trail-step-chevron {
+      transform: rotate(225deg) translate(-1px, 1px);
+    }
+    .trail-step-detail {
+      margin: 0 20px 0 20px;
+      padding: 2px 0 15px;
       max-width: 650px;
-      margin: 8px 0 0;
+    }
+    .trail-content {
+      max-width: 650px;
+      margin: 3px 0 9px;
       color: var(--body-muted);
-      font-size: .88rem;
-      line-height: 1.52;
+      font-size: .86rem;
+      line-height: 1.5;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
-    .trail-note {
-      color: var(--muted);
-      font-style: italic;
+    .trail-step-open {
+      display: inline-block;
+      margin: 2px 0 0;
+      color: var(--annotation);
+      font-size: .75rem;
+      font-weight: 520;
     }
     .trail-step-actions {
       display: flex;
@@ -3918,6 +4008,12 @@ function htmlPage(title: string, body: string, status = 200): Response {
       margin-top: 9px;
       color: var(--muted);
       font-size: .72rem;
+      opacity: 0;
+      transition: opacity 120ms ease;
+    }
+    .trail-step:hover .trail-step-actions,
+    .trail-step:focus-within .trail-step-actions {
+      opacity: 1;
     }
     .trail-step-actions form {
       display: inline-flex;
@@ -3960,8 +4056,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
       color: var(--annotation);
       filter: none;
     }
+
     .trail-empty {
-      margin: 8px 0 30px 50px;
+      margin: 8px 0 30px 20px;
       color: var(--muted);
       font-size: .88rem;
     }
@@ -3970,7 +4067,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       display: grid;
       grid-template-columns: 72px minmax(0, 1fr);
       gap: 10px;
-      margin: 8px 0 0 50px;
+      margin: 8px 0 0 20px;
       padding-top: 24px;
       border-top: 1px solid var(--wash);
     }
