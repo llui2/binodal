@@ -205,11 +205,16 @@ async function route(request: Request, env: Env): Promise<Response> {
     return updateTrailDescription(request, env);
   }
 
-  if (
-    request.method === "POST" &&
-    (path === "/trail/user" || path === "/trail/new" || path === "/trail/select")
-  ) {
-    return redirect("/trail", 303);
+  if (request.method === "POST" && path === "/trail/user") {
+    return setTrailUser(request, env);
+  }
+
+  if (request.method === "POST" && path === "/trail/new") {
+    return createTrailForUser(request, env);
+  }
+
+  if (request.method === "POST" && path === "/trail/select") {
+    return selectTrailForUser(request, env);
   }
 
   if (request.method === "GET" && path === "/trail/connect") {
@@ -464,13 +469,27 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
 
 async function renderTrail(request: Request, env: Env): Promise<Response> {
   const trail = await ensureCurrentTrail(request, env);
+  const trailUser = await currentTrailUser(request, env);
 
-  const [items, branches, title, description] = await Promise.all([
+  const [items, branches, title, description, user, ownedTrails] = await Promise.all([
     listTrailItems(env, trail.id),
     listTrailBranches(env, trail.id),
     getTrailTitle(env, trail.id),
     getTrailDescription(env, trail.id),
+    currentUser(request, env),
+    trailUser ? listUserTrails(env, trailUser.id) : Promise.resolve([] as TrailSummary[]),
   ]);
+
+  const userTrails = trailUser
+    ? [
+        {
+          id: COMMON_TRAIL_ID,
+          title: "A branching research trail",
+          created_at: "",
+        },
+        ...ownedTrails.filter((item) => item.id !== COMMON_TRAIL_ID),
+      ]
+    : [];
 
   const graphHtml = renderTrailGraph(items, branches);
 
@@ -478,32 +497,39 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
     title?.trim() || "trail",
     `<header class="topbar">
       ${renderBrand()}
+      ${renderIdentity(user)}
     </header>
     <main class="shell trail-page">
-      <div class="trail-main">
-        <div class="trail-heading">
-          <input id="trail-title" class="trail-title-input" maxlength="140" aria-label="Trail title" placeholder="untitled trail" value="${escapeAttr(title ?? "")}" data-autosave-trail="title">
-          <div class="trail-heading-meta">
-            <span id="trail-save-state" class="trail-save-state" role="status" aria-live="polite"></span>
-            <a class="trail-connect-link" href="/trail/connect">connect ChatGPT</a>
+      <div class="trail-layout">
+        <aside class="trail-sidebar" aria-label="Your trails">
+          ${renderTrailSidebar(trailUser, userTrails, trail.id)}
+        </aside>
+
+        <div class="trail-main">
+          <div class="trail-heading">
+            <input id="trail-title" class="trail-title-input" maxlength="140" aria-label="Trail title" placeholder="untitled trail" value="${escapeAttr(title ?? "")}" data-autosave-trail="title">
+            <div class="trail-heading-meta">
+              <span id="trail-save-state" class="trail-save-state" role="status" aria-live="polite"></span>
+              <a class="trail-connect-link" href="/trail/connect">connect ChatGPT</a>
+            </div>
           </div>
+
+          <div class="trail-description">
+            <textarea id="trail-description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="Describe what this trail is trying to understand." data-autosave-trail="description">${escapeHtml(description ?? "")}</textarea>
+          </div>
+
+          <section class="trail-graph" data-trail-live data-trail-id="${escapeAttr(trail.id)}" aria-label="Research paths">
+            ${graphHtml}
+          </section>
+
+          <form class="trail-mark-add" action="/trail/add" method="post" data-trail-add>
+            <span class="trail-mark-context" data-trail-mark-context>main</span>
+            <textarea id="trail-add-value" name="value" rows="2" maxlength="10000"
+              aria-label="Add a mark"
+              placeholder="Add a mark — thought, paper, or link" required></textarea>
+            <button type="submit">mark</button>
+          </form>
         </div>
-
-        <div class="trail-description">
-          <textarea id="trail-description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="Describe what this trail is trying to understand." data-autosave-trail="description">${escapeHtml(description ?? "")}</textarea>
-        </div>
-
-        <section class="trail-graph" data-trail-live data-trail-id="${escapeAttr(trail.id)}" aria-label="Research paths">
-          ${graphHtml}
-        </section>
-
-        <form class="trail-mark-add" action="/trail/add" method="post" data-trail-add>
-          <span class="trail-mark-context" data-trail-mark-context>main</span>
-          <textarea id="trail-add-value" name="value" rows="2" maxlength="10000"
-            aria-label="Add a mark"
-            placeholder="Add a mark — thought, paper, or link" required></textarea>
-          <button type="submit">mark</button>
-        </form>
       </div>
       <script src="/trail-live.js" defer></script>
     </main>`,
@@ -1582,22 +1608,23 @@ async function setTrailUser(request: Request, env: Env): Promise<Response> {
     .run();
 
   const current = await ensureCurrentTrail(request, env);
-  const ownerId = await trailOwnerUserId(env, current.id);
   let trailCookieValue = current.cookie;
 
-  if (ownerId === null) {
-    await claimTrailForUser(env, current.id, user.id);
-  } else if (ownerId !== user.id) {
-    const existingTrailId = await latestTrailForUser(env, user.id);
-    if (existingTrailId) {
-      const token = randomToken();
-      await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
-        .bind(token, existingTrailId)
-        .run();
-      trailCookieValue = trailCookie(token, request);
-    } else {
-      const created = await createOwnedTrail(env, user.id);
-      trailCookieValue = trailCookie(created.trailToken, request);
+  if (current.id !== COMMON_TRAIL_ID) {
+    const ownerId = await trailOwnerUserId(env, current.id);
+    if (ownerId === null) {
+      await claimTrailForUser(env, current.id, user.id);
+    } else if (ownerId !== user.id) {
+      const existingTrailId = await latestTrailForUser(env, user.id);
+      if (existingTrailId) {
+        const token = randomToken();
+        await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
+          .bind(token, existingTrailId)
+          .run();
+        trailCookieValue = trailCookie(token, request);
+      } else {
+        trailCookieValue = null;
+      }
     }
   }
 
@@ -1628,12 +1655,14 @@ async function selectTrailForUser(request: Request, env: Env): Promise<Response>
 
   const form = await request.formData();
   const trailId = String(form.get("trail_id") ?? "");
-  const owned = await env.DB.prepare(
-    "SELECT 1 AS ok FROM trail_owners WHERE trail_id = ? AND user_id = ?",
-  )
-    .bind(trailId, user.id)
-    .first<{ ok: number }>();
-  if (!owned) return redirect("/trail", 303);
+  if (trailId !== COMMON_TRAIL_ID) {
+    const owned = await env.DB.prepare(
+      "SELECT 1 AS ok FROM trail_owners WHERE trail_id = ? AND user_id = ?",
+    )
+      .bind(trailId, user.id)
+      .first<{ ok: number }>();
+    if (!owned) return redirect("/trail", 303);
+  }
 
   const trailToken = randomToken();
   await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
@@ -1877,8 +1906,40 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
   void mainStart;
 }
 
-async function ensureCurrentTrail(_request: Request, env: Env): Promise<TrailContext> {
+async function ensureCurrentTrail(request: Request, env: Env): Promise<TrailContext> {
   await ensureCommonExampleTrail(env);
+
+  const cookies = parseCookies(request.headers.get("Cookie") ?? "");
+  const token = cookies.get("trail");
+  const trailUser = await currentTrailUser(request, env);
+
+  if (token) {
+    const existing = await env.DB.prepare(
+      `SELECT t.id
+         FROM trail_sessions s
+         JOIN trails t ON t.id = s.trail_id
+        WHERE s.token = ?`,
+    )
+      .bind(token)
+      .first<{ id: string }>();
+
+    if (existing?.id === COMMON_TRAIL_ID) {
+      return { id: COMMON_TRAIL_ID, cookie: null };
+    }
+
+    if (existing && trailUser) {
+      const ownerId = await trailOwnerUserId(env, existing.id);
+      if (ownerId === trailUser.id) {
+        return { id: existing.id, cookie: null };
+      }
+    }
+
+    if (existing && !trailUser) {
+      const ownerId = await trailOwnerUserId(env, existing.id);
+      if (ownerId === null) return { id: existing.id, cookie: null };
+    }
+  }
+
   return { id: COMMON_TRAIL_ID, cookie: null };
 }
 
