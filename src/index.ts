@@ -2382,10 +2382,11 @@ async function handleSharedTrailMcp(request: Request, env: Env): Promise<Respons
     },
     async ({ key }) => {
       const trailId = await resolveTrail(key);
-      const [title, description, items] = await Promise.all([
+      const [title, description, items, branches] = await Promise.all([
         getTrailTitle(env, trailId),
         getTrailDescription(env, trailId),
         listTrailItems(env, trailId),
+        listTrailBranches(env, trailId),
       ]);
       const snapshot = {
         title,
@@ -2399,6 +2400,20 @@ async function handleSharedTrailMcp(request: Request, env: Env): Promise<Respons
           url: item.url ? new URL(item.url, origin).toString() : null,
           content: item.content,
           note: item.note,
+        })),
+        branches: branches.map((branch) => ({
+          id: branch.id,
+          title: branch.title,
+          parent_item_id: branch.parent_item_id,
+          items: branch.items.map((item, index) => ({
+            step: index + 1,
+            id: item.id,
+            kind: item.kind,
+            title: item.title,
+            url: item.url ? new URL(item.url, origin).toString() : null,
+            content: item.content,
+            note: item.note,
+          })),
         })),
       };
       return {
@@ -2564,10 +2579,11 @@ async function handleTrailMcp(request: Request, env: Env, token: string): Promis
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async () => {
-      const [title, description, items] = await Promise.all([
+      const [title, description, items, branches] = await Promise.all([
         getTrailTitle(env, integration.trail_id),
         getTrailDescription(env, integration.trail_id),
         listTrailItems(env, integration.trail_id),
+        listTrailBranches(env, integration.trail_id),
       ]);
       const snapshot = {
         title,
@@ -2583,6 +2599,22 @@ async function handleTrailMcp(request: Request, env: Env, token: string): Promis
             : null,
           content: item.content,
           note: item.note,
+        })),
+        branches: branches.map((branch) => ({
+          id: branch.id,
+          title: branch.title,
+          parent_item_id: branch.parent_item_id,
+          items: branch.items.map((item, index) => ({
+            step: index + 1,
+            id: item.id,
+            kind: item.kind,
+            title: item.title,
+            url: item.url
+              ? new URL(item.url, origin).toString()
+              : null,
+            content: item.content,
+            note: item.note,
+          })),
         })),
       };
       return {
