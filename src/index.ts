@@ -867,7 +867,9 @@ function trailLiveScript(): Response {
 
   const trailId = graph.dataset.trailId || "trail";
   const branchStorageKey = "trails:active-branch:" + trailId;
-  let activeBranchId = window.localStorage.getItem(branchStorageKey);
+  const storedBranchPreference = window.localStorage.getItem(branchStorageKey);
+  let activeBranchId = storedBranchPreference === "main" ? null : storedBranchPreference;
+  let hasBranchPreference = storedBranchPreference !== null;
   let last = "";
   let stopped = false;
   let savedTimer = 0;
@@ -1118,8 +1120,8 @@ function trailLiveScript(): Response {
       activeBranchId = null;
     }
     if (persist) {
-      if (activeBranchId) window.localStorage.setItem(branchStorageKey, activeBranchId);
-      else window.localStorage.removeItem(branchStorageKey);
+      window.localStorage.setItem(branchStorageKey, activeBranchId || "main");
+      hasBranchPreference = true;
     }
     if (markContext) markContext.textContent = activeBranchTitle();
     drawTrailRail();
@@ -1281,6 +1283,7 @@ function trailLiveScript(): Response {
           if (!response.ok) throw new Error("branch failed");
           const data = await response.json();
           activeBranchId = String(data.branch.id);
+          hasBranchPreference = true;
           window.localStorage.setItem(branchStorageKey, activeBranchId);
           last = "";
           await tick(true);
@@ -1296,6 +1299,14 @@ function trailLiveScript(): Response {
   const bindGraph = () => {
     bindTrailItems();
     bindBranches();
+    if (!hasBranchPreference) {
+      const firstBranch = graph.querySelector("[data-branch-open]");
+      if (firstBranch) {
+        activeBranchId = firstBranch.dataset.branchOpen || null;
+        hasBranchPreference = true;
+        if (activeBranchId) window.localStorage.setItem(branchStorageKey, activeBranchId);
+      }
+    }
     applyActiveBranch(false);
   };
 
