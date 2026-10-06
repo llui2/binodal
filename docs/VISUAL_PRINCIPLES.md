@@ -36,6 +36,8 @@ The focused path occupies the lane nearest the visible mark text. Node positions
 
 Use one topology renderer only: the left SVG brush rail. Do not keep or reintroduce a second inline rail, duplicate node renderer, generic fallback graph, or dormant CSS path for an older topology. Old visual implementations should be removed rather than left beside the current one.
 
+Branch presentation is temporarily paused while the split model is redesigned. When branching returns, a split must originate visually and semantically from a node, never from the middle of a connection.
+
 ## Marks
 
 A mark has two layers:
@@ -55,7 +57,7 @@ Use short, direct labels. Prefer plain verbs for actions. Avoid prototype or imp
 
 Keep interaction patterns consistent. If a topology node opens mark detail in one place, it should behave the same way everywhere.
 
-Editable trail and mark titles should look like ordinary typography. Editing is indicated by the text caret only: no underline, focus box, glow, tinted background, or other chrome. Use a block, terminal-like caret across trail text editing where supported. Browser spelling and grammar underlines are disabled inside the trail workspace because scientific terminology and notation make them noisy.
+Editable trail and mark titles should look like ordinary typography. Editing is indicated by the text caret only: no underline, focus box, glow, tinted background, or other chrome. Use a small structured caret rather than either a hairline or a full block; an underscore-style caret is preferred where supported. Browser spelling and grammar underlines are disabled inside the trail workspace because scientific terminology and notation make them noisy.
 
 ## Layout
 
