@@ -525,7 +525,7 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
           </section>
 
           <form class="trail-mark-add" action="/trail/add" method="post" data-trail-add>
-            <textarea id="trail-add-value" name="value" rows="2" maxlength="10000"
+            <textarea id="trail-add-value" name="value" rows="1" maxlength="10000"
               aria-label="Add a mark" spellcheck="false"
               placeholder="Thought, paper, or link" required></textarea>
             <button type="submit">mark</button>
@@ -642,8 +642,7 @@ function renderTrailItem(
   return `<div class="trail-step" data-trail-item="${item.id}" data-path-branch="${branchId}" data-open="false">
     <div class="trail-step-summary">
       <span class="trail-step-line">
-        <span class="trail-step-title-display">${escapeHtml(title)}</span>
-        <textarea class="trail-step-title-input" rows="1" maxlength="300" aria-label="Node title" data-item-title="${item.id}" spellcheck="false" hidden>${escapeHtml(title)}</textarea>
+        <textarea class="trail-step-title-input" rows="1" maxlength="300" aria-label="Node title" data-item-title="${item.id}" spellcheck="false">${escapeHtml(title)}</textarea>
       </span>
       ${kind && item.url
         ? `<a class="trail-step-kind" href="${escapeAttr(item.url)}"${item.kind === "link" ? ` target="_blank" rel="noreferrer"` : ""}>${escapeHtml(kind)}</a>`
@@ -1036,7 +1035,7 @@ function trailLiveScript(): Response {
       : parsedFontSize * 1.2;
 
     const caretHeight = Math.max(14, lineHeight - 4);
-    staticCaret.style.left = markerRect.left + "px";
+    staticCaret.style.left = (markerRect.left - 1.5) + "px";
     staticCaret.style.top = (markerRect.top + (lineHeight - caretHeight) / 2) + "px";
     staticCaret.style.height = caretHeight + "px";
     staticCaret.hidden = false;
@@ -1097,17 +1096,11 @@ function trailLiveScript(): Response {
   };
 
   const setStepOpen = (step, open) => {
-    const titleDisplay = step.querySelector(".trail-step-title-display");
     const titleField = step.querySelector("[data-item-title]");
     const detail = step.querySelector("[data-item-detail]");
 
     step.dataset.open = open ? "true" : "false";
-    if (titleDisplay) titleDisplay.hidden = open;
-    if (titleField) {
-      titleField.hidden = !open;
-      if (open) autoGrow(titleField);
-      if (!open && document.activeElement === titleField) titleField.blur();
-    }
+    if (titleField) autoGrow(titleField);
     if (detail) {
       detail.hidden = !open;
       if (open) detail.querySelectorAll("textarea").forEach(autoGrow);
@@ -1117,7 +1110,6 @@ function trailLiveScript(): Response {
 
   const bindTrailItems = () => {
     graph.querySelectorAll(".trail-step").forEach((step) => {
-      const titleDisplay = step.querySelector(".trail-step-title-display");
       const titleField = step.querySelector("[data-item-title]");
 
       if (titleField) {
@@ -1126,7 +1118,6 @@ function trailLiveScript(): Response {
           titleField.dataset.titleBound = "true";
           titleField.addEventListener("input", () => {
             autoGrow(titleField);
-            if (titleDisplay) titleDisplay.textContent = titleField.value.trim() || "mark";
             drawTrailMap();
           });
           titleField.addEventListener("keydown", (event) => {
@@ -1577,17 +1568,39 @@ function trailLiveScript(): Response {
 
         const opening = step.dataset.open !== "true";
         setStepOpen(step, opening);
-        if (opening) {
-          const titleField = step.querySelector("[data-item-title]");
-          requestAnimationFrame(() => titleField?.focus());
-        }
       });
     }
+  };
+
+  const bindStepActions = () => {
+    graph.querySelectorAll(".trail-step-actions form").forEach((form) => {
+      if (form.dataset.bound === "true") return;
+      form.dataset.bound = "true";
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const submitter = event.submitter;
+        if (submitter instanceof HTMLButtonElement) submitter.disabled = true;
+        try {
+          await fetch(form.action, {
+            method: "POST",
+            body: new FormData(form, submitter || undefined),
+            redirect: "manual",
+          });
+          last = "";
+          await tick(true);
+        } catch {
+          setSaveState("error");
+        } finally {
+          if (submitter instanceof HTMLButtonElement) submitter.disabled = false;
+        }
+      });
+    });
   };
 
   const bindGraph = () => {
     bindTrailItems();
     bindStaticCaret();
+    bindStepActions();
     bindTopology();
     applyActiveBranch(false);
   };
@@ -6071,6 +6084,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       align-items: start;
     }
     .trail-main {
+      --trail-section-gap: 18px;
       min-width: 0;
       max-width: none;
     }
@@ -6261,8 +6275,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-description {
-      margin: 20px 0 0 20px;
-      padding-bottom: 4px;
+      margin: var(--trail-section-gap) 0 0 20px;
+      padding-bottom: 0;
     }
     .trail-endpoint-label {
       padding-top: 10px;
@@ -6298,7 +6312,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       grid-template-columns: 112px minmax(0, 1fr);
       column-gap: 16px;
       align-items: start;
-      margin-top: 4px;
+      margin-top: var(--trail-section-gap);
       min-width: 0;
     }
     .trail-map {
@@ -6421,12 +6435,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
       display: block;
       overflow: hidden;
     }
-    .trail-step-title-display[hidden],
-    .trail-step-title-input[hidden],
     .trail-step-detail[hidden] {
       display: none !important;
     }
-    .trail-step-title-display,
     .trail-step-title-input {
       min-width: 0;
       width: 100%;
@@ -6442,9 +6453,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       text-align: left;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
-    }
-    .trail-step-title-display {
-      display: block;
     }
     .trail-step-title-input {
       display: block;
@@ -6480,7 +6488,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       width: calc(100% - var(--trail-kind-gutter) - var(--trail-kind-gap));
       min-height: 26px;
       margin: -2px 0 10px 0;
-      padding: 2px 0 4px;
+      padding: 5px 7px 6px;
       overflow: hidden;
       resize: none;
       border: 0;
@@ -6509,8 +6517,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-node-detail {
       display: block;
       width: 100%;
-      min-height: 62px;
-      padding: 10px 12px;
+      min-height: 58px;
+      padding: 7px 8px;
       overflow: hidden;
       resize: none;
       border: 0;
@@ -6600,8 +6608,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
       line-height: 1;
     }
     .trail-mark-add textarea {
-      min-height: 64px;
-      padding: 11px 12px;
+      height: 40px;
+      min-height: 40px;
+      padding: 9px 11px;
       overflow: hidden;
       background: var(--field-muted);
       border-radius: 4px;
@@ -6744,7 +6753,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
         justify-content: space-between;
       }
       .trail-description {
-        margin-top: 18px;
+        margin-top: var(--trail-section-gap);
       }
       .trail-graph {
         grid-template-columns: 62px minmax(0, 1fr);
