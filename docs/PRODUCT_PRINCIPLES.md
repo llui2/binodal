@@ -32,6 +32,8 @@ Most activity should remain ephemeral. Researchers should not have to maintain a
 
 The trail should function as an external cognitive object: something a researcher can inspect, branch, reorganize, question, revisit, and share. Complexity may exist underneath, but the visible representation should remain compact, with details available on demand.
 
+The shared example trail is a disposable template, not persistent research state. Edits made while testing it may live during the current page session, but a full page reload restores the canonical example. Personal trails remain persistent.
+
 ## Shared human-agent context
 
 A trail should also be usable as persistent context for research agents.
