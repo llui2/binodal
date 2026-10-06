@@ -815,6 +815,40 @@ async function claimTrailForUser(env: Env, trailId: string, userId: number): Pro
     .run();
 }
 
+async function trailOwnerUserId(env: Env, trailId: string): Promise<number | null> {
+  const owner = await env.DB.prepare(
+    "SELECT user_id FROM trail_owners WHERE trail_id = ?",
+  )
+    .bind(trailId)
+    .first<{ user_id: number }>();
+  return owner?.user_id ?? null;
+}
+
+async function latestTrailForUser(env: Env, userId: number): Promise<string | null> {
+  const trail = await env.DB.prepare(
+    `SELECT t.id
+       FROM trail_owners o
+       JOIN trails t ON t.id = o.trail_id
+      WHERE o.user_id = ?
+      ORDER BY t.created_at DESC
+      LIMIT 1`,
+  )
+    .bind(userId)
+    .first<{ id: string }>();
+  return trail?.id ?? null;
+}
+
+async function createOwnedTrail(env: Env, userId: number): Promise<{ trailId: string; trailToken: string }> {
+  const trailId = `trail_${randomToken()}`;
+  const trailToken = randomToken();
+  await env.DB.prepare("INSERT INTO trails (id) VALUES (?)").bind(trailId).run();
+  await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
+    .bind(trailToken, trailId)
+    .run();
+  await claimTrailForUser(env, trailId, userId);
+  return { trailId, trailToken };
+}
+
 async function listUserTrails(env: Env, userId: number): Promise<TrailSummary[]> {
   const result = await env.DB.prepare(
     `SELECT t.id, c.question, t.created_at
@@ -855,13 +889,30 @@ async function setTrailUser(request: Request, env: Env): Promise<Response> {
     .bind(sessionToken, user.id)
     .run();
 
-  const trail = await ensureCurrentTrail(request, env);
-  await claimTrailForUser(env, trail.id, user.id);
+  const current = await ensureCurrentTrail(request, env);
+  const ownerId = await trailOwnerUserId(env, current.id);
+  let trailCookieValue = current.cookie;
+
+  if (ownerId === null) {
+    await claimTrailForUser(env, current.id, user.id);
+  } else if (ownerId !== user.id) {
+    const existingTrailId = await latestTrailForUser(env, user.id);
+    if (existingTrailId) {
+      const token = randomToken();
+      await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
+        .bind(token, existingTrailId)
+        .run();
+      trailCookieValue = trailCookie(token, request);
+    } else {
+      const created = await createOwnedTrail(env, user.id);
+      trailCookieValue = trailCookie(created.trailToken, request);
+    }
+  }
 
   const response = redirect("/trail", 303);
   const headers = new Headers(response.headers);
   headers.append("Set-Cookie", trailUserCookie(sessionToken, request));
-  if (trail.cookie) headers.append("Set-Cookie", trail.cookie);
+  if (trailCookieValue) headers.append("Set-Cookie", trailCookieValue);
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
@@ -874,15 +925,8 @@ async function createTrailForUser(request: Request, env: Env): Promise<Response>
   const user = await currentTrailUser(request, env);
   if (!user) return redirect("/trail", 303);
 
-  const trailId = `trail_${randomToken()}`;
-  const trailToken = randomToken();
-  await env.DB.prepare("INSERT INTO trails (id) VALUES (?)").bind(trailId).run();
-  await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
-    .bind(trailToken, trailId)
-    .run();
-  await claimTrailForUser(env, trailId, user.id);
-
-  return withTrailCookie(redirect("/trail", 303), trailCookie(trailToken, request));
+  const created = await createOwnedTrail(env, user.id);
+  return withTrailCookie(redirect("/trail", 303), trailCookie(created.trailToken, request));
 }
 
 async function selectTrailForUser(request: Request, env: Env): Promise<Response> {
@@ -923,30 +967,34 @@ async function ensureCurrentTrail(request: Request, env: Env): Promise<TrailCont
       .first<{ id: string }>();
 
     if (existing) {
-      if (trailUser) await claimTrailForUser(env, existing.id, trailUser.id);
-      return { id: existing.id, cookie: null };
+      if (!trailUser) return { id: existing.id, cookie: null };
+
+      const ownerId = await trailOwnerUserId(env, existing.id);
+      if (ownerId === null) {
+        await claimTrailForUser(env, existing.id, trailUser.id);
+        return { id: existing.id, cookie: null };
+      }
+      if (ownerId === trailUser.id) {
+        return { id: existing.id, cookie: null };
+      }
     }
   }
 
   if (trailUser) {
-    const owned = await env.DB.prepare(
-      `SELECT t.id
-         FROM trail_owners o
-         JOIN trails t ON t.id = o.trail_id
-        WHERE o.user_id = ?
-        ORDER BY t.created_at DESC
-        LIMIT 1`,
-    )
-      .bind(trailUser.id)
-      .first<{ id: string }>();
-
-    if (owned) {
+    const ownedId = await latestTrailForUser(env, trailUser.id);
+    if (ownedId) {
       const trailToken = randomToken();
       await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
-        .bind(trailToken, owned.id)
+        .bind(trailToken, ownedId)
         .run();
-      return { id: owned.id, cookie: trailCookie(trailToken, request) };
+      return { id: ownedId, cookie: trailCookie(trailToken, request) };
     }
+
+    const created = await createOwnedTrail(env, trailUser.id);
+    return {
+      id: created.trailId,
+      cookie: trailCookie(created.trailToken, request),
+    };
   }
 
   const trailId = `trail_${randomToken()}`;
@@ -956,7 +1004,6 @@ async function ensureCurrentTrail(request: Request, env: Env): Promise<TrailCont
   await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
     .bind(trailToken, trailId)
     .run();
-  if (trailUser) await claimTrailForUser(env, trailId, trailUser.id);
 
   return {
     id: trailId,
