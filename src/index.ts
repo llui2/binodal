@@ -4110,6 +4110,12 @@ function htmlPage(title: string, body: string, status = 200): Response {
       line-height: 1.55;
     }
 
+    @media (hover: none) {
+      .trail-step[open] .trail-step-actions {
+        opacity: 1;
+      }
+    }
+
     @media (max-width: 680px) {
       .topbar { min-height: 64px; }
       .brand { font-size: 1.3rem; }
