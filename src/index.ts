@@ -1195,13 +1195,14 @@ function trailLiveScript(): Response {
 
   // Keep the topology orthogonal, but render each horizontal/vertical segment
   // as a slightly irregular brush stroke rather than a perfect vector line.
-  // DESIGN INVARIANT: keep the semantic path straight/orthogonal. Natural
-  // brush character comes from a very small hand-drawn drift plus an SVG
-  // turbulence texture/filter, not from visible waves or repeated dash patterns.
-  const brushSegmentPath = (
+  // DESIGN INVARIANT: the uploaded Trails logo is a filled vector silhouette,
+  // not a clean stroked line and not a filter effect. Build links the same way:
+  // a mostly straight filled ribbon with uneven outer edges and only occasional
+  // unpainted defects. Do not replace this with SVG filters, dash patterns, or
+  // parallel helper strokes.
+  const brushRibbonPath = (
     a,
     b,
-    offset = 0,
     phase = 0,
   ) => {
     const dx = b.x - a.x;
@@ -1210,105 +1211,83 @@ function trailLiveScript(): Response {
     const length = Math.abs(horizontal ? dx : dy);
     if (length < 0.01) return "";
 
-    const sign = phase % 2 === 0 ? 1 : -1;
-    const drift = Math.min(0.42, Math.max(0.18, length / 180)) * sign;
+    const ts = [0, 0.08, 0.18, 0.31, 0.45, 0.59, 0.72, 0.84, 0.93, 1];
+    const upperProfile = [0.05, -0.28, 0.42, -0.16, 0.58, -0.38, 0.20, -0.31, 0.27, 0.04];
+    const lowerProfile = [-0.08, 0.34, -0.14, 0.47, -0.31, 0.24, -0.44, 0.29, -0.17, -0.02];
+    const centerDrift = [0, 0.10, -0.06, 0.14, -0.09, 0.06, -0.11, 0.08, -0.04, 0];
+    const profileShift = (phase * 2) % ts.length;
+    const halfWidth = 3.75;
 
-    if (horizontal) {
-      const y = a.y + offset;
-      const x0 = a.x;
-      const x1 = b.x;
-      const span = x1 - x0;
-      return (
-        "M " + x0.toFixed(2) + " " + y.toFixed(2) +
-        " C " +
-        (x0 + span * 0.32).toFixed(2) + " " + (y + drift).toFixed(2) + " " +
-        (x0 + span * 0.68).toFixed(2) + " " + (y - drift * 0.55).toFixed(2) + " " +
-        x1.toFixed(2) + " " + y.toFixed(2)
-      );
+    const upper = [];
+    const lower = [];
+    ts.forEach((t, index) => {
+      const profileIndex = (index + profileShift) % ts.length;
+      const drift = centerDrift[profileIndex];
+      const upperWidth = halfWidth + upperProfile[profileIndex];
+      const lowerWidth = halfWidth + lowerProfile[(profileIndex + 3) % ts.length];
+
+      if (horizontal) {
+        const x = a.x + dx * t;
+        upper.push({ x, y: a.y + drift - upperWidth });
+        lower.push({ x, y: a.y + drift + lowerWidth });
+      } else {
+        const y = a.y + dy * t;
+        upper.push({ x: a.x + drift - upperWidth, y });
+        lower.push({ x: a.x + drift + lowerWidth, y });
+      }
+    });
+
+    let path =
+      "M " + upper[0].x.toFixed(2) + " " + upper[0].y.toFixed(2);
+    upper.slice(1).forEach((point) => {
+      path += " L " + point.x.toFixed(2) + " " + point.y.toFixed(2);
+    });
+    lower.slice().reverse().forEach((point) => {
+      path += " L " + point.x.toFixed(2) + " " + point.y.toFixed(2);
+    });
+    path += " Z";
+
+    // A real brush occasionally leaves a small local void. Keep these sparse
+    // and asymmetrical so they read as missing paint rather than decoration.
+    if (length > 70 && phase % 3 === 0) {
+      const t = 0.34 + (phase % 2) * 0.21;
+      const along = 4.8 + (phase % 4) * 0.65;
+      const across = 0.72 + (phase % 2) * 0.18;
+      const offset = phase % 2 === 0 ? 0.72 : -0.66;
+
+      if (horizontal) {
+        const cx = a.x + dx * t;
+        const cy = a.y + offset;
+        path +=
+          " M " + (cx - along / 2).toFixed(2) + " " + cy.toFixed(2) +
+          " L " + (cx - along * 0.16).toFixed(2) + " " + (cy - across).toFixed(2) +
+          " L " + (cx + along / 2).toFixed(2) + " " + (cy + 0.10).toFixed(2) +
+          " L " + (cx + along * 0.08).toFixed(2) + " " + (cy + across).toFixed(2) +
+          " Z";
+      } else {
+        const cx = a.x + offset;
+        const cy = a.y + dy * t;
+        path +=
+          " M " + cx.toFixed(2) + " " + (cy - along / 2).toFixed(2) +
+          " L " + (cx - across).toFixed(2) + " " + (cy - along * 0.16).toFixed(2) +
+          " L " + (cx + 0.10).toFixed(2) + " " + (cy + along / 2).toFixed(2) +
+          " L " + (cx + across).toFixed(2) + " " + (cy + along * 0.08).toFixed(2) +
+          " Z";
+      }
     }
 
-    const x = a.x + offset;
-    const y0 = a.y;
-    const y1 = b.y;
-    const span = y1 - y0;
-    return (
-      "M " + x.toFixed(2) + " " + y0.toFixed(2) +
-      " C " +
-      (x + drift).toFixed(2) + " " + (y0 + span * 0.32).toFixed(2) + " " +
-      (x - drift * 0.55).toFixed(2) + " " + (y0 + span * 0.68).toFixed(2) + " " +
-      x.toFixed(2) + " " + y1.toFixed(2)
-    );
+    return path;
   };
 
-  const drawBrushSegments = (group, points, brushClass, offset, phaseBase) => {
+  const drawBrushSegments = (group, points, brushClass, phaseBase) => {
     for (let i = 1; i < points.length; i += 1) {
       group.appendChild(svgNode("path", {
-        d: brushSegmentPath(points[i - 1], points[i], offset, phaseBase + i),
+        d: brushRibbonPath(points[i - 1], points[i], phaseBase + i),
         class: brushClass,
+        "fill-rule": "evenodd",
+        "clip-rule": "evenodd",
       }));
     }
-  };
-
-  const installBrushTextureFilter = (width, height) => {
-    const defs = svgNode("defs");
-    const filter = svgNode("filter", {
-      id: "trail-brush-texture",
-      x: -14,
-      y: -14,
-      width: width + 28,
-      height: height + 28,
-      filterUnits: "userSpaceOnUse",
-      primitiveUnits: "userSpaceOnUse",
-      "color-interpolation-filters": "sRGB",
-    });
-
-    const edgeNoise = svgNode("feTurbulence", {
-      type: "fractalNoise",
-      baseFrequency: "0.018 0.11",
-      numOctaves: 2,
-      seed: 19,
-      stitchTiles: "stitch",
-      result: "edgeNoise",
-    });
-    const displacement = svgNode("feDisplacementMap", {
-      in: "SourceGraphic",
-      in2: "edgeNoise",
-      scale: 1.15,
-      xChannelSelector: "R",
-      yChannelSelector: "G",
-      result: "roughStroke",
-    });
-    const grainNoise = svgNode("feTurbulence", {
-      type: "fractalNoise",
-      baseFrequency: "0.075",
-      numOctaves: 3,
-      seed: 37,
-      stitchTiles: "stitch",
-      result: "grainNoise",
-    });
-    const grainAlpha = svgNode("feColorMatrix", {
-      in: "grainNoise",
-      type: "luminanceToAlpha",
-      result: "grainAlpha",
-    });
-    const transfer = svgNode("feComponentTransfer", {
-      in: "grainAlpha",
-      result: "dryMask",
-    });
-    transfer.appendChild(svgNode("feFuncA", {
-      type: "linear",
-      slope: 2.2,
-      intercept: -0.2,
-    }));
-    const composite = svgNode("feComposite", {
-      in: "roughStroke",
-      in2: "dryMask",
-      operator: "in",
-    });
-
-    filter.append(edgeNoise, displacement, grainNoise, grainAlpha, transfer, composite);
-    defs.appendChild(filter);
-    mapSvg.appendChild(defs);
   };
 
   const TRAIL_MAP_NODE_SHAPE =
@@ -1337,7 +1316,7 @@ function trailLiveScript(): Response {
         "data-branch-select": branchId,
       }));
 
-      drawBrushSegments(group, points, "trail-map-brush-main", 0, 1);
+      drawBrushSegments(group, points, "trail-map-brush-main", 1);
     }
 
     const nodePoints = explicitNodePoints ||
@@ -1508,7 +1487,6 @@ function trailLiveScript(): Response {
       mapSvg.setAttribute("width", String(width));
       mapSvg.setAttribute("height", String(Math.ceil(requiredHeight)));
       mapSvg.innerHTML = "";
-      installBrushTextureFilter(width, Math.ceil(requiredHeight));
 
       const geometries = [];
 
@@ -6409,14 +6387,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
       cursor: pointer;
     }
     .trail-map-brush-main {
-      fill: none;
-      stroke: currentColor;
-      stroke-width: 7.2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      vector-effect: non-scaling-stroke;
+      fill: currentColor;
+      stroke: none;
       pointer-events: none;
-      filter: url(#trail-brush-texture);
     }
     .trail-map-brush-node {
       fill: currentColor;
