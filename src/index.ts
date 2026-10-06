@@ -1581,9 +1581,17 @@ function trailLiveScript(): Response {
         const submitter = event.submitter;
         if (submitter instanceof HTMLButtonElement) submitter.disabled = true;
         try {
+          const formData = new FormData(form);
+          if (
+            submitter instanceof HTMLButtonElement &&
+            submitter.name &&
+            !formData.has(submitter.name)
+          ) {
+            formData.append(submitter.name, submitter.value);
+          }
           await fetch(form.action, {
             method: "POST",
-            body: new FormData(form, submitter || undefined),
+            body: formData,
             redirect: "manual",
           });
           last = "";
