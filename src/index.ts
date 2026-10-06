@@ -640,7 +640,7 @@ function renderTrailItem(
     <div class="trail-step-summary">
       <span class="trail-step-line">
         <span class="trail-step-title-display">${escapeHtml(title)}</span>
-        <input class="trail-step-title-input" value="${escapeAttr(title)}" maxlength="300" aria-label="Node title" data-item-title="${item.id}" spellcheck="false" hidden>
+        <textarea class="trail-step-title-input" rows="1" maxlength="300" aria-label="Node title" data-item-title="${item.id}" spellcheck="false" hidden>${escapeHtml(title)}</textarea>
       </span>
       ${kind && item.url
         ? `<a class="trail-step-kind" href="${escapeAttr(item.url)}"${item.kind === "link" ? ` target="_blank" rel="noreferrer"` : ""}>${escapeHtml(kind)}</a>`
@@ -951,6 +951,117 @@ function trailLiveScript(): Response {
     field.style.height = field.scrollHeight + "px";
   };
 
+  const staticCaret = document.createElement("span");
+  staticCaret.className = "trail-static-caret";
+  staticCaret.hidden = true;
+  document.body.appendChild(staticCaret);
+
+  const caretMirror = document.createElement("div");
+  caretMirror.setAttribute("aria-hidden", "true");
+  Object.assign(caretMirror.style, {
+    position: "fixed",
+    visibility: "hidden",
+    pointerEvents: "none",
+    overflow: "hidden",
+    zIndex: "-1",
+  });
+  document.body.appendChild(caretMirror);
+
+  let caretFrame = 0;
+
+  const updateStaticCaret = () => {
+    const field = document.activeElement;
+    if (
+      !(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) ||
+      !field.closest(".trail-page") ||
+      field.type === "hidden" ||
+      field.selectionStart === null ||
+      field.selectionEnd === null ||
+      field.selectionStart !== field.selectionEnd
+    ) {
+      staticCaret.hidden = true;
+      return;
+    }
+
+    const rect = field.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+      staticCaret.hidden = true;
+      return;
+    }
+
+    const style = window.getComputedStyle(field);
+    const isTextarea = field instanceof HTMLTextAreaElement;
+    const before = field.value.slice(0, field.selectionStart);
+
+    caretMirror.style.left = rect.left + "px";
+    caretMirror.style.top = rect.top + "px";
+    caretMirror.style.width = rect.width + "px";
+    caretMirror.style.height = rect.height + "px";
+    caretMirror.style.paddingTop = style.paddingTop;
+    caretMirror.style.paddingRight = style.paddingRight;
+    caretMirror.style.paddingBottom = style.paddingBottom;
+    caretMirror.style.paddingLeft = style.paddingLeft;
+    caretMirror.style.borderTopWidth = style.borderTopWidth;
+    caretMirror.style.borderRightWidth = style.borderRightWidth;
+    caretMirror.style.borderBottomWidth = style.borderBottomWidth;
+    caretMirror.style.borderLeftWidth = style.borderLeftWidth;
+    caretMirror.style.borderStyle = "solid";
+    caretMirror.style.boxSizing = style.boxSizing;
+    caretMirror.style.fontFamily = style.fontFamily;
+    caretMirror.style.fontSize = style.fontSize;
+    caretMirror.style.fontWeight = style.fontWeight;
+    caretMirror.style.fontStyle = style.fontStyle;
+    caretMirror.style.letterSpacing = style.letterSpacing;
+    caretMirror.style.lineHeight = style.lineHeight;
+    caretMirror.style.textAlign = style.textAlign;
+    caretMirror.style.whiteSpace = isTextarea ? "pre-wrap" : "pre";
+    caretMirror.style.overflowWrap = isTextarea ? "anywhere" : "normal";
+    caretMirror.textContent = "";
+
+    const prefix = document.createTextNode(before || "");
+    const marker = document.createElement("span");
+    marker.textContent = "\u200b";
+    caretMirror.append(prefix, marker);
+    caretMirror.scrollTop = field.scrollTop;
+    caretMirror.scrollLeft = field.scrollLeft;
+
+    const markerRect = marker.getBoundingClientRect();
+    const parsedLineHeight = Number.parseFloat(style.lineHeight);
+    const parsedFontSize = Number.parseFloat(style.fontSize) || 16;
+    const lineHeight = Number.isFinite(parsedLineHeight)
+      ? parsedLineHeight
+      : parsedFontSize * 1.2;
+
+    staticCaret.style.left = markerRect.left + "px";
+    staticCaret.style.top = (markerRect.top + lineHeight - 3) + "px";
+    staticCaret.hidden = false;
+  };
+
+  const requestCaretUpdate = () => {
+    window.cancelAnimationFrame(caretFrame);
+    caretFrame = window.requestAnimationFrame(updateStaticCaret);
+  };
+
+  const bindStaticCaret = () => {
+    document.querySelectorAll(".trail-page input, .trail-page textarea").forEach((field) => {
+      if (field.dataset.caretBound === "true") return;
+      field.dataset.caretBound = "true";
+      ["focus", "input", "keyup", "click", "scroll"].forEach((eventName) => {
+        field.addEventListener(eventName, requestCaretUpdate);
+      });
+      field.addEventListener("blur", () => {
+        staticCaret.hidden = true;
+      });
+    });
+
+    if (document.body.dataset.trailCaretGlobalBound !== "true") {
+      document.body.dataset.trailCaretGlobalBound = "true";
+      document.addEventListener("selectionchange", requestCaretUpdate);
+      window.addEventListener("resize", requestCaretUpdate);
+      window.addEventListener("scroll", requestCaretUpdate, true);
+    }
+  };
+
   const TRAIL_TOP_Y = 24;
   const TRAIL_ROW_STEP = 52;
 
@@ -989,6 +1100,7 @@ function trailLiveScript(): Response {
     if (titleDisplay) titleDisplay.hidden = open;
     if (titleField) {
       titleField.hidden = !open;
+      if (open) autoGrow(titleField);
       if (!open && document.activeElement === titleField) titleField.blur();
     }
     if (detail) {
@@ -1004,13 +1116,16 @@ function trailLiveScript(): Response {
       const titleField = step.querySelector("[data-item-title]");
 
       if (titleField) {
+        autoGrow(titleField);
         if (titleField.dataset.titleBound !== "true") {
           titleField.dataset.titleBound = "true";
           titleField.addEventListener("input", () => {
-            if (titleDisplay) titleDisplay.textContent = titleField.value.trim() || "untitled";
+            autoGrow(titleField);
+            if (titleDisplay) titleDisplay.textContent = titleField.value.trim() || "mark";
+            drawTrailMap();
           });
           titleField.addEventListener("keydown", (event) => {
-            if (event.key === "Enter" || event.key === "Escape") {
+            if (event.key === "Escape") {
               event.preventDefault();
               titleField.blur();
             }
@@ -1461,6 +1576,7 @@ function trailLiveScript(): Response {
 
   const bindGraph = () => {
     bindTrailItems();
+    bindStaticCaret();
     bindTopology();
     applyActiveBranch(false);
   };
@@ -1596,6 +1712,9 @@ function trailLiveScript(): Response {
     stopped = true;
     window.clearInterval(interval);
     window.cancelAnimationFrame(drawFrame);
+    window.cancelAnimationFrame(caretFrame);
+    staticCaret.remove();
+    caretMirror.remove();
     if (resizeObserver) resizeObserver.disconnect();
     window.removeEventListener("resize", drawTrailMap);
     window.removeEventListener("load", settleTrailMap);
@@ -2296,7 +2415,7 @@ async function mutateTrailItem(
         .run();
     }
   } else if (action === "title") {
-    const title = String(form.get("title") ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
+    const title = String(form.get("title") ?? "").replace(/\r\n/g, "\n").trim().slice(0, 300);
     await env.DB.prepare(
       "UPDATE trail_items SET title = ? WHERE id = ? AND trail_id = ?",
     )
@@ -5451,9 +5570,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
     a { color: inherit; text-decoration: none; }
     a:hover { color: var(--annotation); }
     button, input, textarea { font: inherit; }
-    input, textarea {
-      caret-shape: underscore;
-      caret-color: var(--annotation);
+    .trail-page input,
+    .trail-page textarea {
+      caret-color: transparent;
     }
     button { cursor: pointer; }
 
@@ -5961,6 +6080,15 @@ function htmlPage(title: string, body: string, status = 200): Response {
       background: transparent;
       box-shadow: none;
     }
+    .trail-static-caret {
+      position: fixed;
+      z-index: 9999;
+      width: 10px;
+      height: 3px;
+      border-radius: 2px;
+      background: var(--annotation);
+      pointer-events: none;
+    }
     .trail-heading-meta {
       display: flex;
       align-items: baseline;
@@ -6289,16 +6417,18 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-weight: 610;
       line-height: 1.35;
       text-align: left;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
     .trail-step-title-display {
       display: block;
     }
     .trail-step-title-input {
+      display: block;
+      min-height: 1.35em;
+      overflow: hidden;
+      resize: none;
       cursor: text;
-      caret-color: var(--annotation);
     }
     .trail-step-title-input:focus-visible {
       outline: none;
