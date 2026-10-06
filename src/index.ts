@@ -6310,6 +6310,21 @@ function htmlPage(title: string, body: string, status = 200): Response {
       position: relative;
       margin-top: 20px;
     }
+    .trail-step {
+      position: relative;
+      z-index: 1;
+      margin: 0;
+    }
+    .trail-step-summary {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      min-height: 44px;
+      padding: 7px 0 3px;
+    }
     .trail-step-line {
       min-width: 0;
       display: block;
