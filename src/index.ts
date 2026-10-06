@@ -1133,8 +1133,7 @@ function trailLiveScript(): Response {
 
     const nodePoints = branchId === "0" ? points : points.slice(1);
     nodePoints.forEach((point, index) => {
-      const selected = branchId === activeKey();
-      const scale = selected ? 0.76 : 0.64;
+      const scale = 0.7;
       const rotation = ((index % 3) - 1) * 4;
       const transform =
         "translate(" + (point.x - 10 * scale).toFixed(2) + " " +
@@ -1167,26 +1166,65 @@ function trailLiveScript(): Response {
       const mainSteps = Array.from(mainPanel?.querySelectorAll(".trail-step") || []);
       const branchMetas = Array.from(graph.querySelectorAll("[data-branch-meta]"));
       const width = Math.max(88, map.clientWidth);
-      const mainX = width - 16;
-      const mainStepY = 52;
-      const branchStepY = 38;
+      const rightX = width - 14;
       const topY = 24;
+      const rowStep = 52;
 
-      const mainYs = mainSteps.map((_, index) => topY + index * mainStepY);
-      const mainBottom = mainYs.length ? mainYs[mainYs.length - 1] : topY;
+      // Rows are semantic. A node keeps its vertical level regardless of which
+      // branch is focused; only the horizontal lane changes.
+      const mainYs = mainSteps.map((_, index) => topY + index * rowStep);
+
+      const branchIds = branchMetas
+        .map((meta) => meta.dataset.branchMeta)
+        .filter(Boolean);
+
+      // The focused path always occupies the right-most lane, immediately next
+      // to the visible node text. Other paths retain their relative order to
+      // the left.
+      const laneOrder = activeBranchId
+        ? [
+            ...branchIds.filter((branchId) => branchId !== activeBranchId),
+            "0",
+            activeBranchId,
+          ]
+        : [...branchIds, "0"];
+
+      const maxLaneGap = 22;
+      const minLaneGap = 13;
+      const laneGap = laneOrder.length > 1
+        ? Math.max(
+            minLaneGap,
+            Math.min(maxLaneGap, (width - 24) / (laneOrder.length - 1)),
+          )
+        : maxLaneGap;
+
+      const laneX = new Map();
+      laneOrder.forEach((pathId, index) => {
+        const fromRight = laneOrder.length - 1 - index;
+        laneX.set(pathId, rightX - fromRight * laneGap);
+      });
+
+      const mainX = Number(laneX.get("0") ?? rightX);
       const branchGeometry = [];
-      let requiredHeight = Math.max(150, mainBottom + 30);
+      let requiredHeight = Math.max(
+        150,
+        mainYs.length ? mainYs[mainYs.length - 1] + 30 : topY + 30,
+      );
 
-      branchMetas.forEach((meta, index) => {
+      branchMetas.forEach((meta) => {
         const branchId = meta.dataset.branchMeta;
+        if (!branchId) return;
+
         const parentId = meta.dataset.branchAnchor;
         const branchName = meta.dataset.branchName || "branch";
         const itemCount = Math.max(1, Number(meta.dataset.branchCount || 0));
-        const parentIndex = mainSteps.findIndex((step) => step.dataset.trailItem === parentId);
-        const anchorY = mainYs[parentIndex >= 0 ? parentIndex : 0] ?? topY;
+        const parentIndex = mainSteps.findIndex(
+          (step) => step.dataset.trailItem === parentId,
+        );
+        const anchorRow = parentIndex >= 0 ? parentIndex : 0;
+        const anchorY = topY + anchorRow * rowStep;
+        const branchX = Number(laneX.get(branchId) ?? mainX - laneGap);
 
-        const lane = index % 4;
-        const branchX = Math.max(14, mainX - 28 - lane * 20);
         const points = [
           { x: mainX, y: anchorY },
           { x: branchX, y: anchorY },
@@ -1195,13 +1233,13 @@ function trailLiveScript(): Response {
         for (let itemIndex = 1; itemIndex < itemCount; itemIndex += 1) {
           points.push({
             x: branchX,
-            y: anchorY + itemIndex * branchStepY,
+            y: anchorY + itemIndex * rowStep,
           });
         }
 
         requiredHeight = Math.max(
           requiredHeight,
-          points[points.length - 1].y + 28,
+          points[points.length - 1].y + 30,
         );
 
         branchGeometry.push({
@@ -6014,18 +6052,17 @@ function htmlPage(title: string, body: string, status = 200): Response {
       overflow: visible;
     }
     .trail-map-branch {
-      color: var(--annotation);
       cursor: pointer;
-      transition: opacity 110ms ease;
+      transition: color 110ms ease;
     }
     .trail-map-path-active {
-      opacity: 1;
+      color: var(--annotation);
     }
     .trail-map-path-muted {
-      opacity: .26;
+      color: var(--stone);
     }
     .trail-map-path-muted:hover {
-      opacity: .68;
+      color: var(--muted);
     }
     .trail-map-hit {
       fill: none;
