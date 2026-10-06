@@ -492,12 +492,11 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
             ${itemHtml}
           </section>
 
-          <form class="trail-note-add" action="/trail/add" method="post">
-            <input type="hidden" name="kind" value="note">
-            <div>
-              <textarea id="trail-note" name="value" rows="2" maxlength="10000" aria-label="Add a thought, connection, or next question" placeholder="Add a thought, connection, or next question" required></textarea>
-              <button type="submit">Add note</button>
-            </div>
+          <form class="trail-add" action="/trail/add" method="post" data-trail-add>
+            <input id="trail-add-value" name="value" maxlength="10000" autocomplete="off"
+              aria-label="Add to trail"
+              placeholder="Mark the trail — thought, paper, or link" required>
+            <button type="submit" hidden>add</button>
           </form>
         </div>
       </div>
@@ -968,6 +967,37 @@ function trailLiveScript(): Response {
   }
   bindAutosaveField(description, "/api/trail", () => ({ description: description.value }));
 
+  const addForm = document.querySelector("[data-trail-add]");
+  const addField = document.getElementById("trail-add-value");
+  if (addForm && addField) {
+    addForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const value = addField.value.trim();
+      if (!value) return;
+
+      addField.disabled = true;
+      try {
+        const response = await fetch("/api/trail/items", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({ value }),
+        });
+        if (!response.ok) throw new Error("add failed");
+        addField.value = "";
+        last = "";
+        await tick();
+      } catch {
+        setSaveState("error");
+      } finally {
+        addField.disabled = false;
+        addField.focus();
+      }
+    });
+  }
+
   const tick = async () => {
     if (stopped || document.hidden || pendingSaves > 0) return;
     try {
@@ -1312,15 +1342,10 @@ async function addToTrail(request: Request, env: Env): Promise<Response> {
   const trail = await ensureCurrentTrail(request, env);
   const form = await request.formData();
   const value = String(form.get("value") ?? "").trim();
-  const kind = String(form.get("kind") ?? "");
 
   if (!value) return withTrailCookie(redirect("/trail", 303), trail.cookie);
 
-  if (kind === "note") {
-    await insertTrailNote(env, trail.id, value);
-  } else {
-    await insertTrailValue(env, trail.id, value);
-  }
+  await insertTrailValue(env, trail.id, value);
   return withTrailCookie(redirect("/trail", 303), trail.cookie);
 }
 
@@ -1338,10 +1363,23 @@ async function insertTrailNote(env: Env, trailId: string, value: string, note: s
 }
 
 async function insertTrailValue(env: Env, trailId: string, value: string): Promise<void> {
-  const normalizedUrl = normalizeTrailUrl(value);
-  const position = await nextTrailPosition(env, trailId);
+  const clean = value.trim();
+  if (!clean) return;
 
+  // A pasted DOI, arXiv ID, Scholar result, or publisher URL should become a
+  // first-class paper node when the resolver can identify it.
+  if (normalizePaperInput(clean)) {
+    try {
+      await insertPaperIntoTrail(env, trailId, clean);
+      return;
+    } catch {
+      // Not every safe URL is a paper. Fall through to a generic link.
+    }
+  }
+
+  const normalizedUrl = normalizeTrailUrl(clean);
   if (normalizedUrl) {
+    const position = await nextTrailPosition(env, trailId);
     let title = normalizedUrl;
     try {
       const parsed = new URL(normalizedUrl);
@@ -1362,7 +1400,7 @@ async function insertTrailValue(env: Env, trailId: string, value: string): Promi
     return;
   }
 
-  await insertTrailNote(env, trailId, value);
+  await insertTrailNote(env, trailId, clean);
 }
 
 async function insertPaperIntoTrail(
@@ -4909,20 +4947,31 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-size: .88rem;
     }
 
-    .trail-note-add {
-      margin: 8px 0 0 20px;
-      padding-top: 24px;
+    .trail-add {
+      margin: 12px 0 0 28px;
+      padding-top: 18px;
       border-top: 1px solid var(--wash);
     }
-    .trail-note-add > div {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 8px;
-      align-items: start;
+    .trail-add input {
+      display: block;
+      width: 100%;
+      padding: 9px 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--ink);
+      font-size: .84rem;
+      line-height: 1.4;
     }
-    .trail-note-add textarea {
-      min-height: 64px;
-      background: var(--field-muted);
+    .trail-add input::placeholder {
+      color: var(--soft);
+    }
+    .trail-add input:focus-visible {
+      outline: none;
+      box-shadow: inset 0 -1px var(--annotation);
+    }
+    .trail-add input:disabled {
+      opacity: .55;
     }
 
     .trail-connect-page {
@@ -5031,12 +5080,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       }
       .trail-description {
         margin-top: 18px;
-      }
-      .trail-note-add {
-        grid-template-columns: 1fr;
-      }
-      .trail-note-add > div {
-        grid-template-columns: 1fr;
       }
     }
   </style>
