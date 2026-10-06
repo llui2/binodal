@@ -471,9 +471,8 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
   const trail = await ensureCurrentTrail(request, env);
   const trailUser = await currentTrailUser(request, env);
 
-  const [items, branches, title, description, user, ownedTrails] = await Promise.all([
+  const [items, title, description, user, ownedTrails] = await Promise.all([
     listTrailItems(env, trail.id),
-    listTrailBranches(env, trail.id),
     getTrailTitle(env, trail.id),
     getTrailDescription(env, trail.id),
     currentUser(request, env),
@@ -484,14 +483,14 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
     ? [
         {
           id: COMMON_TRAIL_ID,
-          title: "A branching research trail",
+          title: "A research trail",
           created_at: "",
         },
         ...ownedTrails.filter((item) => item.id !== COMMON_TRAIL_ID),
       ]
     : [];
 
-  const graphHtml = renderTrailGraph(items, branches);
+  const graphHtml = renderTrailGraph(items, []);
 
   return htmlPage(
     title?.trim() || "trail",
@@ -578,13 +577,13 @@ function renderTrailGraph(
   branches: TrailBranchView[],
 ): string {
   const mainHtml = items.length
-    ? items.map((item, index) => renderTrailItem(item, index, 0, true)).join("")
+    ? items.map((item, index) => renderTrailItem(item, index, 0)).join("")
     : `<p class="trail-empty">The path is empty. Add a mark below.</p>`;
 
   const branchPanels = branches
     .map((branch) => {
       const branchItems = branch.items.length
-        ? branch.items.map((item, index) => renderTrailItem(item, index, branch.id, false)).join("")
+        ? branch.items.map((item, index) => renderTrailItem(item, index, branch.id)).join("")
         : `<p class="trail-empty trail-branch-empty">This branch is empty.</p>`;
 
       return `<section class="trail-path-panel"
@@ -625,7 +624,6 @@ function renderTrailItem(
   item: TrailItemRow,
   _index: number,
   branchId = 0,
-  allowBranch = false,
 ): string {
   const title = item.title || item.content || "mark";
   const kind = item.kind === "paper" ? "paper" : item.kind === "link" ? "link" : "";
@@ -666,9 +664,6 @@ function renderTrailItem(
             <input type="hidden" name="branch_id" value="${branchId}">
             <button class="trail-action-icon" type="submit" name="direction" value="1" aria-label="Move down" title="Move down"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 8.5 4.5 4.5 4.5-4.5"/></svg></button>
           </form>
-          ${allowBranch
-            ? `<button class="trail-action-icon" type="button" data-new-branch="${item.id}" aria-label="Branch from this mark" title="Branch"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4v9.5M6 8h5.5c1.4 0 2.5-1.1 2.5-2.5V4M4 4h4M12 4h4M4 14h4"/></svg></button>`
-            : ""}
           <form action="/trail/items/${item.id}/remove" method="post">
             <input type="hidden" name="branch_id" value="${branchId}">
             <button class="trail-action-icon" type="submit" aria-label="Remove mark" title="Remove"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6.5 6.5 7 7m0-7-7 7"/></svg></button>
@@ -1832,15 +1827,44 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
     .bind(COMMON_TRAIL_ID)
     .run();
 
+  // Branch presentation is temporarily paused while the branch-origin model is
+  // redesigned. Keep the shared example strictly on its main path and remove
+  // legacy branch-only items left by older seeds.
+  await env.DB.prepare("DELETE FROM trail_branches WHERE trail_id = ?")
+    .bind(COMMON_TRAIL_ID)
+    .run();
+  await env.DB.prepare(
+    `DELETE FROM trail_items
+      WHERE trail_id = ?
+        AND NOT EXISTS (
+          SELECT 1
+            FROM trail_item_placements p
+           WHERE p.trail_id = ?
+             AND p.item_id = trail_items.id
+        )`,
+  )
+    .bind(COMMON_TRAIL_ID, COMMON_TRAIL_ID)
+    .run();
+
   await env.DB.prepare(
     `INSERT OR IGNORE INTO trail_metadata (trail_id, title, description)
      VALUES (?, ?, ?)`,
   )
     .bind(
       COMMON_TRAIL_ID,
-      "A branching research trail",
-      "One shared example trail for testing the visual language: a persistent main argument, compressed alternative branches on the left, and one active branch expanded on the right.",
+      "A research trail",
+      "One shared example trail for testing the visual language of notes, papers, links, and expandable research context.",
     )
+    .run();
+
+  await env.DB.prepare(
+    `UPDATE trail_metadata
+        SET title = 'A research trail',
+            description = 'One shared example trail for testing the visual language of notes, papers, links, and expandable research context.'
+      WHERE trail_id = ?
+        AND title = 'A branching research trail'`,
+  )
+    .bind(COMMON_TRAIL_ID)
     .run();
 
   await env.DB.prepare(
@@ -1966,95 +1990,6 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
     5,
   );
 
-  const makeBranch = async (
-    title: string,
-    parentItemId: number,
-  ): Promise<number> => {
-    const row = await env.DB.prepare(
-      `INSERT INTO trail_branches (trail_id, title, parent_item_id)
-       VALUES (?, ?, ?)
-       RETURNING id`,
-    )
-      .bind(COMMON_TRAIL_ID, title, parentItemId)
-      .first<{ id: number }>();
-    if (!row) throw new Error("Could not seed example trail branch");
-    return row.id;
-  };
-
-  const spectral = await makeBranch("spectral route", mainPaperA);
-  await seedItem(
-    "note",
-    "Compare the dominant Laplacian modes",
-    null,
-    "Follow the spectral mechanism separately from the main argument.",
-    null,
-    "example:spectral:mode",
-    spectral,
-    0,
-  );
-  await env.DB.prepare(
-    `INSERT OR IGNORE INTO trail_item_placements
-       (trail_id, item_id, branch_id, position)
-     VALUES (?, ?, ?, ?)`,
-  )
-    .bind(COMMON_TRAIL_ID, mainPaperB, spectral, 1)
-    .run();
-  await seedItem(
-    "link",
-    "related arXiv record",
-    "https://arxiv.org/abs/2406.01367",
-    "An active branch can mix notes, reused papers and external links.",
-    null,
-    "example:spectral:link",
-    spectral,
-    2,
-  );
-
-  const adaptive = await makeBranch("adaptive route", mainHypothesis);
-  await seedItem(
-    "note",
-    "Introduce a slower adaptation timescale",
-    null,
-    "Treat the state dynamics and adaptation dynamics as distinct layers.",
-    null,
-    "example:adaptive:timescale",
-    adaptive,
-    0,
-  );
-  await seedItem(
-    "note",
-    "Test whether memory survives after the forcing is removed",
-    null,
-    "This branch represents a competing explanation that can remain compressed while inactive.",
-    null,
-    "example:adaptive:memory",
-    adaptive,
-    1,
-  );
-  await seedItem(
-    "link",
-    "analysis notebook",
-    "https://github.com/llui2",
-    null,
-    null,
-    "example:adaptive:notebook",
-    adaptive,
-    2,
-  );
-
-  const rejected = await makeBranch("rejected route", mainLink);
-  await seedItem(
-    "note",
-    "Static fit explains the endpoint but not the transient",
-    null,
-    "Keep a rejected direction visible without letting it dominate the active workspace.",
-    "Rejected branches are useful research state, not clutter to erase.",
-    "example:rejected:fit",
-    rejected,
-    0,
-  );
-
-  await makeBranch("open question", mainPaperB);
 
   void mainStart;
 }
@@ -5538,7 +5473,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     a:hover { color: var(--annotation); }
     button, input, textarea { font: inherit; }
     input, textarea {
-      caret-shape: block;
+      caret-shape: underscore;
       caret-color: var(--annotation);
     }
     button { cursor: pointer; }
@@ -6003,19 +5938,15 @@ function htmlPage(title: string, body: string, status = 200): Response {
       max-width: 620px;
     }
 
-    .trail-topbar {
-      padding-left: max(20px, calc((100vw - 1120px) / 2));
-      padding-right: max(20px, calc((100vw - 1120px) / 2));
-    }
     .trail-page {
-      width: min(1120px, calc(100% - 40px));
-      max-width: 1120px;
+      width: min(980px, calc(100% - 40px));
+      max-width: 980px;
       padding: 42px 0 96px;
     }
     .trail-layout {
       display: grid;
-      grid-template-columns: 160px minmax(0, 1fr);
-      gap: 36px;
+      grid-template-columns: 150px minmax(0, 1fr);
+      gap: 32px;
       align-items: start;
     }
     .trail-main {
