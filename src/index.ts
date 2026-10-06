@@ -4690,6 +4690,11 @@ function htmlPage(title: string, body: string, status = 200): Response {
       display: block;
       overflow: hidden;
     }
+    .trail-step-title-display[hidden],
+    .trail-step-title-input[hidden],
+    .trail-step-detail[hidden] {
+      display: none !important;
+    }
     .trail-step-title-display,
     .trail-step-title-input {
       min-width: 0;
