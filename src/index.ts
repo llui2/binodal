@@ -283,7 +283,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     return new Response(TRAIL_BRUSH_SVG, {
       headers: {
         "Content-Type": "image/svg+xml; charset=utf-8",
-        "Cache-Control": "public, max-age=86400",
+        "Cache-Control": "no-store, max-age=0",
       },
     });
   }
