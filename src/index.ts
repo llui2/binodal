@@ -4584,6 +4584,11 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-size: .78rem;
     }
     .trail-title-edit button,
+    .trail-note-edit button {
+      justify-self: start;
+      padding: 6px 9px;
+      font-size: .72rem;
+    }
     .trail-content {
       max-width: 650px;
       margin: 3px 0 9px;
@@ -4624,11 +4629,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       min-height: 74px;
       padding: 9px 10px;
       font-size: .78rem;
-    }
-    .trail-note-edit button {
-      justify-self: start;
-      padding: 6px 9px;
-      font-size: .72rem;
     }
     .trail-mini {
       padding: 0;
