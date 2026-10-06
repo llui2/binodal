@@ -763,6 +763,7 @@ function trailLiveScript(): Response {
   const title = document.getElementById("trail-title");
   const description = document.getElementById("trail-description");
   const saveState = document.getElementById("trail-save-state");
+  const activeTrailLabel = document.querySelector(".trail-list-button.active");
   if (!path) return;
 
   let last = "";
@@ -868,6 +869,13 @@ function trailLiveScript(): Response {
   };
 
   bindAutosaveField(title, "/api/trail", () => ({ title: title.value }));
+  if (title && activeTrailLabel) {
+    title.addEventListener("input", () => {
+      const label = title.value.trim() || "untitled trail";
+      activeTrailLabel.textContent = label;
+      activeTrailLabel.title = label;
+    });
+  }
   bindAutosaveField(description, "/api/trail", () => ({ description: description.value }));
 
   const tick = async () => {
@@ -4654,6 +4662,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-weight: 610;
       line-height: 1.35;
       text-overflow: ellipsis;
+      cursor: text;
     }
     .trail-step-title-input:focus-visible {
       outline: none;
@@ -4869,11 +4878,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
       .comment-head span { display: none; }
       .composer-actions { align-items: flex-end; }
       .trail-heading {
-        align-items: flex-start;
-      }
-      .trail-heading {
         grid-template-columns: 1fr;
         gap: 10px;
+        align-items: flex-start;
       }
       .trail-heading-meta {
         justify-content: space-between;
@@ -4883,13 +4890,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
       }
       .trail-note-add {
         grid-template-columns: 1fr;
-        margin-left: 0;
       }
       .trail-note-add > div {
         grid-template-columns: 1fr;
-      }
-      .trail-empty {
-        margin-left: 0;
       }
     }
   </style>
