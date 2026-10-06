@@ -559,11 +559,6 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
   const detailsText = item.note ?? "";
 
   return `<div class="trail-step" data-trail-item="${item.id}" data-open="false">
-    <svg class="trail-step-connector" viewBox="0 0 20 100" preserveAspectRatio="none" aria-hidden="true">
-      <path class="trail-brush-main" d="M10 0 C10 8 10 10 9.4 18 C8.4 35 11.2 51 9.2 68 C8.7 79 10 88 10 100"/>
-      <path class="trail-brush-fiber trail-brush-fiber-a" d="M10 0 C10 10 10.4 15 10 24 C9.3 48 10.6 72 10 100"/>
-      <path class="trail-brush-fiber trail-brush-fiber-b" d="M10 0 C10 9 9.7 17 10.1 27 C10.6 53 9.4 78 10 100"/>
-    </svg>
     <div class="trail-step-summary">
       <span class="trail-step-rail">
         <button class="trail-step-node" type="button" data-item-toggle="${item.id}" aria-label="Open node" aria-expanded="false">
@@ -876,6 +871,68 @@ function trailLiveScript(): Response {
     field.style.height = field.scrollHeight + "px";
   };
 
+  let railFrame = 0;
+
+  const drawTrailRail = () => {
+    window.cancelAnimationFrame(railFrame);
+    railFrame = window.requestAnimationFrame(() => {
+      const nodes = Array.from(path.querySelectorAll(".trail-step-node-svg"));
+      let rail = path.querySelector(".trail-path-rail");
+
+      if (nodes.length < 2) {
+        if (rail) rail.remove();
+        return;
+      }
+
+      if (!rail) {
+        rail = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        rail.setAttribute("class", "trail-path-rail");
+        rail.setAttribute("aria-hidden", "true");
+        rail.innerHTML =
+          '<path class="trail-brush-main"></path>' +
+          '<path class="trail-brush-fiber trail-brush-fiber-a"></path>' +
+          '<path class="trail-brush-fiber trail-brush-fiber-b"></path>';
+        path.prepend(rail);
+      }
+
+      const pathRect = path.getBoundingClientRect();
+      const points = nodes.map((node) => {
+        const rect = node.getBoundingClientRect();
+        return {
+          x: rect.left - pathRect.left + rect.width / 2,
+          y: rect.top - pathRect.top + rect.height / 2,
+        };
+      });
+
+      const width = Math.max(1, path.clientWidth);
+      const height = Math.max(1, path.scrollHeight);
+      rail.setAttribute("viewBox", "0 0 " + width + " " + height);
+
+      const buildPath = (phase) => {
+        let d = "M " + points[0].x.toFixed(2) + " " + points[0].y.toFixed(2);
+        for (let i = 1; i < points.length; i += 1) {
+          const a = points[i - 1];
+          const b = points[i];
+          const dy = b.y - a.y;
+          const bend = (i % 2 === 0 ? -1 : 1) * phase;
+          const c1x = a.x + bend;
+          const c2x = b.x - bend * 0.72;
+          const c1y = a.y + dy * 0.34;
+          const c2y = b.y - dy * 0.34;
+          d += " C " +
+            c1x.toFixed(2) + " " + c1y.toFixed(2) + " " +
+            c2x.toFixed(2) + " " + c2y.toFixed(2) + " " +
+            b.x.toFixed(2) + " " + b.y.toFixed(2);
+        }
+        return d;
+      };
+
+      rail.querySelector(".trail-brush-main").setAttribute("d", buildPath(1.45));
+      rail.querySelector(".trail-brush-fiber-a").setAttribute("d", buildPath(0.7));
+      rail.querySelector(".trail-brush-fiber-b").setAttribute("d", buildPath(2.0));
+    });
+  };
+
   const setStepOpen = (step, open) => {
     const toggle = step.querySelector("[data-item-toggle]");
     const titleDisplay = step.querySelector(".trail-step-title-display");
@@ -896,6 +953,7 @@ function trailLiveScript(): Response {
       detail.hidden = !open;
       if (open) detail.querySelectorAll("textarea").forEach(autoGrow);
     }
+    drawTrailRail();
   };
 
   const bindTrailItems = () => {
@@ -943,7 +1001,10 @@ function trailLiveScript(): Response {
       const contentField = step.querySelector("[data-item-content]");
       if (contentField) {
         autoGrow(contentField);
-        contentField.addEventListener("input", () => autoGrow(contentField));
+        contentField.addEventListener("input", () => {
+          autoGrow(contentField);
+          drawTrailRail();
+        });
         const itemId = contentField.dataset.itemContent;
         bindAutosaveField(
           contentField,
@@ -955,7 +1016,10 @@ function trailLiveScript(): Response {
       const noteField = step.querySelector("[data-item-note]");
       if (noteField) {
         autoGrow(noteField);
-        noteField.addEventListener("input", () => autoGrow(noteField));
+        noteField.addEventListener("input", () => {
+          autoGrow(noteField);
+          drawTrailRail();
+        });
         const itemId = noteField.dataset.itemNote;
         bindAutosaveField(
           noteField,
@@ -966,6 +1030,7 @@ function trailLiveScript(): Response {
     });
   };
 
+  drawTrailRail();
   bindAutosaveField(title, "/api/trail", () => ({ title: title.value }));
   if (title && activeTrailLabel) {
     title.addEventListener("input", () => {
@@ -1063,10 +1128,20 @@ function trailLiveScript(): Response {
   };
 
   bindTrailItems();
+  const resizeObserver = typeof ResizeObserver !== "undefined"
+    ? new ResizeObserver(() => drawTrailRail())
+    : null;
+  if (resizeObserver) resizeObserver.observe(path);
+  window.addEventListener("resize", drawTrailRail);
+  drawTrailRail();
+
   const interval = window.setInterval(tick, 1200);
   window.addEventListener("pagehide", () => {
     stopped = true;
     window.clearInterval(interval);
+    window.cancelAnimationFrame(railFrame);
+    if (resizeObserver) resizeObserver.disconnect();
+    window.removeEventListener("resize", drawTrailRail);
   }, { once: true });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) tick();
@@ -4731,40 +4806,39 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-path {
+      position: relative;
       margin-top: 20px;
     }
-    .trail-step {
-      position: relative;
-      margin: 0;
-    }
-    .trail-step-connector {
+    .trail-path-rail {
       position: absolute;
-      left: 0;
-      top: 22px;
-      width: 20px;
+      inset: 0;
+      width: 100%;
       height: 100%;
       overflow: visible;
       pointer-events: none;
       z-index: 0;
     }
-    .trail-step:last-child .trail-step-connector {
-      display: none;
-    }
-    .trail-step-connector path {
+    .trail-path-rail path {
       fill: none;
       stroke: var(--annotation);
       stroke-linecap: round;
+      stroke-linejoin: round;
       vector-effect: non-scaling-stroke;
     }
-    .trail-brush-main {
+    .trail-path-rail .trail-brush-main {
       stroke-width: 5.5;
     }
-    .trail-brush-fiber {
+    .trail-path-rail .trail-brush-fiber {
       stroke-width: 1.15;
       opacity: .34;
     }
-    .trail-brush-fiber-b {
+    .trail-path-rail .trail-brush-fiber-b {
       opacity: .2;
+    }
+    .trail-step {
+      position: relative;
+      z-index: 1;
+      margin: 0;
     }
     .trail-step-summary {
       position: relative;
