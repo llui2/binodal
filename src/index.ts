@@ -205,16 +205,11 @@ async function route(request: Request, env: Env): Promise<Response> {
     return updateTrailDescription(request, env);
   }
 
-  if (request.method === "POST" && path === "/trail/user") {
-    return setTrailUser(request, env);
-  }
-
-  if (request.method === "POST" && path === "/trail/new") {
-    return createTrailForUser(request, env);
-  }
-
-  if (request.method === "POST" && path === "/trail/select") {
-    return selectTrailForUser(request, env);
+  if (
+    request.method === "POST" &&
+    (path === "/trail/user" || path === "/trail/new" || path === "/trail/select")
+  ) {
+    return redirect("/trail", 303);
   }
 
   if (request.method === "GET" && path === "/trail/connect") {
@@ -469,65 +464,50 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
 
 async function renderTrail(request: Request, env: Env): Promise<Response> {
   const trail = await ensureCurrentTrail(request, env);
-  const trailUser = await currentTrailUser(request, env);
-  if (trailUser) {
-    await claimTrailForUser(env, trail.id, trailUser.id);
-  }
 
-  const [items, branches, title, description, user, userTrails] = await Promise.all([
+  const [items, branches, title, description] = await Promise.all([
     listTrailItems(env, trail.id),
     listTrailBranches(env, trail.id),
     getTrailTitle(env, trail.id),
     getTrailDescription(env, trail.id),
-    currentUser(request, env),
-    trailUser ? listUserTrails(env, trailUser.id) : Promise.resolve([] as TrailSummary[]),
   ]);
 
   const graphHtml = renderTrailGraph(items, branches);
 
-  const response = htmlPage(
+  return htmlPage(
     title?.trim() || "trail",
     `<header class="topbar">
       ${renderBrand()}
-      ${renderIdentity(user)}
     </header>
     <main class="shell trail-page">
-      <div class="trail-layout">
-        <aside class="trail-sidebar" aria-label="Your trails">
-          ${renderTrailSidebar(trailUser, userTrails, trail.id)}
-        </aside>
-
-        <div class="trail-main">
-          <div class="trail-heading">
-            <input id="trail-title" class="trail-title-input" maxlength="140" aria-label="Trail title" placeholder="untitled trail" value="${escapeAttr(title ?? "")}" data-autosave-trail="title">
-            <div class="trail-heading-meta">
-              <span id="trail-save-state" class="trail-save-state" role="status" aria-live="polite"></span>
-              <a class="trail-connect-link" href="/trail/connect">connect ChatGPT</a>
-            </div>
+      <div class="trail-main">
+        <div class="trail-heading">
+          <input id="trail-title" class="trail-title-input" maxlength="140" aria-label="Trail title" placeholder="untitled trail" value="${escapeAttr(title ?? "")}" data-autosave-trail="title">
+          <div class="trail-heading-meta">
+            <span id="trail-save-state" class="trail-save-state" role="status" aria-live="polite"></span>
+            <a class="trail-connect-link" href="/trail/connect">connect ChatGPT</a>
           </div>
-
-          <div class="trail-description">
-            <textarea id="trail-description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="Describe what this trail is trying to understand." data-autosave-trail="description">${escapeHtml(description ?? "")}</textarea>
-          </div>
-
-          <section class="trail-graph" data-trail-live data-trail-id="${escapeAttr(trail.id)}" aria-label="Research paths">
-            ${graphHtml}
-          </section>
-
-          <form class="trail-mark-add" action="/trail/add" method="post" data-trail-add>
-            <span class="trail-mark-context" data-trail-mark-context>main</span>
-            <textarea id="trail-add-value" name="value" rows="2" maxlength="10000"
-              aria-label="Add a mark"
-              placeholder="Add a mark — thought, paper, or link" required></textarea>
-            <button type="submit">mark</button>
-          </form>
         </div>
+
+        <div class="trail-description">
+          <textarea id="trail-description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="Describe what this trail is trying to understand." data-autosave-trail="description">${escapeHtml(description ?? "")}</textarea>
+        </div>
+
+        <section class="trail-graph" data-trail-live data-trail-id="${escapeAttr(trail.id)}" aria-label="Research paths">
+          ${graphHtml}
+        </section>
+
+        <form class="trail-mark-add" action="/trail/add" method="post" data-trail-add>
+          <span class="trail-mark-context" data-trail-mark-context>main</span>
+          <textarea id="trail-add-value" name="value" rows="2" maxlength="10000"
+            aria-label="Add a mark"
+            placeholder="Add a mark — thought, paper, or link" required></textarea>
+          <button type="submit">mark</button>
+        </form>
       </div>
       <script src="/trail-live.js" defer></script>
     </main>`,
   );
-
-  return withTrailCookie(response, trail.cookie);
 }
 
 function renderTrailSidebar(
