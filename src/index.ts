@@ -492,11 +492,11 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
             ${itemHtml}
           </section>
 
-          <form class="trail-add" action="/trail/add" method="post" data-trail-add>
-            <input id="trail-add-value" name="value" maxlength="10000" autocomplete="off"
-              aria-label="Add to trail"
-              placeholder="Mark the trail — thought, paper, or link" required>
-            <button type="submit" hidden>add</button>
+          <form class="trail-mark-add" action="/trail/add" method="post" data-trail-add>
+            <textarea id="trail-add-value" name="value" rows="2" maxlength="10000"
+              aria-label="Add a mark"
+              placeholder="Add a mark — thought, paper, or link" required></textarea>
+            <button type="submit">mark</button>
           </form>
         </div>
       </div>
@@ -548,7 +548,7 @@ function renderTrailSidebar(
 function renderTrailItem(item: TrailItemRow, _index: number): string {
   const isOpenable = Boolean(item.url);
   const title = item.title || item.content || "untitled";
-  const kind = item.kind === "paper" ? "paper" : item.kind === "note" ? "note" : "link";
+  const kind = item.kind === "paper" ? "paper" : item.kind === "note" ? "mark" : "link";
 
   const comparableText = (value: string): string =>
     value.replace(/\s+/g, " ").trim().replace(/[.!?;:]+$/, "").toLowerCase();
@@ -559,6 +559,11 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
   const detailsText = item.note ?? "";
 
   return `<div class="trail-step" data-trail-item="${item.id}" data-open="false">
+    <svg class="trail-step-connector" viewBox="0 0 20 100" preserveAspectRatio="none" aria-hidden="true">
+      <path class="trail-brush-main" d="M10 0 C8.4 20 11.3 39 9.2 58 C8.1 75 11.1 89 10 100"/>
+      <path class="trail-brush-fiber trail-brush-fiber-a" d="M10.9 0 C9.1 24 10.9 70 9.6 100"/>
+      <path class="trail-brush-fiber trail-brush-fiber-b" d="M9.1 0 C10.2 28 8.9 73 10.5 100"/>
+    </svg>
     <div class="trail-step-summary">
       <span class="trail-step-rail">
         <button class="trail-step-node" type="button" data-item-toggle="${item.id}" aria-label="Open node" aria-expanded="false"></button>
@@ -970,6 +975,12 @@ function trailLiveScript(): Response {
   const addForm = document.querySelector("[data-trail-add]");
   const addField = document.getElementById("trail-add-value");
   if (addForm && addField) {
+    addField.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        addForm.requestSubmit();
+      }
+    });
     addForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       const value = addField.value.trim();
@@ -4722,19 +4733,34 @@ function htmlPage(title: string, body: string, status = 200): Response {
       position: relative;
       margin: 0;
     }
-    .trail-step:not(:last-child)::after {
-      content: "";
+    .trail-step-connector {
       position: absolute;
       left: -1px;
       top: 22px;
-      bottom: -22px;
       width: 20px;
-      background-image: url("/trail-brush.svg");
-      background-repeat: repeat-y;
-      background-position: center top;
-      background-size: 20px 48px;
+      height: 100%;
+      overflow: visible;
       pointer-events: none;
       z-index: 0;
+    }
+    .trail-step:last-child .trail-step-connector {
+      display: none;
+    }
+    .trail-step-connector path {
+      fill: none;
+      stroke: var(--annotation);
+      stroke-linecap: round;
+      vector-effect: non-scaling-stroke;
+    }
+    .trail-brush-main {
+      stroke-width: 5.5;
+    }
+    .trail-brush-fiber {
+      stroke-width: 1.2;
+      opacity: .38;
+    }
+    .trail-brush-fiber-b {
+      opacity: .22;
     }
     .trail-step-summary {
       position: relative;
@@ -4948,31 +4974,44 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-size: .88rem;
     }
 
-    .trail-add {
-      margin: 12px 0 0 28px;
-      padding-top: 18px;
+    .trail-mark-add {
+      margin: 10px 0 0 28px;
+      padding-top: 22px;
       border-top: 1px solid var(--wash);
     }
-    .trail-add input {
-      display: block;
-      width: 100%;
-      padding: 9px 0;
-      border: 0;
-      border-radius: 0;
-      background: transparent;
+    .trail-mark-add {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: start;
+    }
+    .trail-mark-add textarea {
+      min-height: 64px;
+      padding: 10px 11px;
+      background: var(--field-muted);
       color: var(--ink);
       font-size: .84rem;
-      line-height: 1.4;
+      line-height: 1.45;
+      resize: vertical;
     }
-    .trail-add input::placeholder {
+    .trail-mark-add textarea::placeholder {
       color: var(--soft);
     }
-    .trail-add input:focus-visible {
+    .trail-mark-add textarea:focus-visible {
       outline: none;
-      box-shadow: inset 0 -1px var(--annotation);
+      border-color: color-mix(in srgb, var(--annotation) 30%, var(--wash));
+      background: var(--field-focus);
     }
-    .trail-add input:disabled {
-      opacity: .55;
+    .trail-mark-add button {
+      min-height: 36px;
+      padding: 8px 11px;
+      background: transparent;
+      color: var(--annotation);
+      font-size: .76rem;
+      font-weight: 600;
+    }
+    .trail-mark-add button:hover {
+      filter: none;
     }
 
     .trail-connect-page {
@@ -5081,6 +5120,12 @@ function htmlPage(title: string, body: string, status = 200): Response {
       }
       .trail-description {
         margin-top: 18px;
+      }
+      .trail-mark-add {
+        grid-template-columns: 1fr;
+      }
+      .trail-mark-add button {
+        justify-self: start;
       }
     }
   </style>
