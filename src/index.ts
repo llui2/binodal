@@ -5760,7 +5760,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-page {
-      max-width: 1240px;
+      width: min(1320px, calc(100% - 40px));
+      max-width: 1320px;
       padding: 48px 0 90px;
     }
     .trail-layout {
@@ -5941,10 +5942,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-graph {
       position: relative;
       display: grid;
-      grid-template-columns: 116px minmax(320px, 1fr) minmax(230px, .72fr);
-      column-gap: 18px;
+      grid-template-columns: 150px minmax(560px, 1fr) minmax(340px, .82fr);
+      column-gap: 24px;
       align-items: start;
-      margin-top: 20px;
+      margin-top: 22px;
       min-width: 0;
     }
     .trail-graph .trail-path {
@@ -6050,10 +6051,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-branch-path .trail-step-title-display,
     .trail-branch-path .trail-step-title-input {
-      font-size: .84rem;
+      font-size: .95rem;
     }
     .trail-branch-path .trail-step-body {
-      font-size: .75rem;
+      font-size: .84rem;
     }
     .trail-branch-empty {
       margin-left: 30px;
@@ -6191,7 +6192,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       border-radius: 0;
       background: transparent;
       color: var(--ink);
-      font-size: .93rem;
+      font-size: .98rem;
       font-weight: 610;
       line-height: 1.35;
       text-align: left;
@@ -6236,8 +6237,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
       border-radius: 0;
       background: transparent;
       color: var(--muted);
-      font-size: .79rem;
-      line-height: 1.48;
+      font-size: .86rem;
+      line-height: 1.5;
     }
     .trail-step-body::placeholder {
       color: var(--soft);
@@ -6420,14 +6421,14 @@ function htmlPage(title: string, body: string, status = 200): Response {
       }
     }
 
-    @media (max-width: 980px) {
+    @media (max-width: 1120px) {
       .trail-graph {
-        grid-template-columns: 94px minmax(300px, 1fr) minmax(205px, .7fr);
-        column-gap: 14px;
+        grid-template-columns: 112px minmax(430px, 1fr) minmax(270px, .72fr);
+        column-gap: 16px;
       }
       .trail-branch-chip {
-        width: 88px;
-        max-width: 88px;
+        width: 104px;
+        max-width: 104px;
       }
     }
 
