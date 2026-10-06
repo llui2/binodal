@@ -1517,6 +1517,15 @@ async function placeTrailItem(
     .run();
 }
 
+async function nextTrailItemStoragePosition(env: Env, trailId: string): Promise<number> {
+  const row = await env.DB.prepare(
+    "SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM trail_items WHERE trail_id = ?",
+  )
+    .bind(trailId)
+    .first<{ next_position: number }>();
+  return Number(row?.next_position ?? 0);
+}
+
 async function addToTrail(request: Request, env: Env): Promise<Response> {
   assertSameOrigin(request);
   const trail = await ensureCurrentTrail(request, env);
@@ -1529,29 +1538,50 @@ async function addToTrail(request: Request, env: Env): Promise<Response> {
   return withTrailCookie(redirect("/trail", 303), trail.cookie);
 }
 
-async function insertTrailNote(env: Env, trailId: string, value: string, note: string | null = null): Promise<void> {
+async function insertTrailNote(
+  env: Env,
+  trailId: string,
+  value: string,
+  note: string | null = null,
+  branchId = 0,
+): Promise<number | null> {
   const compact = value.replace(/\s+/g, " ").trim();
-  if (!compact) return;
+  if (!compact) return null;
   const title = compact.length > 90 ? `${compact.slice(0, 87)}…` : compact;
-  const position = await nextTrailPosition(env, trailId);
-  await env.DB.prepare(
+  const storagePosition = await nextTrailItemStoragePosition(env, trailId);
+  const row = await env.DB.prepare(
     `INSERT INTO trail_items (trail_id, kind, title, content, note, position)
-     VALUES (?, 'note', ?, ?, ?, ?)`,
+     VALUES (?, 'note', ?, ?, ?, ?)
+     RETURNING id`,
   )
-    .bind(trailId, title, value.slice(0, 10000), note ? note.slice(0, 2000) : null, position)
-    .run();
+    .bind(
+      trailId,
+      title,
+      value.slice(0, 10000),
+      note ? note.slice(0, 2000) : null,
+      storagePosition,
+    )
+    .first<{ id: number }>();
+
+  if (!row?.id) return null;
+  await placeTrailItem(env, trailId, row.id, branchId);
+  return row.id;
 }
 
-async function insertTrailValue(env: Env, trailId: string, value: string): Promise<void> {
+async function insertTrailValue(
+  env: Env,
+  trailId: string,
+  value: string,
+  branchId = 0,
+): Promise<number | null> {
   const clean = value.trim();
-  if (!clean) return;
+  if (!clean) return null;
 
   // A pasted DOI, arXiv ID, Scholar result, or publisher URL should become a
   // first-class paper node when the resolver can identify it.
   if (normalizePaperInput(clean)) {
     try {
-      await insertPaperIntoTrail(env, trailId, clean);
-      return;
+      return await insertPaperIntoTrail(env, trailId, clean, null, branchId);
     } catch {
       // Not every safe URL is a paper. Fall through to a generic link.
     }
@@ -1559,7 +1589,7 @@ async function insertTrailValue(env: Env, trailId: string, value: string): Promi
 
   const normalizedUrl = normalizeTrailUrl(clean);
   if (normalizedUrl) {
-    const position = await nextTrailPosition(env, trailId);
+    const storagePosition = await nextTrailItemStoragePosition(env, trailId);
     let title = normalizedUrl;
     try {
       const parsed = new URL(normalizedUrl);
@@ -1568,19 +1598,23 @@ async function insertTrailValue(env: Env, trailId: string, value: string): Promi
       // Keep the URL as the title.
     }
 
-    await env.DB.prepare(
+    const row = await env.DB.prepare(
       `INSERT INTO trail_items (trail_id, kind, title, url, source_ref, position)
        VALUES (?, 'link', ?, ?, ?, ?)
        ON CONFLICT(trail_id, source_ref) DO UPDATE SET
          title = excluded.title,
-         url = excluded.url`,
+         url = excluded.url
+       RETURNING id`,
     )
-      .bind(trailId, title.slice(0, 300), normalizedUrl, `url:${normalizedUrl}`, position)
-      .run();
-    return;
+      .bind(trailId, title.slice(0, 300), normalizedUrl, `url:${normalizedUrl}`, storagePosition)
+      .first<{ id: number }>();
+
+    if (!row?.id) return null;
+    await placeTrailItem(env, trailId, row.id, branchId);
+    return row.id;
   }
 
-  await insertTrailNote(env, trailId, clean);
+  return await insertTrailNote(env, trailId, clean, null, branchId);
 }
 
 async function insertPaperIntoTrail(
@@ -1588,23 +1622,25 @@ async function insertPaperIntoTrail(
   trailId: string,
   rawPaper: string,
   note: string | null = null,
-): Promise<void> {
+  branchId = 0,
+): Promise<number | null> {
   const paperId = normalizePaperInput(rawPaper);
   if (!paperId) throw new Error("Invalid paper identifier or URL");
 
   const paper = await ensurePaper(env, paperId);
   const identifiers = await getPaperIdentifiers(env, paper.arxiv_id);
   const publicPaperId = preferredPaperId(identifiers, paper.arxiv_id);
-  const position = await nextTrailPosition(env, trailId);
+  const storagePosition = await nextTrailItemStoragePosition(env, trailId);
   const itemUrl = `/p/${encodeURIComponent(publicPaperId)}`;
 
-  await env.DB.prepare(
+  const row = await env.DB.prepare(
     `INSERT INTO trail_items (trail_id, kind, title, url, note, source_ref, position)
      VALUES (?, 'paper', ?, ?, ?, ?, ?)
      ON CONFLICT(trail_id, source_ref) DO UPDATE SET
        title = excluded.title,
        url = excluded.url,
-       note = COALESCE(excluded.note, trail_items.note)`,
+       note = COALESCE(excluded.note, trail_items.note)
+     RETURNING id`,
   )
     .bind(
       trailId,
@@ -1612,9 +1648,13 @@ async function insertPaperIntoTrail(
       itemUrl,
       note ? note.slice(0, 2000) : null,
       `paper:${paper.arxiv_id}`,
-      position,
+      storagePosition,
     )
-    .run();
+    .first<{ id: number }>();
+
+  if (!row?.id) return null;
+  await placeTrailItem(env, trailId, row.id, branchId);
+  return row.id;
 }
 
 async function addPaperToTrail(request: Request, env: Env): Promise<Response> {
