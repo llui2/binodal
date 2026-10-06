@@ -26,9 +26,9 @@ Do not use decorative punctuation as UI separators. In particular, avoid middots
 
 The trail rail is a core identity element.
 
-Paths are thick, organic brush strokes with visible lateral irregularity and secondary fibers, using the Trails logo as the visual reference. Nodes are solid irregular brush marks. In the resting state, nodes have no lighter outline, halo, ring, or secondary contour; hover may enlarge them using the same solid color. Never replace this with thin graph lines, generic circles, clean mechanical wiring, or geometrically straight-looking strokes.
+Paths are thick, organic dry-brush strokes using the Trails logo as the visual reference. Their centerline should stay mostly straight/orthogonal with only small natural drift; do not create visible waves, spirals, or decorative wandering. Brush character comes mainly from uneven paint coverage and small paper-colored gaps/scratches inside the stroke, not from parallel gray/light-blue lines beside it. Nodes are solid irregular brush marks and may be slightly oversized relative to the stroke. In the resting state, nodes have no lighter outline, halo, ring, or secondary contour; hover may enlarge them using the same solid color. Never replace this with thin graph lines, generic circles, clean mechanical wiring, or perfectly regular vector strokes.
 
-This brush treatment is a protected visual invariant. Do not alter the path irregularity, stroke layering, node silhouette, resting node fill, or hover behavior during unrelated interface work. Change it only when the user explicitly asks to change the topology/brush visual style.
+This dry-brush treatment is a protected visual invariant. Do not alter the restrained centerline drift, internal dry-brush gaps, node silhouette/size, resting node fill, or hover behavior during unrelated interface work. Change it only when the user explicitly asks to change the topology/brush visual style.
 
 Topology may use orthogonal logic for readability, but the rendered stroke should still feel drawn rather than diagrammatic.
 
