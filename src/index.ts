@@ -6544,9 +6544,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       .trail-map {
         width: 62px;
       }
-      .trail-map-caption {
-        display: none;
-      }
       .trail-mark-add {
         grid-template-columns: 1fr;
       }
