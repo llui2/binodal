@@ -548,7 +548,7 @@ function renderTrailSidebar(
 function renderTrailItem(item: TrailItemRow, _index: number): string {
   const isOpenable = Boolean(item.url);
   const title = item.title || item.content || "untitled";
-  const kind = item.kind === "paper" ? "paper" : item.kind === "note" ? "mark" : "link";
+  const kind = item.kind === "paper" ? "paper" : item.kind === "link" ? "link" : "";
 
   const comparableText = (value: string): string =>
     value.replace(/\s+/g, " ").trim().replace(/[.!?;:]+$/, "").toLowerCase();
@@ -560,19 +560,23 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
 
   return `<div class="trail-step" data-trail-item="${item.id}" data-open="false">
     <svg class="trail-step-connector" viewBox="0 0 20 100" preserveAspectRatio="none" aria-hidden="true">
-      <path class="trail-brush-main" d="M10 0 C8.4 20 11.3 39 9.2 58 C8.1 75 11.1 89 10 100"/>
-      <path class="trail-brush-fiber trail-brush-fiber-a" d="M10.9 0 C9.1 24 10.9 70 9.6 100"/>
-      <path class="trail-brush-fiber trail-brush-fiber-b" d="M9.1 0 C10.2 28 8.9 73 10.5 100"/>
+      <path class="trail-brush-main" d="M10 0 C10 8 10 10 9.4 18 C8.4 35 11.2 51 9.2 68 C8.7 79 10 88 10 100"/>
+      <path class="trail-brush-fiber trail-brush-fiber-a" d="M10 0 C10 10 10.4 15 10 24 C9.3 48 10.6 72 10 100"/>
+      <path class="trail-brush-fiber trail-brush-fiber-b" d="M10 0 C10 9 9.7 17 10.1 27 C10.6 53 9.4 78 10 100"/>
     </svg>
     <div class="trail-step-summary">
       <span class="trail-step-rail">
-        <button class="trail-step-node" type="button" data-item-toggle="${item.id}" aria-label="Open node" aria-expanded="false"></button>
+        <button class="trail-step-node" type="button" data-item-toggle="${item.id}" aria-label="Open node" aria-expanded="false">
+          <svg class="trail-step-node-svg" viewBox="0 0 20 20" aria-hidden="true">
+            <path class="trail-step-node-shape" d="M10 1.2 C15.1 1.1 18.6 5 18.4 10.1 C18.6 15 14.8 18.8 9.8 18.6 C4.8 18.9 1.4 15.1 1.6 10 C1.3 5.1 4.9 1.4 10 1.2 Z"/>
+          </svg>
+        </button>
       </span>
       <span class="trail-step-line">
         <span class="trail-step-title-display">${escapeHtml(title)}</span>
         <input class="trail-step-title-input" value="${escapeAttr(title)}" maxlength="300" aria-label="Node title" data-item-title="${item.id}" hidden>
       </span>
-      <span class="trail-step-kind">${escapeHtml(kind)}</span>
+      ${kind ? `<span class="trail-step-kind">${escapeHtml(kind)}</span>` : `<span class="trail-step-kind" aria-hidden="true"></span>`}
     </div>
 
     ${item.kind === "note"
@@ -4735,7 +4739,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-step-connector {
       position: absolute;
-      left: -1px;
+      left: 0;
       top: 22px;
       width: 20px;
       height: 100%;
@@ -4756,24 +4760,24 @@ function htmlPage(title: string, body: string, status = 200): Response {
       stroke-width: 5.5;
     }
     .trail-brush-fiber {
-      stroke-width: 1.2;
-      opacity: .38;
+      stroke-width: 1.15;
+      opacity: .34;
     }
     .trail-brush-fiber-b {
-      opacity: .22;
+      opacity: .2;
     }
     .trail-step-summary {
       position: relative;
       z-index: 1;
       display: grid;
-      grid-template-columns: 18px minmax(0, 1fr) auto;
+      grid-template-columns: 20px minmax(0, 1fr) auto;
       gap: 10px;
       align-items: center;
       min-height: 44px;
       padding: 7px 0 3px;
     }
     .trail-step-rail {
-      width: 18px;
+      width: 20px;
       height: 30px;
       display: grid;
       place-items: center;
@@ -4781,32 +4785,44 @@ function htmlPage(title: string, body: string, status = 200): Response {
       z-index: 2;
     }
     .trail-step-node {
-      width: 16px;
-      height: 16px;
+      width: 20px;
+      height: 20px;
+      display: grid;
+      place-items: center;
       padding: 0;
       border: 0;
-      border-radius: 53% 47% 45% 55%;
-      background: var(--annotation);
-      box-shadow: none;
+      background: transparent;
       cursor: pointer;
       position: relative;
-      transition: transform 120ms ease, border-radius 120ms ease;
     }
     .trail-step-node::after {
       content: "";
       position: absolute;
-      inset: -8px;
+      inset: -7px;
       border-radius: 50%;
+    }
+    .trail-step-node-svg {
+      display: block;
+      width: 20px;
+      height: 20px;
+      overflow: visible;
+      transform-origin: 10px 10px;
+      transition: transform 120ms ease;
+    }
+    .trail-step-node-shape {
+      fill: var(--annotation);
     }
     .trail-step-node:hover,
     .trail-step-node:focus-visible {
       filter: none;
       outline: none;
-      transform: scale(1.1);
     }
-    .trail-step[data-open="true"] .trail-step-node {
-      transform: scale(1.46);
-      border-radius: 46% 54% 57% 43%;
+    .trail-step-node:hover .trail-step-node-svg,
+    .trail-step-node:focus-visible .trail-step-node-svg {
+      transform: scale(1.08);
+    }
+    .trail-step[data-open="true"] .trail-step-node-svg {
+      transform: scale(1.28);
     }
     .trail-step-line {
       min-width: 0;
@@ -4857,9 +4873,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
       position: relative;
       z-index: 1;
       display: block;
-      width: calc(100% - 28px);
+      width: calc(100% - 30px);
       min-height: 26px;
-      margin: -2px 0 10px 28px;
+      margin: -2px 0 10px 30px;
       padding: 2px 0 4px;
       overflow: hidden;
       resize: none;
@@ -4881,7 +4897,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-step-detail {
       position: relative;
       z-index: 1;
-      margin: -2px 0 0 28px;
+      margin: -2px 0 0 30px;
       padding: 0 0 12px;
       max-width: 650px;
     }
@@ -4975,7 +4991,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-mark-add {
-      margin: 10px 0 0 28px;
+      margin: 10px 0 0 30px;
       padding-top: 22px;
       border-top: 1px solid var(--wash);
     }
