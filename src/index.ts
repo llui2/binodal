@@ -550,9 +550,11 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
 
   return `<div class="trail-step" data-trail-item="${item.id}" data-open="false">
     <div class="trail-step-summary">
-      <span class="trail-step-rail" aria-hidden="true"><span class="trail-step-dot"></span></span>
+      <span class="trail-step-rail">
+        <button class="trail-step-node" type="button" data-item-toggle="${item.id}" aria-label="Open node" aria-expanded="false"></button>
+      </span>
       <span class="trail-step-line">
-        <button class="trail-step-title-display" type="button" data-item-toggle="${item.id}" aria-expanded="false">${escapeHtml(title)}</button>
+        <span class="trail-step-title-display">${escapeHtml(title)}</span>
         <input class="trail-step-title-input" value="${escapeAttr(title)}" maxlength="300" aria-label="Node title" data-item-title="${item.id}" hidden>
       </span>
       <span class="trail-step-kind">${escapeHtml(kind)}</span>
@@ -847,14 +849,16 @@ function trailLiveScript(): Response {
 
   const setStepOpen = (step, open) => {
     const toggle = step.querySelector("[data-item-toggle]");
+    const titleDisplay = step.querySelector(".trail-step-title-display");
     const titleField = step.querySelector("[data-item-title]");
     const detail = step.querySelector("[data-item-detail]");
 
     step.dataset.open = open ? "true" : "false";
     if (toggle) {
-      toggle.hidden = open;
       toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      toggle.setAttribute("aria-label", open ? "Close node" : "Open node");
     }
+    if (titleDisplay) titleDisplay.hidden = open;
     if (titleField) {
       titleField.hidden = !open;
       if (!open && document.activeElement === titleField) titleField.blur();
@@ -865,6 +869,7 @@ function trailLiveScript(): Response {
   const bindTrailItems = () => {
     path.querySelectorAll(".trail-step").forEach((step) => {
       const toggle = step.querySelector("[data-item-toggle]");
+      const titleDisplay = step.querySelector(".trail-step-title-display");
       const titleField = step.querySelector("[data-item-title]");
 
       if (step.dataset.bound !== "true") {
@@ -872,17 +877,23 @@ function trailLiveScript(): Response {
 
         if (toggle) {
           toggle.addEventListener("click", () => {
-            path.querySelectorAll('.trail-step[data-open="true"]').forEach((other) => {
-              if (other !== step) setStepOpen(other, false);
-            });
-            setStepOpen(step, true);
+            const opening = step.dataset.open !== "true";
+            if (opening) {
+              path.querySelectorAll('.trail-step[data-open="true"]').forEach((other) => {
+                if (other !== step) setStepOpen(other, false);
+              });
+            }
+            setStepOpen(step, opening);
+            if (opening && titleField) {
+              requestAnimationFrame(() => titleField.focus());
+            }
           });
         }
       }
 
       if (titleField) {
         titleField.addEventListener("input", () => {
-          if (toggle) toggle.textContent = titleField.value.trim() || "untitled";
+          if (titleDisplay) titleDisplay.textContent = titleField.value.trim() || "untitled";
         });
         titleField.addEventListener("keydown", (event) => {
           if (event.key === "Enter") {
@@ -4654,9 +4665,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-step:not(:last-child)::after {
       content: "";
       position: absolute;
-      left: 4px;
-      top: 18px;
-      bottom: -18px;
+      left: 6px;
+      top: 26px;
+      bottom: -14px;
       width: 2px;
       background: var(--annotation);
       pointer-events: none;
@@ -4666,25 +4677,44 @@ function htmlPage(title: string, body: string, status = 200): Response {
       position: relative;
       z-index: 1;
       display: grid;
-      grid-template-columns: 10px minmax(0, 1fr) auto;
+      grid-template-columns: 14px minmax(0, 1fr) auto;
       gap: 10px;
       align-items: center;
-      min-height: 36px;
-      padding: 6px 0;
+      min-height: 40px;
+      padding: 7px 0;
     }
     .trail-step-rail {
-      width: 10px;
+      width: 14px;
+      height: 26px;
       display: grid;
       place-items: center;
       position: relative;
       z-index: 2;
     }
-    .trail-step-dot {
-      width: 8px;
-      height: 8px;
-      display: block;
+    .trail-step-node {
+      width: 12px;
+      height: 12px;
+      padding: 0;
+      border: 0;
       border-radius: 50%;
       background: var(--annotation);
+      cursor: pointer;
+      position: relative;
+    }
+    .trail-step-node::after {
+      content: "";
+      position: absolute;
+      inset: -7px;
+      border-radius: 50%;
+    }
+    .trail-step-node:hover,
+    .trail-step-node:focus-visible {
+      filter: none;
+      outline: 2px solid color-mix(in srgb, var(--annotation) 35%, transparent);
+      outline-offset: 3px;
+    }
+    .trail-step[data-open="true"] .trail-step-node {
+      box-shadow: inset 0 0 0 3px var(--paper);
     }
     .trail-step-line {
       min-width: 0;
@@ -4716,11 +4746,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-step-title-display {
       display: block;
-      cursor: pointer;
-    }
-    .trail-step-title-display:hover {
-      color: var(--annotation);
-      filter: none;
     }
     .trail-step-title-input {
       cursor: text;
@@ -4739,7 +4764,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-step-detail {
       position: relative;
       z-index: 1;
-      margin: 0 0 0 20px;
+      margin: 0 0 0 24px;
       padding: 0 0 12px;
       max-width: 650px;
     }
