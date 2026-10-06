@@ -51,7 +51,7 @@ Paper/link type labels live in a dedicated right-hand metadata gutter outside th
 
 Controls should be obvious when needed and visually quiet when not in use. Use color and background state rather than unnecessary borders, size jumps, or decorative chrome.
 
-Use short, direct labels. Prefer plain verbs for actions. Avoid prototype or implementation language in the visible interface unless it is necessary for the user to understand what will happen.
+Use short, direct labels. Prefer plain verbs for actions. Avoid prototype or implementation language in the visible interface unless it is necessary for the user to understand what will happen. Empty editable fields should use short neutral placeholders such as "context", "note", or "mark" rather than instructional sentences.
 
 Keep interaction patterns consistent. If a topology node opens mark detail in one place, it should behave the same way everywhere.
 
