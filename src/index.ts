@@ -474,17 +474,16 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
     await claimTrailForUser(env, trail.id, trailUser.id);
   }
 
-  const [items, title, description, user, userTrails] = await Promise.all([
+  const [items, branches, title, description, user, userTrails] = await Promise.all([
     listTrailItems(env, trail.id),
+    listTrailBranches(env, trail.id),
     getTrailTitle(env, trail.id),
     getTrailDescription(env, trail.id),
     currentUser(request, env),
     trailUser ? listUserTrails(env, trailUser.id) : Promise.resolve([] as TrailSummary[]),
   ]);
 
-  const itemHtml = items.length
-    ? items.map((item, index) => renderTrailItem(item, index)).join("")
-    : `<p class="trail-empty">The path is empty. Add papers from their paper pages, or add a thought below.</p>`;
+  const graphHtml = renderTrailGraph(items, branches);
 
   const response = htmlPage(
     title?.trim() || "trail",
@@ -511,11 +510,12 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
             <textarea id="trail-description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="Describe what this trail is trying to understand." data-autosave-trail="description">${escapeHtml(description ?? "")}</textarea>
           </div>
 
-          <section class="trail-path" data-trail-live aria-label="Research path">
-            ${itemHtml}
+          <section class="trail-graph" data-trail-live data-trail-id="${escapeAttr(trail.id)}" aria-label="Research paths">
+            ${graphHtml}
           </section>
 
           <form class="trail-mark-add" action="/trail/add" method="post" data-trail-add>
+            <span class="trail-mark-context" data-trail-mark-context>main</span>
             <textarea id="trail-add-value" name="value" rows="2" maxlength="10000"
               aria-label="Add a mark"
               placeholder="Add a mark — thought, paper, or link" required></textarea>
@@ -568,7 +568,64 @@ function renderTrailSidebar(
     </details>`;
 }
 
-function renderTrailItem(item: TrailItemRow, _index: number): string {
+function renderTrailGraph(
+  items: TrailItemRow[],
+  branches: TrailBranchView[],
+): string {
+  const mainHtml = items.length
+    ? items.map((item, index) => renderTrailItem(item, index, 0, true)).join("")
+    : `<p class="trail-empty">The path is empty. Add a mark below.</p>`;
+
+  const branchButtons = branches
+    .map((branch) => `<button class="trail-branch-chip" type="button"
+      data-branch-open="${branch.id}"
+      data-branch-anchor="${branch.parent_item_id}"
+      title="${escapeAttr(branch.title)}">
+      <span>${escapeHtml(branch.title)}</span>
+      <small>${branch.items.length}</small>
+    </button>`)
+    .join("");
+
+  const branchPanels = branches
+    .map((branch) => {
+      const branchItems = branch.items.length
+        ? branch.items.map((item, index) => renderTrailItem(item, index, branch.id, false)).join("")
+        : `<p class="trail-empty trail-branch-empty">This branch is empty.</p>`;
+
+      return `<div class="trail-branch-panel"
+        data-branch-panel="${branch.id}"
+        data-branch-anchor="${branch.parent_item_id}"
+        hidden>
+        <div class="trail-branch-heading">
+          <button class="trail-branch-back" type="button" data-branch-close aria-label="Return to main path">main</button>
+          <input class="trail-branch-title" maxlength="120" aria-label="Branch title"
+            value="${escapeAttr(branch.title)}" data-branch-title="${branch.id}">
+        </div>
+        <section class="trail-path trail-branch-path" data-path-branch="${branch.id}" aria-label="${escapeAttr(branch.title)}">
+          ${branchItems}
+        </section>
+      </div>`;
+    })
+    .join("");
+
+  return `<div class="trail-branch-lane trail-branch-lane-left" data-branch-list>
+      ${branchButtons}
+    </div>
+    <section class="trail-path trail-main-path" data-path-branch="0" aria-label="Main path">
+      ${mainHtml}
+    </section>
+    <div class="trail-branch-lane trail-branch-lane-right" data-active-branch>
+      ${branchPanels}
+    </div>
+    <svg class="trail-branch-links" aria-hidden="true"></svg>`;
+}
+
+function renderTrailItem(
+  item: TrailItemRow,
+  _index: number,
+  branchId = 0,
+  allowBranch = false,
+): string {
   const title = item.title || item.content || "untitled";
   const kind = item.kind === "paper" ? "paper" : item.kind === "link" ? "link" : "";
 
@@ -580,7 +637,7 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
     : rawContent;
   const detailsText = item.note ?? "";
 
-  return `<div class="trail-step" data-trail-item="${item.id}" data-open="false">
+  return `<div class="trail-step" data-trail-item="${item.id}" data-path-branch="${branchId}" data-open="false">
     <div class="trail-step-summary">
       <span class="trail-step-rail">
         <button class="trail-step-node" type="button" data-item-toggle="${item.id}" aria-label="Open node" aria-expanded="false">
@@ -611,12 +668,18 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
           <summary aria-label="Node actions">⋯</summary>
           <div class="trail-item-menu-panel">
             <form action="/trail/items/${item.id}/move" method="post">
+              <input type="hidden" name="branch_id" value="${branchId}">
               <button type="submit" name="direction" value="-1">move up</button>
             </form>
             <form action="/trail/items/${item.id}/move" method="post">
+              <input type="hidden" name="branch_id" value="${branchId}">
               <button type="submit" name="direction" value="1">move down</button>
             </form>
+            ${allowBranch
+              ? `<button type="button" data-new-branch="${item.id}">branch</button>`
+              : ""}
             <form action="/trail/items/${item.id}/remove" method="post">
+              <input type="hidden" name="branch_id" value="${branchId}">
               <button type="submit">remove</button>
             </form>
           </div>
