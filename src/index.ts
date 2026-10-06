@@ -469,6 +469,9 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
 
 async function renderTrail(request: Request, env: Env): Promise<Response> {
   const trail = await ensureCurrentTrail(request, env);
+  if (trail.id === COMMON_TRAIL_ID) {
+    await resetCommonExampleTrail(env);
+  }
   const trailUser = await currentTrailUser(request, env);
 
   const [items, title, description, user, ownedTrails] = await Promise.all([
@@ -1032,8 +1035,10 @@ function trailLiveScript(): Response {
       ? parsedLineHeight
       : parsedFontSize * 1.2;
 
+    const caretHeight = Math.max(14, lineHeight - 4);
     staticCaret.style.left = markerRect.left + "px";
-    staticCaret.style.top = (markerRect.top + lineHeight - 3) + "px";
+    staticCaret.style.top = (markerRect.top + (lineHeight - caretHeight) / 2) + "px";
+    staticCaret.style.height = caretHeight + "px";
     staticCaret.hidden = false;
   };
 
@@ -2096,6 +2101,18 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
 
 
   void mainStart;
+}
+
+async function resetCommonExampleTrail(env: Env): Promise<void> {
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM trail_branches WHERE trail_id = ?").bind(COMMON_TRAIL_ID),
+    env.DB.prepare("DELETE FROM trail_item_placements WHERE trail_id = ?").bind(COMMON_TRAIL_ID),
+    env.DB.prepare("DELETE FROM trail_items WHERE trail_id = ?").bind(COMMON_TRAIL_ID),
+    env.DB.prepare("DELETE FROM trail_metadata WHERE trail_id = ?").bind(COMMON_TRAIL_ID),
+    env.DB.prepare("DELETE FROM trail_contexts WHERE trail_id = ?").bind(COMMON_TRAIL_ID),
+  ]);
+
+  await ensureCommonExampleTrail(env);
 }
 
 async function ensureCurrentTrail(request: Request, env: Env): Promise<TrailContext> {
@@ -6089,8 +6106,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-static-caret {
       position: fixed;
       z-index: 9999;
-      width: 10px;
-      height: 3px;
+      width: 3px;
+      height: 18px;
       border-radius: 2px;
       background: var(--annotation);
       pointer-events: none;
