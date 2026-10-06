@@ -205,11 +205,16 @@ async function route(request: Request, env: Env): Promise<Response> {
     return updateTrailDescription(request, env);
   }
 
-  if (
-    request.method === "POST" &&
-    (path === "/trail/user" || path === "/trail/new" || path === "/trail/select")
-  ) {
-    return redirect("/trail", 303);
+  if (request.method === "POST" && path === "/trail/user") {
+    return setTrailUser(request, env);
+  }
+
+  if (request.method === "POST" && path === "/trail/new") {
+    return createTrailForUser(request, env);
+  }
+
+  if (request.method === "POST" && path === "/trail/select") {
+    return selectTrailForUser(request, env);
   }
 
   if (request.method === "GET" && path === "/trail/connect") {
@@ -464,13 +469,27 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
 
 async function renderTrail(request: Request, env: Env): Promise<Response> {
   const trail = await ensureCurrentTrail(request, env);
+  const trailUser = await currentTrailUser(request, env);
 
-  const [items, branches, title, description] = await Promise.all([
+  const [items, branches, title, description, user, ownedTrails] = await Promise.all([
     listTrailItems(env, trail.id),
     listTrailBranches(env, trail.id),
     getTrailTitle(env, trail.id),
     getTrailDescription(env, trail.id),
+    currentUser(request, env),
+    trailUser ? listUserTrails(env, trailUser.id) : Promise.resolve([] as TrailSummary[]),
   ]);
+
+  const userTrails = trailUser
+    ? [
+        {
+          id: COMMON_TRAIL_ID,
+          title: "A branching research trail",
+          created_at: "",
+        },
+        ...ownedTrails.filter((item) => item.id !== COMMON_TRAIL_ID),
+      ]
+    : [];
 
   const graphHtml = renderTrailGraph(items, branches);
 
@@ -478,32 +497,39 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
     title?.trim() || "trail",
     `<header class="topbar">
       ${renderBrand()}
+      ${renderIdentity(user)}
     </header>
     <main class="shell trail-page">
-      <div class="trail-main">
-        <div class="trail-heading">
-          <input id="trail-title" class="trail-title-input" maxlength="140" aria-label="Trail title" placeholder="untitled trail" value="${escapeAttr(title ?? "")}" data-autosave-trail="title">
-          <div class="trail-heading-meta">
-            <span id="trail-save-state" class="trail-save-state" role="status" aria-live="polite"></span>
-            <a class="trail-connect-link" href="/trail/connect">connect ChatGPT</a>
+      <div class="trail-layout">
+        <aside class="trail-sidebar" aria-label="Your trails">
+          ${renderTrailSidebar(trailUser, userTrails, trail.id)}
+        </aside>
+
+        <div class="trail-main">
+          <div class="trail-heading">
+            <input id="trail-title" class="trail-title-input" maxlength="140" aria-label="Trail title" placeholder="untitled trail" value="${escapeAttr(title ?? "")}" data-autosave-trail="title">
+            <div class="trail-heading-meta">
+              <span id="trail-save-state" class="trail-save-state" role="status" aria-live="polite"></span>
+              <a class="trail-connect-link" href="/trail/connect">connect ChatGPT</a>
+            </div>
           </div>
+
+          <div class="trail-description">
+            <textarea id="trail-description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="Describe what this trail is trying to understand." data-autosave-trail="description">${escapeHtml(description ?? "")}</textarea>
+          </div>
+
+          <section class="trail-graph" data-trail-live data-trail-id="${escapeAttr(trail.id)}" aria-label="Research paths">
+            ${graphHtml}
+          </section>
+
+          <form class="trail-mark-add" action="/trail/add" method="post" data-trail-add>
+            <span class="trail-mark-context" data-trail-mark-context>main</span>
+            <textarea id="trail-add-value" name="value" rows="2" maxlength="10000"
+              aria-label="Add a mark"
+              placeholder="Add a mark — thought, paper, or link" required></textarea>
+            <button type="submit">mark</button>
+          </form>
         </div>
-
-        <div class="trail-description">
-          <textarea id="trail-description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="Describe what this trail is trying to understand." data-autosave-trail="description">${escapeHtml(description ?? "")}</textarea>
-        </div>
-
-        <section class="trail-graph" data-trail-live data-trail-id="${escapeAttr(trail.id)}" aria-label="Research paths">
-          ${graphHtml}
-        </section>
-
-        <form class="trail-mark-add" action="/trail/add" method="post" data-trail-add>
-          <span class="trail-mark-context" data-trail-mark-context>main</span>
-          <textarea id="trail-add-value" name="value" rows="2" maxlength="10000"
-            aria-label="Add a mark"
-            placeholder="Add a mark — thought, paper, or link" required></textarea>
-          <button type="submit">mark</button>
-        </form>
       </div>
       <script src="/trail-live.js" defer></script>
     </main>`,
@@ -1072,7 +1098,7 @@ function trailLiveScript(): Response {
     return node;
   };
 
-  const curvePath = (points) => {
+  const curvePath = (points, phase = 0) => {
     if (!points.length) return "";
     let d = "M " + points[0].x.toFixed(2) + " " + points[0].y.toFixed(2);
     for (let i = 1; i < points.length; i += 1) {
@@ -1080,41 +1106,70 @@ function trailLiveScript(): Response {
       const b = points[i];
       const dy = b.y - a.y;
       const dx = b.x - a.x;
+      const wobble = (i % 2 === 0 ? -1 : 1) * phase;
       d += " C " +
-        (a.x + dx * 0.45).toFixed(2) + " " + (a.y + dy * 0.30).toFixed(2) + " " +
-        (b.x - dx * 0.35).toFixed(2) + " " + (b.y - dy * 0.30).toFixed(2) + " " +
+        (a.x + dx * 0.45 + wobble).toFixed(2) + " " + (a.y + dy * 0.30).toFixed(2) + " " +
+        (b.x - dx * 0.35 - wobble * 0.72).toFixed(2) + " " + (b.y - dy * 0.30).toFixed(2) + " " +
         b.x.toFixed(2) + " " + b.y.toFixed(2);
     }
     return d;
   };
 
+  const TRAIL_MAP_NODE_SHAPE =
+    "M10 1.2 C15.1 1.1 18.6 5 18.4 10.1 C18.6 15 14.8 18.8 9.8 18.6 C4.8 18.9 1.4 15.1 1.6 10 C1.3 5.1 4.9 1.4 10 1.2 Z";
+
   const drawPath = (points, className, branchId, label) => {
+    const group = svgNode("g", {
+      class: "trail-map-branch " + className,
+      "data-branch-select": branchId,
+    });
+    const titleNode = svgNode("title");
+    titleNode.textContent = label;
+    group.appendChild(titleNode);
+
     if (points.length >= 2) {
-      const path = svgNode("path", {
-        d: curvePath(points),
-        class: className,
+      group.appendChild(svgNode("path", {
+        d: curvePath(points, 1.4),
+        class: "trail-map-hit",
         "data-branch-select": branchId,
+      }));
+
+      [
+        ["trail-map-brush-main", 1.4],
+        ["trail-map-brush-fiber trail-map-brush-fiber-a", 0.5],
+        ["trail-map-brush-fiber trail-map-brush-fiber-b", 2.2],
+      ].forEach(([brushClass, phase]) => {
+        group.appendChild(svgNode("path", {
+          d: curvePath(points, Number(phase)),
+          class: String(brushClass),
+        }));
       });
-      const titleNode = svgNode("title");
-      titleNode.textContent = label;
-      path.appendChild(titleNode);
-      mapSvg.appendChild(path);
     }
 
     const nodePoints = branchId === "0" ? points : points.slice(1);
-    nodePoints.forEach((point) => {
-      const circle = svgNode("circle", {
-        cx: point.x,
-        cy: point.y,
-        r: branchId === activeKey() ? 5.3 : 4.2,
-        class: className + " trail-map-node",
+    nodePoints.forEach((point, index) => {
+      const selected = branchId === activeKey();
+      const scale = selected ? 0.76 : 0.64;
+      const rotation = ((index % 3) - 1) * 4;
+      const transform =
+        "translate(" + (point.x - 10 * scale).toFixed(2) + " " +
+        (point.y - 10 * scale).toFixed(2) + ") scale(" + scale + ") " +
+        "rotate(" + rotation + " 10 10)";
+
+      group.appendChild(svgNode("path", {
+        d: TRAIL_MAP_NODE_SHAPE,
+        transform,
+        class: "trail-map-brush-node",
         "data-branch-select": branchId,
-      });
-      const titleNode = svgNode("title");
-      titleNode.textContent = label;
-      circle.appendChild(titleNode);
-      mapSvg.appendChild(circle);
+      }));
+      group.appendChild(svgNode("path", {
+        d: TRAIL_MAP_NODE_SHAPE,
+        transform,
+        class: "trail-map-brush-node-fiber",
+      }));
     });
+
+    mapSvg.appendChild(group);
   };
 
   const drawTrailMap = () => {
@@ -1582,22 +1637,23 @@ async function setTrailUser(request: Request, env: Env): Promise<Response> {
     .run();
 
   const current = await ensureCurrentTrail(request, env);
-  const ownerId = await trailOwnerUserId(env, current.id);
   let trailCookieValue = current.cookie;
 
-  if (ownerId === null) {
-    await claimTrailForUser(env, current.id, user.id);
-  } else if (ownerId !== user.id) {
-    const existingTrailId = await latestTrailForUser(env, user.id);
-    if (existingTrailId) {
-      const token = randomToken();
-      await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
-        .bind(token, existingTrailId)
-        .run();
-      trailCookieValue = trailCookie(token, request);
-    } else {
-      const created = await createOwnedTrail(env, user.id);
-      trailCookieValue = trailCookie(created.trailToken, request);
+  if (current.id !== COMMON_TRAIL_ID) {
+    const ownerId = await trailOwnerUserId(env, current.id);
+    if (ownerId === null) {
+      await claimTrailForUser(env, current.id, user.id);
+    } else if (ownerId !== user.id) {
+      const existingTrailId = await latestTrailForUser(env, user.id);
+      if (existingTrailId) {
+        const token = randomToken();
+        await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
+          .bind(token, existingTrailId)
+          .run();
+        trailCookieValue = trailCookie(token, request);
+      } else {
+        trailCookieValue = null;
+      }
     }
   }
 
@@ -1628,12 +1684,14 @@ async function selectTrailForUser(request: Request, env: Env): Promise<Response>
 
   const form = await request.formData();
   const trailId = String(form.get("trail_id") ?? "");
-  const owned = await env.DB.prepare(
-    "SELECT 1 AS ok FROM trail_owners WHERE trail_id = ? AND user_id = ?",
-  )
-    .bind(trailId, user.id)
-    .first<{ ok: number }>();
-  if (!owned) return redirect("/trail", 303);
+  if (trailId !== COMMON_TRAIL_ID) {
+    const owned = await env.DB.prepare(
+      "SELECT 1 AS ok FROM trail_owners WHERE trail_id = ? AND user_id = ?",
+    )
+      .bind(trailId, user.id)
+      .first<{ ok: number }>();
+    if (!owned) return redirect("/trail", 303);
+  }
 
   const trailToken = randomToken();
   await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
@@ -1877,8 +1935,40 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
   void mainStart;
 }
 
-async function ensureCurrentTrail(_request: Request, env: Env): Promise<TrailContext> {
+async function ensureCurrentTrail(request: Request, env: Env): Promise<TrailContext> {
   await ensureCommonExampleTrail(env);
+
+  const cookies = parseCookies(request.headers.get("Cookie") ?? "");
+  const token = cookies.get("trail");
+  const trailUser = await currentTrailUser(request, env);
+
+  if (token) {
+    const existing = await env.DB.prepare(
+      `SELECT t.id
+         FROM trail_sessions s
+         JOIN trails t ON t.id = s.trail_id
+        WHERE s.token = ?`,
+    )
+      .bind(token)
+      .first<{ id: string }>();
+
+    if (existing?.id === COMMON_TRAIL_ID) {
+      return { id: COMMON_TRAIL_ID, cookie: null };
+    }
+
+    if (existing && trailUser) {
+      const ownerId = await trailOwnerUserId(env, existing.id);
+      if (ownerId === trailUser.id) {
+        return { id: existing.id, cookie: null };
+      }
+    }
+
+    if (existing && !trailUser) {
+      const ownerId = await trailOwnerUserId(env, existing.id);
+      if (ownerId === null) return { id: existing.id, cookie: null };
+    }
+  }
+
   return { id: COMMON_TRAIL_ID, cookie: null };
 }
 
@@ -5786,8 +5876,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-page {
-      width: min(980px, calc(100% - 40px));
-      max-width: 980px;
+      width: min(1120px, calc(100% - 40px));
+      max-width: 1120px;
       padding: 48px 0 90px;
     }
     .trail-layout {
@@ -6000,33 +6090,61 @@ function htmlPage(title: string, body: string, status = 200): Response {
       height: 100%;
       overflow: visible;
     }
-    .trail-map-path {
-      fill: none;
-      stroke: var(--annotation);
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      vector-effect: non-scaling-stroke;
+    .trail-map-branch {
+      color: var(--annotation);
       cursor: pointer;
-    }
-    path.trail-map-path {
-      stroke-width: 4.2;
-    }
-    circle.trail-map-path {
-      fill: var(--annotation);
-      stroke: none;
+      transition: opacity 110ms ease;
     }
     .trail-map-path-active {
       opacity: 1;
     }
     .trail-map-path-muted {
-      opacity: .28;
+      opacity: .26;
     }
-    .trail-map-path-muted:hover,
-    .trail-map-node:hover {
-      opacity: .72;
+    .trail-map-path-muted:hover {
+      opacity: .68;
     }
-    .trail-map-node {
+    .trail-map-hit {
+      fill: none;
+      stroke: transparent;
+      stroke-width: 16;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      pointer-events: stroke;
       cursor: pointer;
+    }
+    .trail-map-brush-main,
+    .trail-map-brush-fiber {
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vector-effect: non-scaling-stroke;
+      pointer-events: none;
+    }
+    .trail-map-brush-main {
+      stroke-width: 5.4;
+    }
+    .trail-map-brush-fiber {
+      stroke-width: 1.35;
+      opacity: .38;
+    }
+    .trail-map-brush-fiber-b {
+      opacity: .22;
+    }
+    .trail-map-brush-node {
+      fill: currentColor;
+      stroke: none;
+      cursor: pointer;
+      pointer-events: all;
+    }
+    .trail-map-brush-node-fiber {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.05;
+      opacity: .32;
+      pointer-events: none;
+      vector-effect: non-scaling-stroke;
     }
     .trail-path-workspace {
       min-width: 0;
