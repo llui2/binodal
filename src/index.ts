@@ -76,7 +76,7 @@ interface TrailUser {
 
 interface TrailSummary {
   id: string;
-  question: string | null;
+  title: string | null;
   created_at: string;
 }
 
@@ -171,7 +171,15 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
 
   if (request.method === "POST" && path === "/trail/question") {
-    return updateTrailQuestion(request, env);
+    return updateTrailDescription(request, env);
+  }
+
+  if (request.method === "POST" && path === "/trail/title") {
+    return updateTrailTitle(request, env);
+  }
+
+  if (request.method === "POST" && path === "/trail/description") {
+    return updateTrailDescription(request, env);
   }
 
   if (request.method === "POST" && path === "/trail/user") {
@@ -202,7 +210,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     return addPaperToTrail(request, env);
   }
 
-  const trailAction = path.match(/^\/trail\/items\/(\d+)\/(note|move|remove)$/);
+  const trailAction = path.match(/^\/trail\/items\/(\d+)\/(title|note|move|remove)$/);
   if (request.method === "POST" && trailAction) {
     return mutateTrailItem(request, env, Number(trailAction[1]), trailAction[2]);
   }
@@ -427,9 +435,10 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
     await claimTrailForUser(env, trail.id, trailUser.id);
   }
 
-  const [items, question, user, userTrails] = await Promise.all([
+  const [items, title, description, user, userTrails] = await Promise.all([
     listTrailItems(env, trail.id),
-    getTrailQuestion(env, trail.id),
+    getTrailTitle(env, trail.id),
+    getTrailDescription(env, trail.id),
     currentUser(request, env),
     trailUser ? listUserTrails(env, trailUser.id) : Promise.resolve([] as TrailSummary[]),
   ]);
@@ -439,21 +448,28 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
     : `<p class="trail-empty">The path is empty. Add papers from their paper pages, or add a thought below.</p>`;
 
   const response = htmlPage(
-    "trail",
+    title?.trim() || "trail",
     `<header class="topbar">
       ${renderBrand()}
       ${renderIdentity(user)}
     </header>
     <main class="shell trail-page">
       <div class="trail-layout">
+        <aside class="trail-sidebar" aria-label="Your trails">
+          ${renderTrailSidebar(trailUser, userTrails, trail.id)}
+        </aside>
+
         <div class="trail-main">
           <div class="trail-heading">
-            <h1>trail</h1>
+            <form class="trail-title-form" action="/trail/title" method="post">
+              <input id="trail-title" name="title" maxlength="140" aria-label="Trail title" placeholder="untitled trail" value="${escapeAttr(title ?? "")}">
+              <button class="text-button" type="submit">save</button>
+            </form>
             <a class="trail-connect-link" href="/trail/connect">connect ChatGPT</a>
           </div>
 
-          <form class="trail-question" action="/trail/question" method="post">
-            <textarea id="trail-question" name="question" rows="2" maxlength="600" aria-label="Research question" placeholder="What are you trying to understand?">${escapeHtml(question ?? "")}</textarea>
+          <form class="trail-description" action="/trail/description" method="post">
+            <textarea id="trail-description" name="description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="Describe what this trail is trying to understand.">${escapeHtml(description ?? "")}</textarea>
             <button class="text-button" type="submit">save</button>
           </form>
 
@@ -469,10 +485,6 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
             </div>
           </form>
         </div>
-
-        <aside class="trail-sidebar" aria-label="Your trails">
-          ${renderTrailSidebar(trailUser, userTrails, trail.id)}
-        </aside>
       </div>
     </main>`,
   );
@@ -495,7 +507,7 @@ function renderTrailSidebar(
 
   const items = trails.length
     ? trails.map((trail) => {
-        const label = trail.question?.trim() || "untitled trail";
+        const label = trail.title?.trim() || "untitled trail";
         const active = trail.id === currentTrailId ? " active" : "";
         return `<form action="/trail/select" method="post">
           <input type="hidden" name="trail_id" value="${escapeAttr(trail.id)}">
@@ -525,21 +537,23 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
   const content = item.kind === "note" && item.content
     ? `<p class="trail-content">${escapeHtml(item.content)}</p>`
     : "";
-  const why = item.note
-    ? `<span class="trail-step-why"> — ${escapeHtml(item.note)}</span>`
-    : "";
 
   return `<details class="trail-step" data-trail-item="${item.id}">
     <summary class="trail-step-summary">
       <span class="trail-step-rail" aria-hidden="true"><span class="trail-step-dot"></span></span>
       <span class="trail-step-line">
-        <span class="trail-step-title">${escapeHtml(title)}</span>${why}
+        <span class="trail-step-title">${escapeHtml(title)}</span>
       </span>
       <span class="trail-step-kind">${escapeHtml(kind)}</span>
       <span class="trail-step-chevron" aria-hidden="true"></span>
     </summary>
 
     <div class="trail-step-detail">
+      <form class="trail-item-title-edit" action="/trail/items/${item.id}/title" method="post">
+        <input name="title" maxlength="300" aria-label="Node title" value="${escapeAttr(title)}">
+        <button class="text-button" type="submit">save title</button>
+      </form>
+
       ${content}
       ${isOpenable
         ? `<a class="trail-step-open" href="${escapeAttr(item.url)}">open ${escapeHtml(kind)} ↗</a>`
@@ -565,17 +579,54 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
   </details>`;
 }
 
-async function getTrailQuestion(env: Env, trailId: string): Promise<string | null> {
+async function getTrailTitle(env: Env, trailId: string): Promise<string | null> {
   const row = await env.DB.prepare(
-    "SELECT question FROM trail_contexts WHERE trail_id = ?",
+    "SELECT title FROM trail_metadata WHERE trail_id = ?",
   )
     .bind(trailId)
-    .first<{ question: string | null }>();
-  return row?.question ?? null;
+    .first<{ title: string | null }>();
+  return row?.title ?? null;
 }
 
-async function setTrailQuestion(env: Env, trailId: string, question: string): Promise<void> {
-  const clean = question.replace(/\s+/g, " ").trim().slice(0, 600);
+async function getTrailDescription(env: Env, trailId: string): Promise<string | null> {
+  const row = await env.DB.prepare(
+    `SELECT m.description, c.question
+       FROM trails t
+       LEFT JOIN trail_metadata m ON m.trail_id = t.id
+       LEFT JOIN trail_contexts c ON c.trail_id = t.id
+      WHERE t.id = ?`,
+  )
+    .bind(trailId)
+    .first<{ description: string | null; question: string | null }>();
+  return row?.description ?? row?.question ?? null;
+}
+
+async function setTrailTitle(env: Env, trailId: string, title: string): Promise<void> {
+  const clean = title.replace(/\s+/g, " ").trim().slice(0, 140);
+  await env.DB.prepare(
+    `INSERT INTO trail_metadata (trail_id, title, updated_at)
+     VALUES (?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(trail_id) DO UPDATE SET
+       title = excluded.title,
+       updated_at = CURRENT_TIMESTAMP`,
+  )
+    .bind(trailId, clean || null)
+    .run();
+}
+
+async function setTrailDescription(env: Env, trailId: string, description: string): Promise<void> {
+  const clean = description.trim().slice(0, 2000);
+  await env.DB.prepare(
+    `INSERT INTO trail_metadata (trail_id, description, updated_at)
+     VALUES (?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(trail_id) DO UPDATE SET
+       description = excluded.description,
+       updated_at = CURRENT_TIMESTAMP`,
+  )
+    .bind(trailId, clean || null)
+    .run();
+
+  // Keep the legacy question field synchronized for older clients/tools.
   await env.DB.prepare(
     `INSERT INTO trail_contexts (trail_id, question, updated_at)
      VALUES (?, ?, CURRENT_TIMESTAMP)
@@ -587,11 +638,28 @@ async function setTrailQuestion(env: Env, trailId: string, question: string): Pr
     .run();
 }
 
-async function updateTrailQuestion(request: Request, env: Env): Promise<Response> {
+async function getTrailQuestion(env: Env, trailId: string): Promise<string | null> {
+  return getTrailDescription(env, trailId);
+}
+
+async function setTrailQuestion(env: Env, trailId: string, question: string): Promise<void> {
+  await setTrailDescription(env, trailId, question);
+}
+
+async function updateTrailTitle(request: Request, env: Env): Promise<Response> {
   assertSameOrigin(request);
   const trail = await ensureCurrentTrail(request, env);
   const form = await request.formData();
-  await setTrailQuestion(env, trail.id, String(form.get("question") ?? ""));
+  await setTrailTitle(env, trail.id, String(form.get("title") ?? ""));
+  return withTrailCookie(redirect("/trail", 303), trail.cookie);
+}
+
+async function updateTrailDescription(request: Request, env: Env): Promise<Response> {
+  assertSameOrigin(request);
+  const trail = await ensureCurrentTrail(request, env);
+  const form = await request.formData();
+  const description = String(form.get("description") ?? form.get("question") ?? "");
+  await setTrailDescription(env, trail.id, description);
   return withTrailCookie(redirect("/trail", 303), trail.cookie);
 }
 
@@ -653,7 +721,8 @@ async function rotateTrailIntegration(request: Request, env: Env): Promise<Respo
 
 async function createStandaloneTrail(
   env: Env,
-  question: string | null = null,
+  title: string | null = null,
+  description: string | null = null,
 ): Promise<{ id: string; key: string }> {
   const trailId = `trail_${randomToken()}`;
   const key = randomTrailKey();
@@ -663,9 +732,8 @@ async function createStandaloneTrail(
     .bind(key, trailId)
     .run();
 
-  if (question?.trim()) {
-    await setTrailQuestion(env, trailId, question);
-  }
+  if (title?.trim()) await setTrailTitle(env, trailId, title);
+  if (description?.trim()) await setTrailDescription(env, trailId, description);
 
   return { id: trailId, key };
 }
@@ -700,7 +768,8 @@ function trailLiveScript(): Response {
   const source = `
 (() => {
   const path = document.querySelector("[data-trail-live]");
-  const question = document.getElementById("trail-question");
+  const title = document.getElementById("trail-title");
+  const description = document.getElementById("trail-description");
   if (!path) return;
 
   let last = "";
@@ -728,7 +797,7 @@ function trailLiveScript(): Response {
       });
       if (!response.ok) return;
       const data = await response.json();
-      const fingerprint = JSON.stringify([data.question, data.items]);
+      const fingerprint = JSON.stringify([data.title, data.description, data.items]);
       if (fingerprint === last) return;
       last = fingerprint;
 
@@ -746,12 +815,20 @@ function trailLiveScript(): Response {
         }
       }
       if (
-        question &&
-        document.activeElement !== question &&
-        typeof data.question === "string" &&
-        question.value !== data.question
+        title &&
+        document.activeElement !== title &&
+        typeof data.title === "string" &&
+        title.value !== data.title
       ) {
-        question.value = data.question;
+        title.value = data.title;
+      }
+      if (
+        description &&
+        document.activeElement !== description &&
+        typeof data.description === "string" &&
+        description.value !== data.description
+      ) {
+        description.value = data.description;
       }
     } catch {
       // A transient network failure should not disturb the research session.
@@ -851,10 +928,10 @@ async function createOwnedTrail(env: Env, userId: number): Promise<{ trailId: st
 
 async function listUserTrails(env: Env, userId: number): Promise<TrailSummary[]> {
   const result = await env.DB.prepare(
-    `SELECT t.id, c.question, t.created_at
+    `SELECT t.id, m.title, t.created_at
        FROM trail_owners o
        JOIN trails t ON t.id = o.trail_id
-       LEFT JOIN trail_contexts c ON c.trail_id = t.id
+       LEFT JOIN trail_metadata m ON m.trail_id = t.id
       WHERE o.user_id = ?
       ORDER BY t.created_at DESC`,
   )
@@ -1179,6 +1256,14 @@ async function mutateTrailItem(
     await env.DB.prepare("DELETE FROM trail_items WHERE id = ? AND trail_id = ?")
       .bind(itemId, trail.id)
       .run();
+  } else if (action === "title") {
+    const form = await request.formData();
+    const title = String(form.get("title") ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
+    await env.DB.prepare(
+      "UPDATE trail_items SET title = ? WHERE id = ? AND trail_id = ?",
+    )
+      .bind(title || "untitled", itemId, trail.id)
+      .run();
   } else if (action === "note") {
     const form = await request.formData();
     const note = String(form.get("note") ?? "").trim().slice(0, 2000);
@@ -1227,14 +1312,25 @@ async function handleTrailApi(
   const trail = await ensureCurrentTrail(request, env);
 
   if (request.method === "GET" && path === "/api/trail") {
-    const [items, question] = await Promise.all([
+    const [items, title, description] = await Promise.all([
       listTrailItems(env, trail.id),
-      getTrailQuestion(env, trail.id),
+      getTrailTitle(env, trail.id),
+      getTrailDescription(env, trail.id),
     ]);
     const html = items.length
       ? items.map((item, index) => renderTrailItem(item, index)).join("")
       : `<p class="trail-empty">The path is empty. Add papers from their paper pages, or add a thought below.</p>`;
-    return withTrailCookie(json({ id: trail.id, question: question ?? "", items, html }), trail.cookie);
+    return withTrailCookie(
+      json({
+        id: trail.id,
+        title: title ?? "",
+        description: description ?? "",
+        question: description ?? "",
+        items,
+        html,
+      }),
+      trail.cookie,
+    );
   }
 
   if (request.method === "POST" && path === "/api/trail/items") {
@@ -1365,18 +1461,23 @@ async function handleSharedTrailMcp(request: Request, env: Env): Promise<Respons
   server.registerTool(
     "create_trail",
     {
-      description: "Create a new research trail, optionally anchored by a research question. Returns a private trail key and an open_url that binds the browser to the new live trail.",
+      description: "Create a new research trail with an optional title and description. The legacy question field is still accepted as a description.",
       inputSchema: z.object({
-        question: z.string().max(600).optional(),
+        title: z.string().max(140).optional(),
+        description: z.string().max(2000).optional(),
+        question: z.string().max(2000).optional(),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
-    async ({ question }) => {
-      const created = await createStandaloneTrail(env, question ?? null);
+    async ({ title, description, question }) => {
+      const trailDescription = description ?? question ?? null;
+      const created = await createStandaloneTrail(env, title ?? null, trailDescription);
       const openUrl = `${origin}/trail/open/${created.key}`;
       const result = {
         key: created.key,
-        question: question?.trim() || null,
+        title: title?.trim() || null,
+        description: trailDescription?.trim() || null,
+        question: trailDescription?.trim() || null,
         open_url: openUrl,
       };
       return {
@@ -1398,12 +1499,15 @@ async function handleSharedTrailMcp(request: Request, env: Env): Promise<Respons
     },
     async ({ key }) => {
       const trailId = await resolveTrail(key);
-      const [question, items] = await Promise.all([
-        getTrailQuestion(env, trailId),
+      const [title, description, items] = await Promise.all([
+        getTrailTitle(env, trailId),
+        getTrailDescription(env, trailId),
         listTrailItems(env, trailId),
       ]);
       const snapshot = {
-        question,
+        title,
+        description,
+        question: description,
         items: items.map((item, index) => ({
           step: index + 1,
           id: item.id,
@@ -1417,6 +1521,46 @@ async function handleSharedTrailMcp(request: Request, env: Env): Promise<Respons
       return {
         content: [{ type: "text", text: JSON.stringify(snapshot) }],
         structuredContent: snapshot,
+      };
+    },
+  );
+
+  server.registerTool(
+    "set_trail_title",
+    {
+      description: "Set or replace the title of a research trail.",
+      inputSchema: z.object({
+        key: keySchema,
+        title: z.string().min(1).max(140),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ key, title }) => {
+      const trailId = await resolveTrail(key);
+      await setTrailTitle(env, trailId, title);
+      return {
+        content: [{ type: "text", text: `Trail title set to: ${title}` }],
+        structuredContent: { title },
+      };
+    },
+  );
+
+  server.registerTool(
+    "set_trail_description",
+    {
+      description: "Set or replace the main description of a research trail.",
+      inputSchema: z.object({
+        key: keySchema,
+        description: z.string().min(1).max(2000),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ key, description }) => {
+      const trailId = await resolveTrail(key);
+      await setTrailDescription(env, trailId, description);
+      return {
+        content: [{ type: "text", text: "Trail description updated." }],
+        structuredContent: { description },
       };
     },
   );
@@ -1537,12 +1681,15 @@ async function handleTrailMcp(request: Request, env: Env, token: string): Promis
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async () => {
-      const [question, items] = await Promise.all([
-        getTrailQuestion(env, integration.trail_id),
+      const [title, description, items] = await Promise.all([
+        getTrailTitle(env, integration.trail_id),
+        getTrailDescription(env, integration.trail_id),
         listTrailItems(env, integration.trail_id),
       ]);
       const snapshot = {
-        question,
+        title,
+        description,
+        question: description,
         items: items.map((item, index) => ({
           step: index + 1,
           id: item.id,
@@ -1558,6 +1705,42 @@ async function handleTrailMcp(request: Request, env: Env, token: string): Promis
       return {
         content: [{ type: "text", text: JSON.stringify(snapshot) }],
         structuredContent: snapshot,
+      };
+    },
+  );
+
+  server.registerTool(
+    "set_trail_title",
+    {
+      description: "Set or replace the title of the current research trail.",
+      inputSchema: z.object({
+        title: z.string().min(1).max(140),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ title }) => {
+      await setTrailTitle(env, integration.trail_id, title);
+      return {
+        content: [{ type: "text", text: `Trail title set to: ${title}` }],
+        structuredContent: { title },
+      };
+    },
+  );
+
+  server.registerTool(
+    "set_trail_description",
+    {
+      description: "Set or replace the main description of the current research trail.",
+      inputSchema: z.object({
+        description: z.string().min(1).max(2000),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ description }) => {
+      await setTrailDescription(env, integration.trail_id, description);
+      return {
+        content: [{ type: "text", text: "Trail description updated." }],
+        structuredContent: { description },
       };
     },
   );
@@ -4107,22 +4290,43 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-layout {
       display: grid;
-      grid-template-columns: minmax(0, 760px) 180px;
+      grid-template-columns: 180px minmax(0, 1fr);
       gap: 36px;
       align-items: start;
     }
-    .trail-main { min-width: 0; }
+    .trail-main {
+      min-width: 0;
+      max-width: 760px;
+    }
     .trail-heading {
       display: flex;
       align-items: flex-end;
       justify-content: space-between;
       gap: 24px;
     }
-    .trail-heading h1 {
-      margin: 0;
+    .trail-title-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .trail-title-form input {
+      min-width: 0;
+      padding: 0;
+      background: transparent;
+      border-radius: 0;
       font-size: clamp(2rem, 4vw, 2.8rem);
+      font-weight: 500;
       line-height: 1;
       letter-spacing: -.025em;
+    }
+    .trail-title-form input:focus-visible {
+      background: transparent;
+    }
+    .trail-title-form .text-button {
+      color: var(--annotation);
     }
     .trail-connect-link {
       color: var(--muted);
@@ -4133,8 +4337,11 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-sidebar {
       position: sticky;
       top: 28px;
-      min-width: 0;
+      width: 180px;
+      max-width: 180px;
+      min-width: 180px;
       padding-top: 4px;
+      overflow: hidden;
     }
     .trail-sidebar-user {
       margin-bottom: 12px;
@@ -4218,12 +4425,12 @@ function htmlPage(title: string, body: string, status = 200): Response {
       margin-top: 8px;
     }
 
-    .trail-question {
+    .trail-description {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 10px;
       align-items: start;
-      margin-top: 34px;
+      margin-top: 28px;
       padding-bottom: 28px;
       border-bottom: 1px solid var(--wash);
     }
@@ -4232,16 +4439,15 @@ function htmlPage(title: string, body: string, status = 200): Response {
       color: var(--muted);
       font-size: .76rem;
     }
-    .trail-question textarea {
-      min-height: 68px;
-      background: transparent;
-      padding: 8px 0;
-      border-radius: 0;
-      font-size: 1.08rem;
-      line-height: 1.45;
+    .trail-description textarea {
+      min-height: 108px;
+      background: var(--field-muted);
+      padding: 13px 14px;
+      border-radius: 2px;
+      font-size: 1rem;
+      line-height: 1.5;
     }
-    .trail-question textarea:focus-visible { background: transparent; }
-    .trail-question .text-button {
+    .trail-description .text-button {
       margin-top: 9px;
       color: var(--annotation);
     }
@@ -4317,15 +4523,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-weight: 610;
       line-height: 1.35;
     }
-    .trail-step-why {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      color: var(--muted);
-      font-size: .82rem;
-      font-weight: 450;
-      line-height: 1.35;
-    }
     .trail-step-kind {
       color: var(--soft);
       font-size: .66rem;
@@ -4349,6 +4546,23 @@ function htmlPage(title: string, body: string, status = 200): Response {
       margin: 0 20px 0 20px;
       padding: 2px 0 15px;
       max-width: 650px;
+    }
+    .trail-item-title-edit {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      margin: 2px 0 10px;
+    }
+    .trail-item-title-edit input {
+      min-width: 0;
+      padding: 7px 8px;
+      background: var(--field-muted);
+      font-size: .8rem;
+    }
+    .trail-item-title-edit .text-button {
+      color: var(--annotation);
+      font-size: .7rem;
     }
     .trail-content {
       max-width: 650px;
@@ -4486,11 +4700,15 @@ function htmlPage(title: string, body: string, status = 200): Response {
       }
       .trail-sidebar {
         position: static;
-        padding-top: 22px;
-        border-top: 1px solid var(--wash);
+        width: min(100%, 320px);
+        max-width: 320px;
+        min-width: 0;
+        padding-top: 0;
+        padding-bottom: 20px;
+        border-bottom: 1px solid var(--wash);
       }
       .trail-list {
-        max-width: 420px;
+        max-width: 320px;
       }
     }
 
@@ -4540,10 +4758,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
       .trail-heading {
         align-items: flex-start;
       }
-      .trail-question {
+      .trail-description {
         grid-template-columns: 1fr;
       }
-      .trail-question .text-button {
+      .trail-description .text-button {
         justify-self: start;
         margin-top: 0;
       }
