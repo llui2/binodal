@@ -1195,9 +1195,10 @@ function trailLiveScript(): Response {
 
   // Keep the topology orthogonal, but render each horizontal/vertical segment
   // as a slightly irregular brush stroke rather than a perfect vector line.
-  // DESIGN INVARIANT: the topology is rendered as a visibly irregular brush
-  // stroke, matching the Trails logo. Do not simplify this into straight SVG
-  // wiring or reduce the wobble unless the visual direction is explicitly changed.
+  // DESIGN INVARIANT: the topology should read as one imperfect brush stroke,
+  // not a mathematically straight wire and not a visibly winding/spiralling path.
+  // Irregularity comes from small centerline drift plus dry-brush gaps inside
+  // the stroke, matching the Trails logo.
   const brushSegmentPath = (
     a,
     b,
@@ -1207,70 +1208,40 @@ function trailLiveScript(): Response {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const horizontal = Math.abs(dx) >= Math.abs(dy);
-    const span = horizontal ? dx : dy;
-    const direction = span >= 0 ? 1 : -1;
-    const length = Math.abs(span);
+    const length = Math.abs(horizontal ? dx : dy);
     if (length < 0.01) return "";
 
-    const seed = (phase % 7) + 1;
-    const base = 2.2 + (seed % 3) * 0.55;
-    const shifts = [
-      0,
-      base * (seed % 2 === 0 ? 1 : -1),
-      -base * (0.65 + (seed % 4) * 0.08),
-      base * (0.52 + (seed % 5) * 0.07),
-      0,
-    ];
-    const ts = [0, 0.22, 0.49, 0.76, 1];
+    const seed = (phase % 5) + 1;
+    const amplitude = 0.55 + (seed % 3) * 0.12;
+    const sign = seed % 2 === 0 ? 1 : -1;
+    const shifts = [0, amplitude * sign, -amplitude * 0.72, amplitude * 0.42 * sign, 0];
+    const ts = [0, 0.24, 0.51, 0.77, 1];
 
+    const attenuation = Math.min(1, Math.max(0.35, length / 42));
     const guide = ts.map((t, index) => {
+      const shift = shifts[index] * attenuation;
       if (horizontal) {
-        return {
-          x: a.x + dx * t,
-          y: a.y + offset + shifts[index],
-        };
+        return { x: a.x + dx * t, y: a.y + offset + shift };
       }
-      return {
-        x: a.x + offset + shifts[index],
-        y: a.y + dy * t,
-      };
+      return { x: a.x + offset + shift, y: a.y + dy * t };
     });
 
-    const smoothPath = (points) => {
-      let d = "M " + points[0].x.toFixed(2) + " " + points[0].y.toFixed(2);
-      for (let i = 0; i < points.length - 1; i += 1) {
-        const p0 = points[Math.max(0, i - 1)];
-        const p1 = points[i];
-        const p2 = points[i + 1];
-        const p3 = points[Math.min(points.length - 1, i + 2)];
-        const c1x = p1.x + (p2.x - p0.x) / 6;
-        const c1y = p1.y + (p2.y - p0.y) / 6;
-        const c2x = p2.x - (p3.x - p1.x) / 6;
-        const c2y = p2.y - (p3.y - p1.y) / 6;
-        d +=
-          " C " + c1x.toFixed(2) + " " + c1y.toFixed(2) +
-          " " + c2x.toFixed(2) + " " + c2y.toFixed(2) +
-          " " + p2.x.toFixed(2) + " " + p2.y.toFixed(2);
-      }
-      return d;
-    };
-
-    // For very short links, reduce the excursion so the brush still reads as
-    // intentional rather than kinked.
-    if (length < 28) {
-      guide.forEach((point, index) => {
-        const attenuation = Math.max(0.35, length / 28);
-        if (horizontal) {
-          point.y = a.y + offset + shifts[index] * attenuation;
-        } else {
-          point.x = a.x + offset + shifts[index] * attenuation;
-        }
-      });
+    let d = "M " + guide[0].x.toFixed(2) + " " + guide[0].y.toFixed(2);
+    for (let i = 0; i < guide.length - 1; i += 1) {
+      const p0 = guide[Math.max(0, i - 1)];
+      const p1 = guide[i];
+      const p2 = guide[i + 1];
+      const p3 = guide[Math.min(guide.length - 1, i + 2)];
+      const c1x = p1.x + (p2.x - p0.x) / 6;
+      const c1y = p1.y + (p2.y - p0.y) / 6;
+      const c2x = p2.x - (p3.x - p1.x) / 6;
+      const c2y = p2.y - (p3.y - p1.y) / 6;
+      d +=
+        " C " + c1x.toFixed(2) + " " + c1y.toFixed(2) +
+        " " + c2x.toFixed(2) + " " + c2y.toFixed(2) +
+        " " + p2.x.toFixed(2) + " " + p2.y.toFixed(2);
     }
-
-    // Keep the direction variable semantically explicit for future branch turns.
-    void direction;
-    return smoothPath(guide);
+    return d;
   };
 
   const drawBrushSegments = (group, points, brushClass, offset, phaseBase) => {
@@ -1312,23 +1283,23 @@ function trailLiveScript(): Response {
       drawBrushSegments(
         group,
         points,
-        "trail-map-brush-fiber trail-map-brush-fiber-a",
-        1.35,
-        5,
+        "trail-map-brush-gap trail-map-brush-gap-a",
+        0.35,
+        3,
       );
       drawBrushSegments(
         group,
         points,
-        "trail-map-brush-fiber trail-map-brush-fiber-b",
-        -1.2,
-        9,
+        "trail-map-brush-gap trail-map-brush-gap-b",
+        -0.4,
+        7,
       );
     }
 
     const nodePoints = explicitNodePoints ||
       (branchId === "0" ? points : points.slice(1));
     nodePoints.forEach((point, index) => {
-      const scale = 0.9;
+      const scale = 1.0;
       const rotation = ((index % 3) - 1) * 4;
       const transform =
         "translate(" + (point.x - 10 * scale).toFixed(2) + " " +
@@ -6393,28 +6364,31 @@ function htmlPage(title: string, body: string, status = 200): Response {
       cursor: pointer;
     }
     .trail-map-brush-main,
-    .trail-map-brush-fiber {
+    .trail-map-brush-gap {
       fill: none;
-      stroke: currentColor;
       stroke-linecap: round;
       stroke-linejoin: round;
       vector-effect: non-scaling-stroke;
       pointer-events: none;
     }
     .trail-map-brush-main {
+      stroke: currentColor;
       stroke-width: 7.2;
     }
-    .trail-map-brush-fiber {
-      stroke-width: 1.5;
-      opacity: .36;
+    .trail-map-brush-gap {
+      stroke: var(--paper);
     }
-    .trail-map-brush-fiber-a {
-      stroke-width: 1.35;
-      opacity: .32;
-    }
-    .trail-map-brush-fiber-b {
+    .trail-map-brush-gap-a {
       stroke-width: .95;
-      opacity: .24;
+      stroke-dasharray: 7 15 3 20 11 18;
+      stroke-dashoffset: 4;
+      opacity: .92;
+    }
+    .trail-map-brush-gap-b {
+      stroke-width: .55;
+      stroke-dasharray: 2 11 9 24 4 16;
+      stroke-dashoffset: 13;
+      opacity: .82;
     }
     .trail-map-brush-node {
       fill: currentColor;
