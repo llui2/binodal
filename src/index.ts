@@ -4370,7 +4370,7 @@ function renderBrand(): string {
 }
 
 function renderIdentity(user: User | null): string {
-  const themeToggle = `<button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme">dark</button>`;
+  const themeToggle = `<button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"></button>`;
 
   if (!user) {
     return `<div class="identity">
@@ -4413,7 +4413,9 @@ function themeScript(): Response {
 
     document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
       const next = active === "dark" ? "light" : "dark";
-      button.textContent = next;
+      button.innerHTML = active === "dark"
+        ? '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg>'
+        : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.2 15.2A8.5 8.5 0 0 1 8.8 3.8 8.5 8.5 0 1 0 20.2 15.2Z"></path></svg>';
       button.setAttribute("aria-label", "Switch to " + next + " mode");
       button.setAttribute("title", "Switch to " + next + " mode");
     });
@@ -4963,20 +4965,29 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .identity form { margin: 0; }
     .theme-toggle {
-      min-width: 42px;
-      padding: 4px 7px;
-      border: 1px solid var(--wash);
-      border-radius: 2px;
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
       background: transparent;
       color: var(--muted);
-      font-size: .7rem;
-      font-weight: 520;
-      line-height: 1.2;
+      line-height: 1;
+    }
+    .theme-toggle svg {
+      width: 17px;
+      height: 17px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
     .theme-toggle:hover,
     .theme-toggle:focus-visible {
       color: var(--annotation);
-      border-color: var(--annotation);
       background: transparent;
       filter: none;
       outline: none;
