@@ -26,7 +26,9 @@ Do not use decorative punctuation as UI separators. In particular, avoid middots
 
 The trail rail is a core identity element.
 
-Paths are thick, organic brush strokes with small irregularities and secondary fibers. Nodes are irregular brush marks. Never replace this with thin graph lines, generic circles, or clean mechanical wiring.
+Paths are thick, organic brush strokes with visible lateral irregularity and secondary fibers, using the Trails logo as the visual reference. Nodes are solid irregular brush marks. In the resting state, nodes have no lighter outline, halo, ring, or secondary contour; hover may enlarge them using the same solid color. Never replace this with thin graph lines, generic circles, clean mechanical wiring, or geometrically straight-looking strokes.
+
+This brush treatment is a protected visual invariant. Do not alter the path irregularity, stroke layering, node silhouette, resting node fill, or hover behavior during unrelated interface work. Change it only when the user explicitly asks to change the topology/brush visual style.
 
 Topology may use orthogonal logic for readability, but the rendered stroke should still feel drawn rather than diagrammatic.
 
