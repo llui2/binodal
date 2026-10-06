@@ -515,7 +515,7 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
           </div>
 
           <div class="trail-description">
-            <textarea id="trail-description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="Describe what this trail is trying to understand." data-autosave-trail="description" spellcheck="false">${escapeHtml(description ?? "")}</textarea>
+            <textarea id="trail-description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="context…" data-autosave-trail="description" spellcheck="false">${escapeHtml(description ?? "")}</textarea>
           </div>
 
           <section class="trail-graph" data-trail-live data-trail-id="${escapeAttr(trail.id)}" aria-label="Research paths">
@@ -627,7 +627,7 @@ function renderTrailItem(
   branchId = 0,
   allowBranch = false,
 ): string {
-  const title = item.title || item.content || "untitled";
+  const title = item.title || item.content || "mark";
   const kind = item.kind === "paper" ? "paper" : item.kind === "link" ? "link" : "";
 
   const comparableText = (value: string): string =>
@@ -650,7 +650,7 @@ function renderTrailItem(
     </div>
 
     <textarea class="trail-step-body" rows="1" maxlength="10000"
-      aria-label="Permanent node text" placeholder="write…" spellcheck="false"
+      aria-label="Permanent node text" placeholder="note…" spellcheck="false"
       data-item-content="${item.id}">${escapeHtml(mainText)}</textarea>
 
     <div class="trail-step-detail" data-item-detail="${item.id}" hidden>
@@ -6200,8 +6200,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-description {
-      margin: 22px 0 0 20px;
-      padding-bottom: 18px;
+      margin: 20px 0 0 20px;
+      padding-bottom: 4px;
     }
     .trail-endpoint-label {
       padding-top: 10px;
@@ -6211,8 +6211,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-description textarea {
       display: block;
       width: 100%;
-      min-height: 88px;
-      padding: 9px 10px;
+      min-height: 68px;
+      padding: 8px 10px;
       border: 0;
       border-radius: 3px;
       background: transparent;
@@ -6237,7 +6237,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       grid-template-columns: 112px minmax(0, 1fr);
       column-gap: 16px;
       align-items: start;
-      margin-top: 22px;
+      margin-top: 4px;
       min-width: 0;
     }
     .trail-map {
@@ -6336,7 +6336,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
     .trail-path {
       position: relative;
-      margin-top: 20px;
+      margin-top: 2px;
     }
     .trail-step {
       --trail-kind-gutter: 52px;
