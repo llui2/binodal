@@ -897,6 +897,7 @@ function trailLiveScript(): Response {
   let activeBranchId = storedBranchPreference && storedBranchPreference !== "main"
     ? storedBranchPreference
     : null;
+  let pathLaneOrder = [];
   let last = "";
   let stopped = false;
   let savedTimer = 0;
@@ -1177,17 +1178,27 @@ function trailLiveScript(): Response {
       const branchIds = branchMetas
         .map((meta) => meta.dataset.branchMeta)
         .filter(Boolean);
+      const allPathIds = [...branchIds, "0"];
 
-      // The focused path always occupies the right-most lane, immediately next
-      // to the visible node text. Other paths retain their relative order to
-      // the left.
-      const laneOrder = activeBranchId
-        ? [
-            ...branchIds.filter((branchId) => branchId !== activeBranchId),
-            "0",
-            activeBranchId,
-          ]
-        : [...branchIds, "0"];
+      // Keep lane positions stable between selections. Focusing a path swaps
+      // only that path with the current right-most path instead of reordering
+      // the whole graph. This preserves spatial memory while ensuring that the
+      // visible text always corresponds to the right-most path.
+      pathLaneOrder = pathLaneOrder.filter((pathId) => allPathIds.includes(pathId));
+      allPathIds.forEach((pathId) => {
+        if (!pathLaneOrder.includes(pathId)) pathLaneOrder.push(pathId);
+      });
+
+      const focusedPathId = activeKey();
+      const focusedIndex = pathLaneOrder.indexOf(focusedPathId);
+      const rightMostIndex = pathLaneOrder.length - 1;
+      if (focusedIndex >= 0 && focusedIndex !== rightMostIndex) {
+        const displaced = pathLaneOrder[rightMostIndex];
+        pathLaneOrder[rightMostIndex] = focusedPathId;
+        pathLaneOrder[focusedIndex] = displaced;
+      }
+
+      const laneOrder = pathLaneOrder;
 
       const maxLaneGap = 22;
       const minLaneGap = 13;
@@ -1256,27 +1267,49 @@ function trailLiveScript(): Response {
       mapSvg.setAttribute("height", String(Math.ceil(requiredHeight)));
       mapSvg.innerHTML = "";
 
+      const geometries = [];
+
       if (mainYs.length) {
-        drawPath(
-          mainYs.map((y) => ({ x: mainX, y })),
-          activeBranchId
-            ? "trail-map-path trail-map-path-muted"
-            : "trail-map-path trail-map-path-active",
-          "0",
-          "main",
-        );
+        geometries.push({
+          pathId: "0",
+          label: "main",
+          points: mainYs.map((y) => ({ x: mainX, y })),
+          selected: !activeBranchId,
+        });
       }
 
       branchGeometry.forEach((branch) => {
-        drawPath(
-          branch.points,
-          branch.selected
-            ? "trail-map-path trail-map-path-active"
-            : "trail-map-path trail-map-path-muted",
-          branch.branchId,
-          branch.branchName,
-        );
+        geometries.push({
+          pathId: branch.branchId,
+          label: branch.branchName,
+          points: branch.points,
+          selected: branch.selected,
+        });
       });
+
+      // SVG paint order is z-order. Always draw the focused blue trail last so
+      // its links and nodes sit cleanly on top at every shared junction.
+      geometries
+        .filter((geometry) => !geometry.selected)
+        .forEach((geometry) => {
+          drawPath(
+            geometry.points,
+            "trail-map-path trail-map-path-muted",
+            geometry.pathId,
+            geometry.label,
+          );
+        });
+
+      geometries
+        .filter((geometry) => geometry.selected)
+        .forEach((geometry) => {
+          drawPath(
+            geometry.points,
+            "trail-map-path trail-map-path-active",
+            geometry.pathId,
+            geometry.label,
+          );
+        });
     });
   };
 
