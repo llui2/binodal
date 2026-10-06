@@ -2,7 +2,7 @@
 
 Before making product, interface, ranking, discovery, social, or agent-related decisions in this repository, read [docs/PRODUCT_PRINCIPLES.md](docs/PRODUCT_PRINCIPLES.md). Before changing layout, typography, styling, trail topology, or interaction presentation, also read [docs/VISUAL_PRINCIPLES.md](docs/VISUAL_PRINCIPLES.md).
 
-The trail topology brush style is protected. Do not change its path irregularity, layered stroke treatment, node silhouette, resting node appearance, or hover behavior as part of unrelated work. Only change that visual system when the user explicitly requests a topology/brush-style change.
+The trail topology brush style is protected. The current reference is the Trails logo itself: filled irregular brush ribbons with uneven edges and sparse local voids, plus solid irregular nodes. Do not replace it with stroked lines, SVG filters, procedural noise, dash patterns, ghost/helper strokes, or a different node treatment during unrelated work. Only change that visual system when the user explicitly requests a topology/brush-style change.
 
 Treat those principles as product constraints, not aspirational copy.
 
