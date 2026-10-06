@@ -553,51 +553,52 @@ function renderTrailGraph(
   branches: TrailBranchView[],
 ): string {
   const mainHtml = items.length
-    ? items.map((item, index) => renderTrailItem(item, index, 0, true)).join("")
+    ? items.map((item, index) => renderTrailItem(item, index, 0, true, true)).join("")
     : `<p class="trail-empty">The path is empty. Add a mark below.</p>`;
-
-  const branchButtons = branches
-    .map((branch) => `<button class="trail-branch-chip" type="button"
-      data-branch-open="${branch.id}"
-      data-branch-anchor="${branch.parent_item_id}"
-      title="${escapeAttr(branch.title)}">
-      <span>${escapeHtml(branch.title)}</span>
-      <small>${branch.items.length}</small>
-    </button>`)
-    .join("");
 
   const branchPanels = branches
     .map((branch) => {
       const branchItems = branch.items.length
-        ? branch.items.map((item, index) => renderTrailItem(item, index, branch.id, false)).join("")
+        ? branch.items.map((item, index) => renderTrailItem(item, index, branch.id, false, true)).join("")
         : `<p class="trail-empty trail-branch-empty">This branch is empty.</p>`;
 
-      return `<div class="trail-branch-panel"
-        data-branch-panel="${branch.id}"
+      return `<section class="trail-path-panel"
+        data-path-panel="${branch.id}"
         data-branch-anchor="${branch.parent_item_id}"
+        data-branch-name="${escapeAttr(branch.title)}"
         hidden>
-        <div class="trail-branch-heading">
-          <button class="trail-branch-back" type="button" data-branch-close aria-label="Return to main path">main</button>
+        <div class="trail-active-branch-heading">
           <input class="trail-branch-title" maxlength="120" aria-label="Branch title"
             value="${escapeAttr(branch.title)}" data-branch-title="${branch.id}">
         </div>
-        <section class="trail-path trail-branch-path" data-path-branch="${branch.id}" aria-label="${escapeAttr(branch.title)}">
+        <div class="trail-path trail-content-path" data-path-branch="${branch.id}">
           ${branchItems}
-        </section>
-      </div>`;
+        </div>
+      </section>`;
     })
     .join("");
 
-  return `<div class="trail-branch-lane trail-branch-lane-left" data-branch-list>
-      ${branchButtons}
+  const branchMeta = branches
+    .map((branch) => `<span hidden
+      data-branch-meta="${branch.id}"
+      data-branch-anchor="${branch.parent_item_id}"
+      data-branch-name="${escapeAttr(branch.title)}"
+      data-branch-count="${branch.items.length}"></span>`)
+    .join("");
+
+  return `<div class="trail-map" data-trail-map aria-label="Trail topology">
+      <div class="trail-map-caption" data-trail-map-caption>main</div>
+      <svg class="trail-map-svg" data-trail-map-svg aria-hidden="true"></svg>
+      ${branchMeta}
     </div>
-    <section class="trail-path trail-main-path" data-path-branch="0" aria-label="Main path">
-      ${mainHtml}
-    </section>
-    <div class="trail-branch-lane trail-branch-lane-right" data-active-branch>
+    <div class="trail-path-workspace" data-trail-workspace>
+      <section class="trail-path-panel" data-path-panel="0" data-branch-name="main">
+        <div class="trail-path trail-content-path" data-path-branch="0">
+          ${mainHtml}
+        </div>
+      </section>
       ${branchPanels}
-    </div>
-    <svg class="trail-branch-links" aria-hidden="true"></svg>`;
+    </div>`;
 }
 
 function renderTrailItem(
@@ -605,6 +606,7 @@ function renderTrailItem(
   _index: number,
   branchId = 0,
   allowBranch = false,
+  contentOnly = false,
 ): string {
   const title = item.title || item.content || "untitled";
   const kind = item.kind === "paper" ? "paper" : item.kind === "link" ? "link" : "";
@@ -616,18 +618,21 @@ function renderTrailItem(
     ? ""
     : rawContent;
   const detailsText = item.note ?? "";
+  const contentClass = contentOnly ? " trail-step-content-only" : "";
 
-  return `<div class="trail-step" data-trail-item="${item.id}" data-path-branch="${branchId}" data-open="false">
+  return `<div class="trail-step${contentClass}" data-trail-item="${item.id}" data-path-branch="${branchId}" data-open="false">
     <div class="trail-step-summary">
-      <span class="trail-step-rail">
+      ${contentOnly ? "" : `<span class="trail-step-rail">
         <button class="trail-step-node" type="button" data-item-toggle="${item.id}" aria-label="Open node" aria-expanded="false">
           <svg class="trail-step-node-svg" viewBox="0 0 20 20" aria-hidden="true">
             <path class="trail-step-node-shape" d="M10 1.2 C15.1 1.1 18.6 5 18.4 10.1 C18.6 15 14.8 18.8 9.8 18.6 C4.8 18.9 1.4 15.1 1.6 10 C1.3 5.1 4.9 1.4 10 1.2 Z"/>
           </svg>
         </button>
-      </span>
+      </span>`}
       <span class="trail-step-line">
-        <span class="trail-step-title-display">${escapeHtml(title)}</span>
+        <button class="trail-step-title-button" type="button" data-item-toggle="${item.id}" aria-expanded="false">
+          <span class="trail-step-title-display">${escapeHtml(title)}</span>
+        </button>
         <input class="trail-step-title-input" value="${escapeAttr(title)}" maxlength="300" aria-label="Node title" data-item-title="${item.id}" hidden>
       </span>
       ${kind && item.url
@@ -858,23 +863,27 @@ function trailLiveScript(): Response {
   const source = `
 (() => {
   const graph = document.querySelector("[data-trail-live]");
+  let map = graph?.querySelector("[data-trail-map]");
+  let mapSvg = graph?.querySelector("[data-trail-map-svg]");
+  let workspace = graph?.querySelector("[data-trail-workspace]");
+  let mapCaption = graph?.querySelector("[data-trail-map-caption]");
   const title = document.getElementById("trail-title");
   const description = document.getElementById("trail-description");
   const saveState = document.getElementById("trail-save-state");
-  const activeTrailLabel = document.querySelector(".trail-list-button.active");
   const markContext = document.querySelector("[data-trail-mark-context]");
-  if (!graph) return;
+  if (!graph || !map || !mapSvg || !workspace) return;
 
   const trailId = graph.dataset.trailId || "trail";
-  const branchStorageKey = "trails:active-branch:" + trailId;
+  const branchStorageKey = "trails:active-path-v2:" + trailId;
   const storedBranchPreference = window.localStorage.getItem(branchStorageKey);
-  let activeBranchId = storedBranchPreference === "main" ? null : storedBranchPreference;
-  let hasBranchPreference = storedBranchPreference !== null;
+  let activeBranchId = storedBranchPreference && storedBranchPreference !== "main"
+    ? storedBranchPreference
+    : null;
   let last = "";
   let stopped = false;
   let savedTimer = 0;
   let pendingSaves = 0;
-  let railFrame = 0;
+  let drawFrame = 0;
   const timers = new WeakMap();
 
   const setSaveState = (state) => {
@@ -943,201 +952,28 @@ function trailLiveScript(): Response {
     field.style.height = field.scrollHeight + "px";
   };
 
-  const visible = (element) => {
-    if (!element) return false;
-    const panel = element.closest(".trail-branch-panel");
-    return !panel || !panel.hidden;
-  };
+  const activeKey = () => activeBranchId || "0";
 
-  const drawSingleRail = (trailPath) => {
-    const nodes = Array.from(trailPath.querySelectorAll(".trail-step-node-svg")).filter(visible);
-    let rail = trailPath.querySelector(":scope > .trail-path-rail");
+  const activePanel = () =>
+    workspace.querySelector('[data-path-panel="' + activeKey() + '"]');
 
-    if (nodes.length < 2) {
-      if (rail) rail.remove();
-      return;
-    }
-
-    if (!rail) {
-      rail = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      rail.setAttribute("class", "trail-path-rail");
-      rail.setAttribute("aria-hidden", "true");
-      rail.innerHTML =
-        '<path class="trail-brush-main"></path>' +
-        '<path class="trail-brush-fiber trail-brush-fiber-a"></path>' +
-        '<path class="trail-brush-fiber trail-brush-fiber-b"></path>';
-      trailPath.prepend(rail);
-    }
-
-    const pathRect = trailPath.getBoundingClientRect();
-    const points = nodes.map((node) => {
-      const rect = node.getBoundingClientRect();
-      return {
-        x: rect.left - pathRect.left + rect.width / 2,
-        y: rect.top - pathRect.top + rect.height / 2,
-      };
-    });
-
-    const width = Math.max(1, trailPath.clientWidth);
-    const height = Math.max(1, trailPath.scrollHeight);
-    rail.setAttribute("viewBox", "0 0 " + width + " " + height);
-
-    const buildPath = (phase) => {
-      let d = "M " + points[0].x.toFixed(2) + " " + points[0].y.toFixed(2);
-      for (let i = 1; i < points.length; i += 1) {
-        const a = points[i - 1];
-        const b = points[i];
-        const dy = b.y - a.y;
-        const bend = (i % 2 === 0 ? -1 : 1) * phase;
-        const c1x = a.x + bend;
-        const c2x = b.x - bend * 0.72;
-        const c1y = a.y + dy * 0.34;
-        const c2y = b.y - dy * 0.34;
-        d += " C " +
-          c1x.toFixed(2) + " " + c1y.toFixed(2) + " " +
-          c2x.toFixed(2) + " " + c2y.toFixed(2) + " " +
-          b.x.toFixed(2) + " " + b.y.toFixed(2);
-      }
-      return d;
-    };
-
-    rail.querySelector(".trail-brush-main").setAttribute("d", buildPath(1.45));
-    rail.querySelector(".trail-brush-fiber-a").setAttribute("d", buildPath(0.7));
-    rail.querySelector(".trail-brush-fiber-b").setAttribute("d", buildPath(2.0));
-  };
-
-  const pointInGraph = (element) => {
-    const graphRect = graph.getBoundingClientRect();
-    const rect = element.getBoundingClientRect();
-    return {
-      x: rect.left - graphRect.left + rect.width / 2,
-      y: rect.top - graphRect.top + rect.height / 2,
-    };
-  };
-
-  const drawBranchLayout = () => {
-    const mainPath = graph.querySelector(".trail-main-path");
-    const leftLane = graph.querySelector("[data-branch-list]");
-    const rightLane = graph.querySelector("[data-active-branch]");
-    const links = graph.querySelector(".trail-branch-links");
-    if (!mainPath || !leftLane || !rightLane || !links) return;
-
-    leftLane.style.height = Math.max(1, mainPath.scrollHeight) + "px";
-
-    graph.querySelectorAll("[data-branch-open]").forEach((chip) => {
-      const branchId = chip.dataset.branchOpen;
-      const anchorId = chip.dataset.branchAnchor;
-      const anchor = mainPath.querySelector('.trail-step[data-trail-item="' + anchorId + '"] .trail-step-node');
-      chip.hidden = Boolean(activeBranchId && branchId === activeBranchId);
-      if (!anchor || chip.hidden) return;
-      const mainRect = mainPath.getBoundingClientRect();
-      const anchorRect = anchor.getBoundingClientRect();
-      const y = anchorRect.top - mainRect.top + anchorRect.height / 2;
-      chip.style.top = Math.max(0, y - chip.offsetHeight / 2) + "px";
-    });
-
-    const activePanel = activeBranchId
-      ? graph.querySelector('[data-branch-panel="' + activeBranchId + '"]')
-      : null;
-
-    graph.querySelectorAll("[data-branch-panel]").forEach((panel) => {
-      panel.hidden = panel !== activePanel;
-    });
-
-    if (activePanel) {
-      const anchorId = activePanel.dataset.branchAnchor;
-      const anchor = mainPath.querySelector('.trail-step[data-trail-item="' + anchorId + '"] .trail-step-node');
-      if (anchor) {
-        const mainRect = mainPath.getBoundingClientRect();
-        const anchorRect = anchor.getBoundingClientRect();
-        const y = anchorRect.top - mainRect.top + anchorRect.height / 2;
-        activePanel.style.marginTop = Math.max(0, y - 18) + "px";
-      } else {
-        activePanel.style.marginTop = "0px";
-      }
-    }
-
-    const width = Math.max(1, graph.scrollWidth);
-    const height = Math.max(1, graph.scrollHeight);
-    links.setAttribute("viewBox", "0 0 " + width + " " + height);
-    links.setAttribute("width", String(width));
-    links.setAttribute("height", String(height));
-    links.innerHTML = "";
-
-    const appendLink = (from, to, direction) => {
-      if (!from || !to || !visible(to)) return;
-      const a = pointInGraph(from);
-      const b = pointInGraph(to);
-      const dx = Math.max(26, Math.abs(b.x - a.x) * 0.48);
-      const sign = direction === "left" ? -1 : 1;
-      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      path.setAttribute("class", "trail-branch-link");
-      path.setAttribute(
-        "d",
-        "M " + a.x.toFixed(2) + " " + a.y.toFixed(2) +
-        " C " + (a.x + sign * dx).toFixed(2) + " " + a.y.toFixed(2) +
-        " " + (b.x - sign * dx * 0.72).toFixed(2) + " " + b.y.toFixed(2) +
-        " " + b.x.toFixed(2) + " " + b.y.toFixed(2),
-      );
-      links.appendChild(path);
-    };
-
-    graph.querySelectorAll("[data-branch-open]").forEach((chip) => {
-      if (chip.hidden) return;
-      const anchor = mainPath.querySelector(
-        '.trail-step[data-trail-item="' + chip.dataset.branchAnchor + '"] .trail-step-node',
-      );
-      appendLink(anchor, chip, "left");
-    });
-
-    if (activePanel) {
-      const anchor = mainPath.querySelector(
-        '.trail-step[data-trail-item="' + activePanel.dataset.branchAnchor + '"] .trail-step-node',
-      );
-      const target = activePanel.querySelector(".trail-step-node") || activePanel.querySelector(".trail-branch-heading");
-      appendLink(anchor, target, "right");
-    }
-  };
-
-  const drawTrailRail = () => {
-    window.cancelAnimationFrame(railFrame);
-    railFrame = window.requestAnimationFrame(() => {
-      graph.querySelectorAll(".trail-path").forEach((trailPath) => {
-        if (visible(trailPath)) drawSingleRail(trailPath);
-      });
-      drawBranchLayout();
-    });
-  };
-
-  const activeBranchTitle = () => {
+  const activePathName = () => {
     if (!activeBranchId) return "main";
-    const field = graph.querySelector('[data-branch-title="' + activeBranchId + '"]');
-    return field && field.value.trim() ? field.value.trim() : "branch";
-  };
-
-  const applyActiveBranch = (persist = true) => {
-    if (activeBranchId && !graph.querySelector('[data-branch-panel="' + activeBranchId + '"]')) {
-      activeBranchId = null;
-    }
-    if (persist) {
-      window.localStorage.setItem(branchStorageKey, activeBranchId || "main");
-      hasBranchPreference = true;
-    }
-    if (markContext) markContext.textContent = activeBranchTitle();
-    drawTrailRail();
+    const panel = activePanel();
+    return panel?.dataset.branchName || "branch";
   };
 
   const setStepOpen = (step, open) => {
-    const toggle = step.querySelector("[data-item-toggle]");
+    const toggles = step.querySelectorAll("[data-item-toggle]");
     const titleDisplay = step.querySelector(".trail-step-title-display");
     const titleField = step.querySelector("[data-item-title]");
     const detail = step.querySelector("[data-item-detail]");
 
     step.dataset.open = open ? "true" : "false";
-    if (toggle) {
+    toggles.forEach((toggle) => {
       toggle.setAttribute("aria-expanded", open ? "true" : "false");
       toggle.setAttribute("aria-label", open ? "Close node" : "Open node");
-    }
+    });
     if (titleDisplay) titleDisplay.hidden = open;
     if (titleField) {
       titleField.hidden = !open;
@@ -1147,7 +983,7 @@ function trailLiveScript(): Response {
       detail.hidden = !open;
       if (open) detail.querySelectorAll("textarea").forEach(autoGrow);
     }
-    drawTrailRail();
+    drawTrailMap();
   };
 
   const bindTrailItems = () => {
@@ -1158,7 +994,6 @@ function trailLiveScript(): Response {
 
       if (step.dataset.bound !== "true") {
         step.dataset.bound = "true";
-
         if (toggle) {
           toggle.addEventListener("click", () => {
             const opening = step.dataset.open !== "true";
@@ -1171,19 +1006,18 @@ function trailLiveScript(): Response {
       }
 
       if (titleField) {
-        titleField.addEventListener("input", () => {
-          if (titleDisplay) titleDisplay.textContent = titleField.value.trim() || "untitled";
-        });
-        titleField.addEventListener("keydown", (event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            titleField.blur();
-          }
-          if (event.key === "Escape") {
-            event.preventDefault();
-            titleField.blur();
-          }
-        });
+        if (titleField.dataset.titleBound !== "true") {
+          titleField.dataset.titleBound = "true";
+          titleField.addEventListener("input", () => {
+            if (titleDisplay) titleDisplay.textContent = titleField.value.trim() || "untitled";
+          });
+          titleField.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === "Escape") {
+              event.preventDefault();
+              titleField.blur();
+            }
+          });
+        }
         const itemId = titleField.dataset.itemTitle;
         bindAutosaveField(
           titleField,
@@ -1195,10 +1029,13 @@ function trailLiveScript(): Response {
       const contentField = step.querySelector("[data-item-content]");
       if (contentField) {
         autoGrow(contentField);
-        contentField.addEventListener("input", () => {
-          autoGrow(contentField);
-          drawTrailRail();
-        });
+        if (contentField.dataset.growBound !== "true") {
+          contentField.dataset.growBound = "true";
+          contentField.addEventListener("input", () => {
+            autoGrow(contentField);
+            drawTrailMap();
+          });
+        }
         const itemId = contentField.dataset.itemContent;
         bindAutosaveField(
           contentField,
@@ -1210,10 +1047,13 @@ function trailLiveScript(): Response {
       const noteField = step.querySelector("[data-item-note]");
       if (noteField) {
         autoGrow(noteField);
-        noteField.addEventListener("input", () => {
-          autoGrow(noteField);
-          drawTrailRail();
-        });
+        if (noteField.dataset.growBound !== "true") {
+          noteField.dataset.growBound = "true";
+          noteField.addEventListener("input", () => {
+            autoGrow(noteField);
+            drawTrailMap();
+          });
+        }
         const itemId = noteField.dataset.itemNote;
         bindAutosaveField(
           noteField,
@@ -1224,25 +1064,189 @@ function trailLiveScript(): Response {
     });
   };
 
+  const svgNode = (name, attrs = {}) => {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", name);
+    for (const [key, value] of Object.entries(attrs)) {
+      node.setAttribute(key, String(value));
+    }
+    return node;
+  };
+
+  const curvePath = (points) => {
+    if (!points.length) return "";
+    let d = "M " + points[0].x.toFixed(2) + " " + points[0].y.toFixed(2);
+    for (let i = 1; i < points.length; i += 1) {
+      const a = points[i - 1];
+      const b = points[i];
+      const dy = b.y - a.y;
+      const dx = b.x - a.x;
+      d += " C " +
+        (a.x + dx * 0.45).toFixed(2) + " " + (a.y + dy * 0.30).toFixed(2) + " " +
+        (b.x - dx * 0.35).toFixed(2) + " " + (b.y - dy * 0.30).toFixed(2) + " " +
+        b.x.toFixed(2) + " " + b.y.toFixed(2);
+    }
+    return d;
+  };
+
+  const drawPath = (points, className, branchId, label) => {
+    if (points.length >= 2) {
+      const path = svgNode("path", {
+        d: curvePath(points),
+        class: className,
+        "data-branch-select": branchId,
+      });
+      const titleNode = svgNode("title");
+      titleNode.textContent = label;
+      path.appendChild(titleNode);
+      mapSvg.appendChild(path);
+    }
+
+    const nodePoints = branchId === "0" ? points : points.slice(1);
+    nodePoints.forEach((point) => {
+      const circle = svgNode("circle", {
+        cx: point.x,
+        cy: point.y,
+        r: branchId === activeKey() ? 5.3 : 4.2,
+        class: className + " trail-map-node",
+        "data-branch-select": branchId,
+      });
+      const titleNode = svgNode("title");
+      titleNode.textContent = label;
+      circle.appendChild(titleNode);
+      mapSvg.appendChild(circle);
+    });
+  };
+
+  const drawTrailMap = () => {
+    window.cancelAnimationFrame(drawFrame);
+    drawFrame = window.requestAnimationFrame(() => {
+      const panel = activePanel();
+      if (!panel) return;
+
+      const graphRect = graph.getBoundingClientRect();
+      const activeSteps = Array.from(panel.querySelectorAll(".trail-step"));
+      const mainPanel = workspace.querySelector('[data-path-panel="0"]');
+      const mainSteps = Array.from(mainPanel?.querySelectorAll(".trail-step") || []);
+      const branchMetas = Array.from(graph.querySelectorAll("[data-branch-meta]"));
+      const width = Math.max(88, map.clientWidth);
+      const mainX = width - 18;
+      const inactiveMainX = mainX - 22;
+
+      const cardYs = activeSteps.map((step) => {
+        const rect = step.getBoundingClientRect();
+        return rect.top - graphRect.top + Math.min(24, rect.height / 2);
+      });
+
+      const contentHeight = Math.max(
+        150,
+        panel.getBoundingClientRect().height,
+        cardYs.length ? cardYs[cardYs.length - 1] + 36 : 150,
+      );
+
+      let mainYs = [];
+      if (!activeBranchId) {
+        mainYs = cardYs;
+      } else {
+        const count = Math.max(1, mainSteps.length);
+        const spacing = count > 1
+          ? Math.max(44, (contentHeight - 52) / (count - 1))
+          : 0;
+        mainYs = mainSteps.map((_, index) => 26 + spacing * index);
+      }
+
+      let requiredHeight = contentHeight;
+      const branchGeometry = [];
+
+      branchMetas.forEach((meta, index) => {
+        const branchId = meta.dataset.branchMeta;
+        const parentId = meta.dataset.branchAnchor;
+        const branchName = meta.dataset.branchName || "branch";
+        const count = Number(meta.dataset.branchCount || 0);
+        const parentIndex = mainSteps.findIndex((step) => step.dataset.trailItem === parentId);
+        const anchorY = mainYs[parentIndex >= 0 ? parentIndex : 0] ?? 28;
+        const selected = activeBranchId === branchId;
+
+        if (selected) {
+          const points = [{ x: inactiveMainX, y: anchorY }];
+          if (cardYs.length) {
+            points.push(...cardYs.map((y) => ({ x: mainX, y })));
+          } else {
+            points.push({ x: mainX, y: anchorY + 28 });
+          }
+          requiredHeight = Math.max(requiredHeight, ...points.map((point) => point.y + 26));
+          branchGeometry.push({ branchId, branchName, points, selected: true });
+          return;
+        }
+
+        const lane = index % 3;
+        const branchX = Math.max(16, inactiveMainX - 22 - lane * 20);
+        const visibleCount = Math.max(1, count);
+        const points = [{ x: inactiveMainX, y: anchorY }];
+        for (let itemIndex = 0; itemIndex < visibleCount; itemIndex += 1) {
+          points.push({
+            x: branchX,
+            y: anchorY + 24 + itemIndex * 24,
+          });
+        }
+        requiredHeight = Math.max(requiredHeight, points[points.length - 1].y + 28);
+        branchGeometry.push({ branchId, branchName, points, selected: false });
+      });
+
+      map.style.height = Math.ceil(requiredHeight) + "px";
+      mapSvg.setAttribute("viewBox", "0 0 " + width + " " + Math.ceil(requiredHeight));
+      mapSvg.setAttribute("width", String(width));
+      mapSvg.setAttribute("height", String(Math.ceil(requiredHeight)));
+      mapSvg.innerHTML = "";
+
+      if (mainYs.length) {
+        const mainPoints = mainYs.map((y) => ({
+          x: activeBranchId ? inactiveMainX : mainX,
+          y,
+        }));
+        drawPath(
+          mainPoints,
+          activeBranchId ? "trail-map-path trail-map-path-muted" : "trail-map-path trail-map-path-active",
+          "0",
+          "main",
+        );
+      }
+
+      branchGeometry.forEach((branch) => {
+        drawPath(
+          branch.points,
+          branch.selected
+            ? "trail-map-path trail-map-path-active"
+            : "trail-map-path trail-map-path-muted",
+          branch.branchId,
+          branch.branchName,
+        );
+      });
+    });
+  };
+
+  const applyActiveBranch = (persist = true) => {
+    if (
+      activeBranchId &&
+      !workspace.querySelector('[data-path-panel="' + activeBranchId + '"]')
+    ) {
+      activeBranchId = null;
+    }
+
+    workspace.querySelectorAll("[data-path-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.pathPanel !== activeKey();
+    });
+
+    if (persist) {
+      window.localStorage.setItem(branchStorageKey, activeBranchId || "main");
+    }
+
+    const name = activePathName();
+    if (mapCaption) mapCaption.textContent = name;
+    if (markContext) markContext.textContent = name;
+    drawTrailMap();
+  };
+
   const bindBranches = () => {
-    graph.querySelectorAll("[data-branch-open]").forEach((chip) => {
-      if (chip.dataset.bound === "true") return;
-      chip.dataset.bound = "true";
-      chip.addEventListener("click", () => {
-        activeBranchId = chip.dataset.branchOpen || null;
-        applyActiveBranch();
-      });
-    });
-
-    graph.querySelectorAll("[data-branch-close]").forEach((button) => {
-      if (button.dataset.bound === "true") return;
-      button.dataset.bound = "true";
-      button.addEventListener("click", () => {
-        activeBranchId = null;
-        applyActiveBranch();
-      });
-    });
-
     graph.querySelectorAll("[data-branch-title]").forEach((field) => {
       const branchId = field.dataset.branchTitle;
       bindAutosaveField(
@@ -1253,14 +1257,15 @@ function trailLiveScript(): Response {
       if (field.dataset.titleSyncBound === "true") return;
       field.dataset.titleSyncBound = "true";
       field.addEventListener("input", () => {
-        const chipLabel = graph.querySelector(
-          '[data-branch-open="' + branchId + '"] span',
-        );
-        if (chipLabel) chipLabel.textContent = field.value.trim() || "branch";
-        if (activeBranchId === branchId && markContext) {
-          markContext.textContent = field.value.trim() || "branch";
+        const panel = workspace.querySelector('[data-path-panel="' + branchId + '"]');
+        const meta = graph.querySelector('[data-branch-meta="' + branchId + '"]');
+        const nextName = field.value.trim() || "branch";
+        if (panel) panel.dataset.branchName = nextName;
+        if (meta) meta.dataset.branchName = nextName;
+        if (activeBranchId === branchId) {
+          if (mapCaption) mapCaption.textContent = nextName;
+          if (markContext) markContext.textContent = nextName;
         }
-        drawTrailRail();
       });
     });
 
@@ -1283,7 +1288,6 @@ function trailLiveScript(): Response {
           if (!response.ok) throw new Error("branch failed");
           const data = await response.json();
           activeBranchId = String(data.branch.id);
-          hasBranchPreference = true;
           window.localStorage.setItem(branchStorageKey, activeBranchId);
           last = "";
           await tick(true);
@@ -1294,30 +1298,28 @@ function trailLiveScript(): Response {
         }
       });
     });
+
+    if (mapSvg.dataset.bound !== "true") {
+      mapSvg.dataset.bound = "true";
+      mapSvg.addEventListener("click", (event) => {
+        const rawTarget = event.target;
+        if (!(rawTarget instanceof Element)) return;
+        const target = rawTarget.closest("[data-branch-select]");
+        if (!target) return;
+        const selected = target.getAttribute("data-branch-select");
+        activeBranchId = selected && selected !== "0" ? selected : null;
+        applyActiveBranch();
+      });
+    }
   };
 
   const bindGraph = () => {
     bindTrailItems();
     bindBranches();
-    if (!hasBranchPreference) {
-      const firstBranch = graph.querySelector("[data-branch-open]");
-      if (firstBranch) {
-        activeBranchId = firstBranch.dataset.branchOpen || null;
-        hasBranchPreference = true;
-        if (activeBranchId) window.localStorage.setItem(branchStorageKey, activeBranchId);
-      }
-    }
     applyActiveBranch(false);
   };
 
   bindAutosaveField(title, "/api/trail", () => ({ title: title.value }));
-  if (title && activeTrailLabel) {
-    title.addEventListener("input", () => {
-      const label = title.value.trim() || "untitled trail";
-      activeTrailLabel.textContent = label;
-      activeTrailLabel.title = label;
-    });
-  }
   bindAutosaveField(description, "/api/trail", () => ({ description: description.value }));
 
   const addForm = document.querySelector("[data-trail-add]");
@@ -1385,13 +1387,25 @@ function trailLiveScript(): Response {
             .filter(Boolean),
         );
         graph.innerHTML = data.html;
-        bindGraph();
+
+        const nextMap = graph.querySelector("[data-trail-map]");
+        const nextSvg = graph.querySelector("[data-trail-map-svg]");
+        const nextWorkspace = graph.querySelector("[data-trail-workspace]");
+        const nextCaption = graph.querySelector("[data-trail-map-caption]");
+        if (!nextMap || !nextSvg || !nextWorkspace) return;
+
+        map = nextMap;
+        mapSvg = nextSvg;
+        workspace = nextWorkspace;
+        mapCaption = nextCaption;
+
         for (const step of graph.querySelectorAll(".trail-step")) {
           const key = (step.dataset.pathBranch || "0") + ":" + step.dataset.trailItem;
           if (openItems.has(key)) setStepOpen(step, true);
         }
-        drawTrailRail();
+        bindGraph();
       }
+
       if (
         title &&
         document.activeElement !== title &&
@@ -1409,6 +1423,7 @@ function trailLiveScript(): Response {
         description.value = data.description;
       }
       last = fingerprint;
+      drawTrailMap();
     } catch {
       // A transient network failure should not disturb the research session.
     }
@@ -1416,30 +1431,30 @@ function trailLiveScript(): Response {
 
   bindGraph();
   const resizeObserver = typeof ResizeObserver !== "undefined"
-    ? new ResizeObserver(() => drawTrailRail())
+    ? new ResizeObserver(() => drawTrailMap())
     : null;
   if (resizeObserver) resizeObserver.observe(graph);
-  window.addEventListener("resize", drawTrailRail);
+  window.addEventListener("resize", drawTrailMap);
 
-  const settleTrailRail = () => {
-    drawTrailRail();
-    requestAnimationFrame(() => drawTrailRail());
-    window.setTimeout(() => drawTrailRail(), 80);
+  const settleTrailMap = () => {
+    drawTrailMap();
+    requestAnimationFrame(() => drawTrailMap());
+    window.setTimeout(() => drawTrailMap(), 80);
   };
-  settleTrailRail();
+  settleTrailMap();
   if (document.fonts?.ready) {
-    document.fonts.ready.then(() => settleTrailRail()).catch(() => {});
+    document.fonts.ready.then(() => settleTrailMap()).catch(() => {});
   }
-  window.addEventListener("load", settleTrailRail, { once: true });
+  window.addEventListener("load", settleTrailMap, { once: true });
 
   const interval = window.setInterval(() => tick(false), 1200);
   window.addEventListener("pagehide", () => {
     stopped = true;
     window.clearInterval(interval);
-    window.cancelAnimationFrame(railFrame);
+    window.cancelAnimationFrame(drawFrame);
     if (resizeObserver) resizeObserver.disconnect();
-    window.removeEventListener("resize", drawTrailRail);
-    window.removeEventListener("load", settleTrailRail);
+    window.removeEventListener("resize", drawTrailMap);
+    window.removeEventListener("load", settleTrailMap);
   }, { once: true });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) tick(false);
@@ -5771,8 +5786,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-page {
-      width: min(1320px, calc(100% - 40px));
-      max-width: 1320px;
+      width: min(980px, calc(100% - 40px));
+      max-width: 980px;
       padding: 48px 0 90px;
     }
     .trail-layout {
@@ -5953,141 +5968,101 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-graph {
       position: relative;
       display: grid;
-      grid-template-columns: 150px minmax(560px, 1fr) minmax(340px, .82fr);
-      column-gap: 24px;
+      grid-template-columns: 112px minmax(0, 1fr);
+      column-gap: 16px;
       align-items: start;
       margin-top: 22px;
       min-width: 0;
     }
-    .trail-graph .trail-path {
-      margin-top: 0;
-      min-width: 0;
-    }
-    .trail-main-path {
-      grid-column: 2;
-      grid-row: 1;
-      z-index: 1;
-    }
-    .trail-branch-lane {
+    .trail-map {
       position: relative;
-      min-width: 0;
+      min-height: 150px;
+      width: 112px;
       z-index: 1;
     }
-    .trail-branch-lane-left {
-      grid-column: 1;
-      grid-row: 1;
-      min-height: 60px;
-    }
-    .trail-branch-lane-right {
-      grid-column: 3;
-      grid-row: 1;
-    }
-    .trail-branch-chip {
-      position: absolute;
-      right: 0;
-      width: 108px;
-      max-width: 108px;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 6px;
-      align-items: baseline;
-      padding: 4px 0;
-      border: 0;
-      border-radius: 0;
-      background: transparent;
-      color: var(--soft);
-      font-size: .69rem;
-      line-height: 1.25;
-      text-align: right;
-      cursor: pointer;
-    }
-    .trail-branch-chip span {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .trail-branch-chip small {
-      color: var(--soft);
-      font-size: .61rem;
-      font-weight: 500;
-    }
-    .trail-branch-chip:hover,
-    .trail-branch-chip:focus-visible {
-      color: var(--annotation);
-      outline: none;
-      filter: none;
-    }
-    .trail-branch-panel[hidden] {
-      display: none !important;
-    }
-    .trail-branch-heading {
-      min-height: 36px;
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 4px;
-    }
-    .trail-branch-back {
-      padding: 0;
-      border: 0;
-      border-radius: 0;
-      background: transparent;
-      color: var(--soft);
-      font-size: .65rem;
-      font-weight: 520;
-    }
-    .trail-branch-back:hover,
-    .trail-branch-back:focus-visible {
-      color: var(--annotation);
-      outline: none;
-      filter: none;
-    }
-    .trail-branch-title {
-      min-width: 0;
+    .trail-map-caption {
+      position: sticky;
+      top: 18px;
+      z-index: 2;
       width: 100%;
-      padding: 2px 0;
-      border: 0;
-      border-bottom: 1px solid transparent;
-      border-radius: 0;
-      background: transparent;
-      color: var(--ink);
-      font-size: .82rem;
-      font-weight: 620;
-      line-height: 1.35;
+      padding: 0 6px 8px 0;
+      color: var(--soft);
+      font-size: .64rem;
+      font-weight: 560;
+      line-height: 1.2;
+      text-align: right;
+      pointer-events: none;
     }
-    .trail-branch-title:focus-visible {
-      outline: none;
-      border-bottom-color: var(--annotation);
-    }
-    .trail-branch-path .trail-step-title-display,
-    .trail-branch-path .trail-step-title-input {
-      font-size: .95rem;
-    }
-    .trail-branch-path .trail-step-body {
-      font-size: .84rem;
-    }
-    .trail-branch-empty {
-      margin-left: 30px;
-      font-size: .76rem;
-    }
-    .trail-branch-links {
+    .trail-map-svg {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
       overflow: visible;
-      pointer-events: none;
-      z-index: 0;
     }
-    .trail-branch-link {
+    .trail-map-path {
       fill: none;
       stroke: var(--annotation);
-      stroke-width: 2.4;
       stroke-linecap: round;
       stroke-linejoin: round;
-      opacity: .46;
       vector-effect: non-scaling-stroke;
+      cursor: pointer;
+    }
+    path.trail-map-path {
+      stroke-width: 4.2;
+    }
+    circle.trail-map-path {
+      fill: var(--annotation);
+      stroke: none;
+    }
+    .trail-map-path-active {
+      opacity: 1;
+    }
+    .trail-map-path-muted {
+      opacity: .28;
+    }
+    .trail-map-path-muted:hover,
+    .trail-map-node:hover {
+      opacity: .72;
+    }
+    .trail-map-node {
+      cursor: pointer;
+    }
+    .trail-path-workspace {
+      min-width: 0;
+      max-width: 760px;
+    }
+    .trail-path-panel[hidden] {
+      display: none !important;
+    }
+    .trail-active-branch-heading {
+      min-height: 28px;
+      margin-bottom: 2px;
+    }
+    .trail-branch-title {
+      min-width: 0;
+      width: min(100%, 420px);
+      padding: 1px 0 4px;
+      border: 0;
+      border-bottom: 1px solid transparent;
+      border-radius: 0;
+      background: transparent;
+      color: var(--soft);
+      font-size: .72rem;
+      font-weight: 560;
+      line-height: 1.3;
+    }
+    .trail-branch-title:focus-visible {
+      outline: none;
+      color: var(--ink);
+      border-bottom-color: var(--annotation);
+    }
+    .trail-content-path {
+      margin-top: 0;
+    }
+    .trail-branch-empty {
+      margin-left: 0;
+      font-size: .82rem;
     }
 
     .trail-path {
@@ -6134,6 +6109,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
       align-items: center;
       min-height: 44px;
       padding: 7px 0 3px;
+    }
+    .trail-step-content-only .trail-step-summary {
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
     }
     .trail-step-rail {
       width: 20px;
@@ -6211,6 +6190,22 @@ function htmlPage(title: string, body: string, status = 200): Response {
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .trail-step-title-button {
+      display: block;
+      width: 100%;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+    }
+    .trail-step-title-button:hover,
+    .trail-step-title-button:focus-visible {
+      color: var(--annotation);
+      filter: none;
+      outline: none;
+    }
     .trail-step-title-display {
       display: block;
     }
@@ -6251,6 +6246,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-size: .86rem;
       line-height: 1.5;
     }
+    .trail-step-content-only .trail-step-body {
+      width: 100%;
+      margin-left: 0;
+    }
     .trail-step-body::placeholder {
       color: var(--soft);
     }
@@ -6264,6 +6263,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
       margin: -2px 0 0 30px;
       padding: 0 0 12px;
       max-width: 650px;
+    }
+    .trail-step-content-only .trail-step-detail {
+      margin-left: 0;
+      max-width: 680px;
     }
     .trail-node-detail {
       display: block;
@@ -6432,14 +6435,13 @@ function htmlPage(title: string, body: string, status = 200): Response {
       }
     }
 
-    @media (max-width: 1120px) {
+    @media (max-width: 820px) {
       .trail-graph {
-        grid-template-columns: 112px minmax(430px, 1fr) minmax(270px, .72fr);
-        column-gap: 16px;
+        grid-template-columns: 86px minmax(0, 1fr);
+        column-gap: 12px;
       }
-      .trail-branch-chip {
-        width: 104px;
-        max-width: 104px;
+      .trail-map {
+        width: 86px;
       }
     }
 
@@ -6517,39 +6519,13 @@ function htmlPage(title: string, body: string, status = 200): Response {
         margin-top: 18px;
       }
       .trail-graph {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 14px;
+        grid-template-columns: 62px minmax(0, 1fr);
+        gap: 10px;
       }
-      .trail-branch-lane-left {
-        grid-column: 1;
-        grid-row: 1;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px 12px;
-        height: auto !important;
-        min-height: 0;
+      .trail-map {
+        width: 62px;
       }
-      .trail-branch-chip {
-        position: static;
-        width: auto;
-        max-width: 160px;
-        text-align: left;
-      }
-      .trail-main-path {
-        grid-column: 1;
-        grid-row: 2;
-      }
-      .trail-branch-lane-right {
-        grid-column: 1;
-        grid-row: 3;
-      }
-      .trail-branch-panel {
-        margin-top: 0 !important;
-        padding-top: 10px;
-        border-top: 1px solid var(--wash);
-      }
-      .trail-branch-links {
+      .trail-map-caption {
         display: none;
       }
       .trail-mark-add {
