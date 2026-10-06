@@ -547,22 +547,23 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
     ? `data-item-content="${item.id}"`
     : `data-item-note="${item.id}"`;
 
-  return `<details class="trail-step" data-trail-item="${item.id}">
-    <summary class="trail-step-summary">
+  return `<div class="trail-step" data-trail-item="${item.id}" data-open="false">
+    <div class="trail-step-summary">
       <span class="trail-step-rail" aria-hidden="true"><span class="trail-step-dot"></span></span>
       <span class="trail-step-line">
-        <input class="trail-step-title-input" value="${escapeAttr(title)}" maxlength="300" aria-label="Node title" data-item-title="${item.id}" readonly>
+        <button class="trail-step-title-display" type="button" data-item-toggle="${item.id}" aria-expanded="false">${escapeHtml(title)}</button>
+        <input class="trail-step-title-input" value="${escapeAttr(title)}" maxlength="300" aria-label="Node title" data-item-title="${item.id}" hidden>
       </span>
       <span class="trail-step-kind">${escapeHtml(kind)}</span>
-    </summary>
+    </div>
 
-    <div class="trail-step-detail">
-      <textarea class="trail-node-detail" rows="3" maxlength="10000" aria-label="Node context" placeholder="Add context…" ${detailAttribute}>${escapeHtml(detailValue)}</textarea>
-      ${isOpenable
-        ? `<a class="trail-step-open" href="${escapeAttr(item.url)}">open ${escapeHtml(kind)} ↗</a>`
-        : ""}
+    <div class="trail-step-detail" data-item-detail="${item.id}" hidden>
+      <textarea class="trail-node-detail" rows="2" maxlength="10000" aria-label="Node notes" placeholder="write…" ${detailAttribute}>${escapeHtml(detailValue)}</textarea>
 
-      <div class="trail-step-actions">
+      <div class="trail-step-footer">
+        ${isOpenable
+          ? `<a class="trail-step-open" href="${escapeAttr(item.url)}">open ${escapeHtml(kind)} ↗</a>`
+          : `<span></span>`}
         <details class="trail-item-menu">
           <summary aria-label="Node actions">⋯</summary>
           <div class="trail-item-menu-panel">
@@ -579,7 +580,7 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
         </details>
       </div>
     </div>
-  </details>`;
+  </div>`;
 }
 
 async function getTrailTitle(env: Env, trailId: string): Promise<string | null> {
@@ -843,35 +844,51 @@ function trailLiveScript(): Response {
     field.addEventListener("blur", () => flushSave(field, url, payload));
   };
 
+  const setStepOpen = (step, open) => {
+    const toggle = step.querySelector("[data-item-toggle]");
+    const titleField = step.querySelector("[data-item-title]");
+    const detail = step.querySelector("[data-item-detail]");
+
+    step.dataset.open = open ? "true" : "false";
+    if (toggle) {
+      toggle.hidden = open;
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    if (titleField) {
+      titleField.hidden = !open;
+      if (!open && document.activeElement === titleField) titleField.blur();
+    }
+    if (detail) detail.hidden = !open;
+  };
+
   const bindTrailItems = () => {
-    path.querySelectorAll("details.trail-step").forEach((step) => {
+    path.querySelectorAll(".trail-step").forEach((step) => {
+      const toggle = step.querySelector("[data-item-toggle]");
       const titleField = step.querySelector("[data-item-title]");
 
       if (step.dataset.bound !== "true") {
         step.dataset.bound = "true";
 
-        step.addEventListener("toggle", () => {
-          if (titleField) {
-            titleField.readOnly = !step.open;
-            if (!step.open && document.activeElement === titleField) titleField.blur();
-          }
-
-          if (!step.open) return;
-          path.querySelectorAll("details.trail-step[open]").forEach((other) => {
-            if (other !== step) other.open = false;
+        if (toggle) {
+          toggle.addEventListener("click", () => {
+            path.querySelectorAll('.trail-step[data-open="true"]').forEach((other) => {
+              if (other !== step) setStepOpen(other, false);
+            });
+            setStepOpen(step, true);
           });
-        });
+        }
       }
 
       if (titleField) {
-        titleField.readOnly = !step.open;
-        titleField.addEventListener("click", (event) => {
-          if (step.open) event.stopPropagation();
+        titleField.addEventListener("input", () => {
+          if (toggle) toggle.textContent = titleField.value.trim() || "untitled";
         });
         titleField.addEventListener("keydown", (event) => {
-          if (!step.open) return;
-          event.stopPropagation();
           if (event.key === "Enter") {
+            event.preventDefault();
+            titleField.blur();
+          }
+          if (event.key === "Escape") {
             event.preventDefault();
             titleField.blur();
           }
@@ -932,13 +949,13 @@ function trailLiveScript(): Response {
       if (activeInPath) return;
 
       if (typeof data.html === "string") {
-        const openItem = path.querySelector("details.trail-step[open]")?.dataset.trailItem ?? null;
+        const openItem = path.querySelector('.trail-step[data-open="true"]')?.dataset.trailItem ?? null;
         path.innerHTML = data.html;
         bindTrailItems();
         if (openItem) {
-          for (const step of path.querySelectorAll("details.trail-step")) {
+          for (const step of path.querySelectorAll(".trail-step")) {
             if (step.dataset.trailItem === openItem) {
-              step.open = true;
+              setStepOpen(step, true);
               break;
             }
           }
@@ -4627,7 +4644,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-path {
-      margin-top: 22px;
+      margin-top: 20px;
     }
     .trail-step {
       position: relative;
@@ -4636,9 +4653,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-step:not(:last-child)::after {
       content: "";
       position: absolute;
-      left: 3px;
-      top: 22px;
-      bottom: -14px;
+      left: 4px;
+      top: 18px;
+      bottom: -18px;
       width: 2px;
       background: var(--annotation);
       pointer-events: none;
@@ -4652,13 +4669,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       gap: 10px;
       align-items: center;
       min-height: 36px;
-      padding: 7px 0;
-      cursor: pointer;
-      list-style: none;
-    }
-    .trail-step-summary::-webkit-details-marker { display: none; }
-    .trail-step-summary:focus-visible {
-      outline: none;
+      padding: 6px 0;
     }
     .trail-step-rail {
       width: 10px;
@@ -4676,14 +4687,14 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-step-line {
       min-width: 0;
-      display: flex;
-      align-items: baseline;
+      display: block;
       overflow: hidden;
-      white-space: nowrap;
     }
+    .trail-step-title-display,
     .trail-step-title-input {
       min-width: 0;
       width: 100%;
+      margin: 0;
       padding: 2px 0;
       border: 0;
       border-radius: 0;
@@ -4692,22 +4703,29 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-size: .93rem;
       font-weight: 610;
       line-height: 1.35;
+      text-align: left;
+      white-space: nowrap;
+      overflow: hidden;
       text-overflow: ellipsis;
     }
-    .trail-step-title-input[readonly] {
-      pointer-events: none;
-      cursor: inherit;
+    .trail-step-title-display {
+      display: block;
+      cursor: pointer;
     }
-    .trail-step-title-input:not([readonly]) {
+    .trail-step-title-display:hover {
+      color: var(--annotation);
+      filter: none;
+    }
+    .trail-step-title-input {
       cursor: text;
     }
-    .trail-step-title-input:not([readonly]):focus-visible {
+    .trail-step-title-input:focus-visible {
       outline: none;
       box-shadow: inset 0 -1px var(--annotation);
     }
     .trail-step-kind {
       color: var(--soft);
-      font-size: .66rem;
+      font-size: .65rem;
       font-weight: 520;
       letter-spacing: .035em;
       white-space: nowrap;
@@ -4716,52 +4734,57 @@ function htmlPage(title: string, body: string, status = 200): Response {
       position: relative;
       z-index: 1;
       margin: 0 0 0 20px;
-      padding: 2px 0 18px;
+      padding: 0 0 12px;
       max-width: 650px;
     }
     .trail-node-detail {
       display: block;
       width: 100%;
-      min-height: 72px;
-      padding: 10px 11px;
-      border: 1px solid transparent;
-      border-radius: 2px;
-      background: var(--field-muted);
+      min-height: 46px;
+      padding: 4px 0 6px;
+      border: 0;
+      border-bottom: 1px solid transparent;
+      border-radius: 0;
+      background: transparent;
       color: var(--body-muted);
       font-size: .84rem;
-      line-height: 1.5;
+      line-height: 1.48;
       resize: vertical;
+    }
+    .trail-node-detail::placeholder {
+      color: var(--soft);
     }
     .trail-node-detail:focus-visible {
       outline: none;
-      border-color: var(--wash);
-      background: var(--field-focus);
+      border-bottom-color: var(--wash);
+      background: transparent;
+    }
+    .trail-step-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 24px;
+      margin-top: 2px;
     }
     .trail-step-open {
-      display: inline-block;
-      margin-top: 8px;
       color: var(--annotation);
-      font-size: .74rem;
+      font-size: .72rem;
       font-weight: 520;
-    }
-    .trail-step-actions {
-      display: flex;
-      justify-content: flex-end;
-      margin-top: 5px;
-      min-height: 22px;
     }
     .trail-item-menu {
       position: relative;
+      margin-left: auto;
     }
     .trail-item-menu > summary {
-      width: 26px;
+      width: 24px;
       height: 22px;
       display: grid;
       place-items: center;
       cursor: pointer;
       list-style: none;
       color: var(--soft);
-      font-size: 1rem;
+      font-size: .95rem;
       line-height: 1;
     }
     .trail-item-menu > summary::-webkit-details-marker { display: none; }
@@ -4772,10 +4795,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-item-menu-panel {
       position: absolute;
       right: 0;
-      top: 24px;
+      top: 23px;
       z-index: 5;
-      width: 112px;
-      padding: 5px 0;
+      width: 108px;
+      padding: 4px 0;
       background: var(--paper);
       border: 1px solid var(--wash);
     }
@@ -4784,11 +4807,11 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-item-menu-panel button {
       width: 100%;
-      padding: 6px 10px;
+      padding: 6px 9px;
       background: transparent;
       color: var(--muted);
       border-radius: 0;
-      font-size: .7rem;
+      font-size: .69rem;
       font-weight: 500;
       text-align: left;
     }
