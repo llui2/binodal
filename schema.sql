@@ -158,3 +158,58 @@ CREATE TABLE IF NOT EXISTS trail_integrations (
 
 CREATE INDEX IF NOT EXISTS idx_trail_integrations_trail
   ON trail_integrations(trail_id);
+
+
+CREATE TABLE IF NOT EXISTS trail_branches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  trail_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT 'branch',
+  parent_item_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (trail_id) REFERENCES trails(id) ON DELETE CASCADE,
+  FOREIGN KEY (parent_item_id) REFERENCES trail_items(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_trail_branches_trail_parent
+  ON trail_branches(trail_id, parent_item_id, id);
+
+-- Placements separate reusable trail items from the path(s) that display them.
+-- branch_id = 0 is the main path; positive values refer to trail_branches.id.
+CREATE TABLE IF NOT EXISTS trail_item_placements (
+  trail_id TEXT NOT NULL,
+  item_id INTEGER NOT NULL,
+  branch_id INTEGER NOT NULL DEFAULT 0,
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (item_id, branch_id),
+  FOREIGN KEY (trail_id) REFERENCES trails(id) ON DELETE CASCADE,
+  FOREIGN KEY (item_id) REFERENCES trail_items(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_trail_item_placements_path
+  ON trail_item_placements(trail_id, branch_id, position, item_id);
+
+CREATE TABLE IF NOT EXISTS trail_schema_migrations (
+  name TEXT PRIMARY KEY,
+  applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Existing linear trails become the main path exactly once.
+INSERT OR IGNORE INTO trail_item_placements (trail_id, item_id, branch_id, position)
+SELECT trail_id, id, 0, position
+  FROM trail_items
+ WHERE NOT EXISTS (
+   SELECT 1 FROM trail_schema_migrations WHERE name = 'trail-placements-v1'
+ );
+
+INSERT OR IGNORE INTO trail_schema_migrations (name)
+VALUES ('trail-placements-v1');
+
+CREATE TRIGGER IF NOT EXISTS trail_branch_delete_placements
+AFTER DELETE ON trail_branches
+BEGIN
+  DELETE FROM trail_item_placements
+   WHERE trail_id = OLD.trail_id
+     AND branch_id = OLD.id;
+END;

@@ -64,6 +64,19 @@ interface TrailItemRow {
   created_at: string;
 }
 
+interface TrailBranchRow {
+  id: number;
+  trail_id: string;
+  title: string;
+  parent_item_id: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface TrailBranchView extends TrailBranchRow {
+  items: TrailItemRow[];
+}
+
 interface TrailContext {
   id: string;
   cookie: string | null;
@@ -225,7 +238,13 @@ async function route(request: Request, env: Env): Promise<Response> {
     return mutateTrailItem(request, env, Number(trailAction[1]), trailAction[2]);
   }
 
-  if (path === "/api/trail" || path === "/api/trail/items" || /^\/api\/trail\/items\/\d+$/.test(path)) {
+  if (
+    path === "/api/trail" ||
+    path === "/api/trail/items" ||
+    /^\/api\/trail\/items\/\d+$/.test(path) ||
+    path === "/api/trail/branches" ||
+    /^\/api\/trail\/branches\/\d+$/.test(path)
+  ) {
     return handleTrailApi(request, env, path);
   }
 
@@ -455,17 +474,16 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
     await claimTrailForUser(env, trail.id, trailUser.id);
   }
 
-  const [items, title, description, user, userTrails] = await Promise.all([
+  const [items, branches, title, description, user, userTrails] = await Promise.all([
     listTrailItems(env, trail.id),
+    listTrailBranches(env, trail.id),
     getTrailTitle(env, trail.id),
     getTrailDescription(env, trail.id),
     currentUser(request, env),
     trailUser ? listUserTrails(env, trailUser.id) : Promise.resolve([] as TrailSummary[]),
   ]);
 
-  const itemHtml = items.length
-    ? items.map((item, index) => renderTrailItem(item, index)).join("")
-    : `<p class="trail-empty">The path is empty. Add papers from their paper pages, or add a thought below.</p>`;
+  const graphHtml = renderTrailGraph(items, branches);
 
   const response = htmlPage(
     title?.trim() || "trail",
@@ -492,11 +510,12 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
             <textarea id="trail-description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="Describe what this trail is trying to understand." data-autosave-trail="description">${escapeHtml(description ?? "")}</textarea>
           </div>
 
-          <section class="trail-path" data-trail-live aria-label="Research path">
-            ${itemHtml}
+          <section class="trail-graph" data-trail-live data-trail-id="${escapeAttr(trail.id)}" aria-label="Research paths">
+            ${graphHtml}
           </section>
 
           <form class="trail-mark-add" action="/trail/add" method="post" data-trail-add>
+            <span class="trail-mark-context" data-trail-mark-context>main</span>
             <textarea id="trail-add-value" name="value" rows="2" maxlength="10000"
               aria-label="Add a mark"
               placeholder="Add a mark — thought, paper, or link" required></textarea>
@@ -549,7 +568,64 @@ function renderTrailSidebar(
     </details>`;
 }
 
-function renderTrailItem(item: TrailItemRow, _index: number): string {
+function renderTrailGraph(
+  items: TrailItemRow[],
+  branches: TrailBranchView[],
+): string {
+  const mainHtml = items.length
+    ? items.map((item, index) => renderTrailItem(item, index, 0, true)).join("")
+    : `<p class="trail-empty">The path is empty. Add a mark below.</p>`;
+
+  const branchButtons = branches
+    .map((branch) => `<button class="trail-branch-chip" type="button"
+      data-branch-open="${branch.id}"
+      data-branch-anchor="${branch.parent_item_id}"
+      title="${escapeAttr(branch.title)}">
+      <span>${escapeHtml(branch.title)}</span>
+      <small>${branch.items.length}</small>
+    </button>`)
+    .join("");
+
+  const branchPanels = branches
+    .map((branch) => {
+      const branchItems = branch.items.length
+        ? branch.items.map((item, index) => renderTrailItem(item, index, branch.id, false)).join("")
+        : `<p class="trail-empty trail-branch-empty">This branch is empty.</p>`;
+
+      return `<div class="trail-branch-panel"
+        data-branch-panel="${branch.id}"
+        data-branch-anchor="${branch.parent_item_id}"
+        hidden>
+        <div class="trail-branch-heading">
+          <button class="trail-branch-back" type="button" data-branch-close aria-label="Return to main path">main</button>
+          <input class="trail-branch-title" maxlength="120" aria-label="Branch title"
+            value="${escapeAttr(branch.title)}" data-branch-title="${branch.id}">
+        </div>
+        <section class="trail-path trail-branch-path" data-path-branch="${branch.id}" aria-label="${escapeAttr(branch.title)}">
+          ${branchItems}
+        </section>
+      </div>`;
+    })
+    .join("");
+
+  return `<div class="trail-branch-lane trail-branch-lane-left" data-branch-list>
+      ${branchButtons}
+    </div>
+    <section class="trail-path trail-main-path" data-path-branch="0" aria-label="Main path">
+      ${mainHtml}
+    </section>
+    <div class="trail-branch-lane trail-branch-lane-right" data-active-branch>
+      ${branchPanels}
+    </div>
+    <svg class="trail-branch-links" aria-hidden="true"></svg>`;
+}
+
+function renderTrailItem(
+  item: TrailItemRow,
+  _index: number,
+  branchId = 0,
+  allowBranch = false,
+): string {
   const title = item.title || item.content || "untitled";
   const kind = item.kind === "paper" ? "paper" : item.kind === "link" ? "link" : "";
 
@@ -561,7 +637,7 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
     : rawContent;
   const detailsText = item.note ?? "";
 
-  return `<div class="trail-step" data-trail-item="${item.id}" data-open="false">
+  return `<div class="trail-step" data-trail-item="${item.id}" data-path-branch="${branchId}" data-open="false">
     <div class="trail-step-summary">
       <span class="trail-step-rail">
         <button class="trail-step-node" type="button" data-item-toggle="${item.id}" aria-label="Open node" aria-expanded="false">
@@ -592,12 +668,18 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
           <summary aria-label="Node actions">⋯</summary>
           <div class="trail-item-menu-panel">
             <form action="/trail/items/${item.id}/move" method="post">
+              <input type="hidden" name="branch_id" value="${branchId}">
               <button type="submit" name="direction" value="-1">move up</button>
             </form>
             <form action="/trail/items/${item.id}/move" method="post">
+              <input type="hidden" name="branch_id" value="${branchId}">
               <button type="submit" name="direction" value="1">move down</button>
             </form>
+            ${allowBranch
+              ? `<button type="button" data-new-branch="${item.id}">branch</button>`
+              : ""}
             <form action="/trail/items/${item.id}/remove" method="post">
+              <input type="hidden" name="branch_id" value="${branchId}">
               <button type="submit">remove</button>
             </form>
           </div>
@@ -795,17 +877,22 @@ async function openTrailByIntegrationKey(
 function trailLiveScript(): Response {
   const source = `
 (() => {
-  const path = document.querySelector("[data-trail-live]");
+  const graph = document.querySelector("[data-trail-live]");
   const title = document.getElementById("trail-title");
   const description = document.getElementById("trail-description");
   const saveState = document.getElementById("trail-save-state");
   const activeTrailLabel = document.querySelector(".trail-list-button.active");
-  if (!path) return;
+  const markContext = document.querySelector("[data-trail-mark-context]");
+  if (!graph) return;
 
+  const trailId = graph.dataset.trailId || "trail";
+  const branchStorageKey = "trails:active-branch:" + trailId;
+  let activeBranchId = window.localStorage.getItem(branchStorageKey);
   let last = "";
   let stopped = false;
   let savedTimer = 0;
   let pendingSaves = 0;
+  let railFrame = 0;
   const timers = new WeakMap();
 
   const setSaveState = (state) => {
@@ -874,66 +961,188 @@ function trailLiveScript(): Response {
     field.style.height = field.scrollHeight + "px";
   };
 
-  let railFrame = 0;
+  const visible = (element) => {
+    if (!element) return false;
+    const panel = element.closest(".trail-branch-panel");
+    return !panel || !panel.hidden;
+  };
+
+  const drawSingleRail = (trailPath) => {
+    const nodes = Array.from(trailPath.querySelectorAll(".trail-step-node-svg")).filter(visible);
+    let rail = trailPath.querySelector(":scope > .trail-path-rail");
+
+    if (nodes.length < 2) {
+      if (rail) rail.remove();
+      return;
+    }
+
+    if (!rail) {
+      rail = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      rail.setAttribute("class", "trail-path-rail");
+      rail.setAttribute("aria-hidden", "true");
+      rail.innerHTML =
+        '<path class="trail-brush-main"></path>' +
+        '<path class="trail-brush-fiber trail-brush-fiber-a"></path>' +
+        '<path class="trail-brush-fiber trail-brush-fiber-b"></path>';
+      trailPath.prepend(rail);
+    }
+
+    const pathRect = trailPath.getBoundingClientRect();
+    const points = nodes.map((node) => {
+      const rect = node.getBoundingClientRect();
+      return {
+        x: rect.left - pathRect.left + rect.width / 2,
+        y: rect.top - pathRect.top + rect.height / 2,
+      };
+    });
+
+    const width = Math.max(1, trailPath.clientWidth);
+    const height = Math.max(1, trailPath.scrollHeight);
+    rail.setAttribute("viewBox", "0 0 " + width + " " + height);
+
+    const buildPath = (phase) => {
+      let d = "M " + points[0].x.toFixed(2) + " " + points[0].y.toFixed(2);
+      for (let i = 1; i < points.length; i += 1) {
+        const a = points[i - 1];
+        const b = points[i];
+        const dy = b.y - a.y;
+        const bend = (i % 2 === 0 ? -1 : 1) * phase;
+        const c1x = a.x + bend;
+        const c2x = b.x - bend * 0.72;
+        const c1y = a.y + dy * 0.34;
+        const c2y = b.y - dy * 0.34;
+        d += " C " +
+          c1x.toFixed(2) + " " + c1y.toFixed(2) + " " +
+          c2x.toFixed(2) + " " + c2y.toFixed(2) + " " +
+          b.x.toFixed(2) + " " + b.y.toFixed(2);
+      }
+      return d;
+    };
+
+    rail.querySelector(".trail-brush-main").setAttribute("d", buildPath(1.45));
+    rail.querySelector(".trail-brush-fiber-a").setAttribute("d", buildPath(0.7));
+    rail.querySelector(".trail-brush-fiber-b").setAttribute("d", buildPath(2.0));
+  };
+
+  const pointInGraph = (element) => {
+    const graphRect = graph.getBoundingClientRect();
+    const rect = element.getBoundingClientRect();
+    return {
+      x: rect.left - graphRect.left + rect.width / 2,
+      y: rect.top - graphRect.top + rect.height / 2,
+    };
+  };
+
+  const drawBranchLayout = () => {
+    const mainPath = graph.querySelector(".trail-main-path");
+    const leftLane = graph.querySelector("[data-branch-list]");
+    const rightLane = graph.querySelector("[data-active-branch]");
+    const links = graph.querySelector(".trail-branch-links");
+    if (!mainPath || !leftLane || !rightLane || !links) return;
+
+    leftLane.style.height = Math.max(1, mainPath.scrollHeight) + "px";
+
+    graph.querySelectorAll("[data-branch-open]").forEach((chip) => {
+      const branchId = chip.dataset.branchOpen;
+      const anchorId = chip.dataset.branchAnchor;
+      const anchor = mainPath.querySelector('.trail-step[data-trail-item="' + anchorId + '"] .trail-step-node');
+      chip.hidden = Boolean(activeBranchId && branchId === activeBranchId);
+      if (!anchor || chip.hidden) return;
+      const mainRect = mainPath.getBoundingClientRect();
+      const anchorRect = anchor.getBoundingClientRect();
+      const y = anchorRect.top - mainRect.top + anchorRect.height / 2;
+      chip.style.top = Math.max(0, y - chip.offsetHeight / 2) + "px";
+    });
+
+    const activePanel = activeBranchId
+      ? graph.querySelector('[data-branch-panel="' + activeBranchId + '"]')
+      : null;
+
+    graph.querySelectorAll("[data-branch-panel]").forEach((panel) => {
+      panel.hidden = panel !== activePanel;
+    });
+
+    if (activePanel) {
+      const anchorId = activePanel.dataset.branchAnchor;
+      const anchor = mainPath.querySelector('.trail-step[data-trail-item="' + anchorId + '"] .trail-step-node');
+      if (anchor) {
+        const mainRect = mainPath.getBoundingClientRect();
+        const anchorRect = anchor.getBoundingClientRect();
+        const y = anchorRect.top - mainRect.top + anchorRect.height / 2;
+        activePanel.style.marginTop = Math.max(0, y - 18) + "px";
+      } else {
+        activePanel.style.marginTop = "0px";
+      }
+    }
+
+    const width = Math.max(1, graph.scrollWidth);
+    const height = Math.max(1, graph.scrollHeight);
+    links.setAttribute("viewBox", "0 0 " + width + " " + height);
+    links.setAttribute("width", String(width));
+    links.setAttribute("height", String(height));
+    links.innerHTML = "";
+
+    const appendLink = (from, to, direction) => {
+      if (!from || !to || !visible(to)) return;
+      const a = pointInGraph(from);
+      const b = pointInGraph(to);
+      const dx = Math.max(26, Math.abs(b.x - a.x) * 0.48);
+      const sign = direction === "left" ? -1 : 1;
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("class", "trail-branch-link");
+      path.setAttribute(
+        "d",
+        "M " + a.x.toFixed(2) + " " + a.y.toFixed(2) +
+        " C " + (a.x + sign * dx).toFixed(2) + " " + a.y.toFixed(2) +
+        " " + (b.x - sign * dx * 0.72).toFixed(2) + " " + b.y.toFixed(2) +
+        " " + b.x.toFixed(2) + " " + b.y.toFixed(2),
+      );
+      links.appendChild(path);
+    };
+
+    graph.querySelectorAll("[data-branch-open]").forEach((chip) => {
+      if (chip.hidden) return;
+      const anchor = mainPath.querySelector(
+        '.trail-step[data-trail-item="' + chip.dataset.branchAnchor + '"] .trail-step-node',
+      );
+      appendLink(anchor, chip, "left");
+    });
+
+    if (activePanel) {
+      const anchor = mainPath.querySelector(
+        '.trail-step[data-trail-item="' + activePanel.dataset.branchAnchor + '"] .trail-step-node',
+      );
+      const target = activePanel.querySelector(".trail-step-node") || activePanel.querySelector(".trail-branch-heading");
+      appendLink(anchor, target, "right");
+    }
+  };
 
   const drawTrailRail = () => {
     window.cancelAnimationFrame(railFrame);
     railFrame = window.requestAnimationFrame(() => {
-      const nodes = Array.from(path.querySelectorAll(".trail-step-node-svg"));
-      let rail = path.querySelector(".trail-path-rail");
-
-      if (nodes.length < 2) {
-        if (rail) rail.remove();
-        return;
-      }
-
-      if (!rail) {
-        rail = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        rail.setAttribute("class", "trail-path-rail");
-        rail.setAttribute("aria-hidden", "true");
-        rail.innerHTML =
-          '<path class="trail-brush-main"></path>' +
-          '<path class="trail-brush-fiber trail-brush-fiber-a"></path>' +
-          '<path class="trail-brush-fiber trail-brush-fiber-b"></path>';
-        path.prepend(rail);
-      }
-
-      const pathRect = path.getBoundingClientRect();
-      const points = nodes.map((node) => {
-        const rect = node.getBoundingClientRect();
-        return {
-          x: rect.left - pathRect.left + rect.width / 2,
-          y: rect.top - pathRect.top + rect.height / 2,
-        };
+      graph.querySelectorAll(".trail-path").forEach((trailPath) => {
+        if (visible(trailPath)) drawSingleRail(trailPath);
       });
-
-      const width = Math.max(1, path.clientWidth);
-      const height = Math.max(1, path.scrollHeight);
-      rail.setAttribute("viewBox", "0 0 " + width + " " + height);
-
-      const buildPath = (phase) => {
-        let d = "M " + points[0].x.toFixed(2) + " " + points[0].y.toFixed(2);
-        for (let i = 1; i < points.length; i += 1) {
-          const a = points[i - 1];
-          const b = points[i];
-          const dy = b.y - a.y;
-          const bend = (i % 2 === 0 ? -1 : 1) * phase;
-          const c1x = a.x + bend;
-          const c2x = b.x - bend * 0.72;
-          const c1y = a.y + dy * 0.34;
-          const c2y = b.y - dy * 0.34;
-          d += " C " +
-            c1x.toFixed(2) + " " + c1y.toFixed(2) + " " +
-            c2x.toFixed(2) + " " + c2y.toFixed(2) + " " +
-            b.x.toFixed(2) + " " + b.y.toFixed(2);
-        }
-        return d;
-      };
-
-      rail.querySelector(".trail-brush-main").setAttribute("d", buildPath(1.45));
-      rail.querySelector(".trail-brush-fiber-a").setAttribute("d", buildPath(0.7));
-      rail.querySelector(".trail-brush-fiber-b").setAttribute("d", buildPath(2.0));
+      drawBranchLayout();
     });
+  };
+
+  const activeBranchTitle = () => {
+    if (!activeBranchId) return "main";
+    const field = graph.querySelector('[data-branch-title="' + activeBranchId + '"]');
+    return field && field.value.trim() ? field.value.trim() : "branch";
+  };
+
+  const applyActiveBranch = (persist = true) => {
+    if (activeBranchId && !graph.querySelector('[data-branch-panel="' + activeBranchId + '"]')) {
+      activeBranchId = null;
+    }
+    if (persist) {
+      if (activeBranchId) window.localStorage.setItem(branchStorageKey, activeBranchId);
+      else window.localStorage.removeItem(branchStorageKey);
+    }
+    if (markContext) markContext.textContent = activeBranchTitle();
+    drawTrailRail();
   };
 
   const setStepOpen = (step, open) => {
@@ -960,7 +1169,7 @@ function trailLiveScript(): Response {
   };
 
   const bindTrailItems = () => {
-    path.querySelectorAll(".trail-step").forEach((step) => {
+    graph.querySelectorAll(".trail-step").forEach((step) => {
       const toggle = step.querySelector("[data-item-toggle]");
       const titleDisplay = step.querySelector(".trail-step-title-display");
       const titleField = step.querySelector("[data-item-title]");
@@ -1033,7 +1242,83 @@ function trailLiveScript(): Response {
     });
   };
 
-  drawTrailRail();
+  const bindBranches = () => {
+    graph.querySelectorAll("[data-branch-open]").forEach((chip) => {
+      if (chip.dataset.bound === "true") return;
+      chip.dataset.bound = "true";
+      chip.addEventListener("click", () => {
+        activeBranchId = chip.dataset.branchOpen || null;
+        applyActiveBranch();
+      });
+    });
+
+    graph.querySelectorAll("[data-branch-close]").forEach((button) => {
+      if (button.dataset.bound === "true") return;
+      button.dataset.bound = "true";
+      button.addEventListener("click", () => {
+        activeBranchId = null;
+        applyActiveBranch();
+      });
+    });
+
+    graph.querySelectorAll("[data-branch-title]").forEach((field) => {
+      const branchId = field.dataset.branchTitle;
+      bindAutosaveField(
+        field,
+        "/api/trail/branches/" + branchId,
+        () => ({ title: field.value }),
+      );
+      if (field.dataset.titleSyncBound === "true") return;
+      field.dataset.titleSyncBound = "true";
+      field.addEventListener("input", () => {
+        const chipLabel = graph.querySelector(
+          '[data-branch-open="' + branchId + '"] span',
+        );
+        if (chipLabel) chipLabel.textContent = field.value.trim() || "branch";
+        if (activeBranchId === branchId && markContext) {
+          markContext.textContent = field.value.trim() || "branch";
+        }
+        drawTrailRail();
+      });
+    });
+
+    graph.querySelectorAll("[data-new-branch]").forEach((button) => {
+      if (button.dataset.bound === "true") return;
+      button.dataset.bound = "true";
+      button.addEventListener("click", async () => {
+        const parentItemId = Number(button.dataset.newBranch);
+        if (!Number.isFinite(parentItemId)) return;
+        button.disabled = true;
+        try {
+          const response = await fetch("/api/trail/branches", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({ parent_item_id: parentItemId }),
+          });
+          if (!response.ok) throw new Error("branch failed");
+          const data = await response.json();
+          activeBranchId = String(data.branch.id);
+          window.localStorage.setItem(branchStorageKey, activeBranchId);
+          last = "";
+          await tick(true);
+        } catch {
+          setSaveState("error");
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+  };
+
+  const bindGraph = () => {
+    bindTrailItems();
+    bindBranches();
+    applyActiveBranch(false);
+  };
+
   bindAutosaveField(title, "/api/trail", () => ({ title: title.value }));
   if (title && activeTrailLabel) {
     title.addEventListener("input", () => {
@@ -1068,13 +1353,16 @@ function trailLiveScript(): Response {
             "Content-Type": "application/json",
             Accept: "application/json",
           },
-          body: JSON.stringify({ value }),
+          body: JSON.stringify({
+            value,
+            branch_id: activeBranchId ? Number(activeBranchId) : 0,
+          }),
         });
         if (!response.ok) throw new Error("add failed");
         addField.value = "";
         autoGrow(addField);
         last = "";
-        await tick();
+        await tick(true);
       } catch {
         setSaveState("error");
       } finally {
@@ -1084,7 +1372,7 @@ function trailLiveScript(): Response {
     });
   }
 
-  const tick = async () => {
+  const tick = async (force = false) => {
     if (stopped || document.hidden || pendingSaves > 0) return;
     try {
       const response = await fetch("/api/trail", {
@@ -1093,22 +1381,23 @@ function trailLiveScript(): Response {
       });
       if (!response.ok) return;
       const data = await response.json();
-      const fingerprint = JSON.stringify([data.title, data.description, data.items]);
-      if (fingerprint === last) return;
+      const fingerprint = JSON.stringify([data.title, data.description, data.items, data.branches]);
+      if (!force && fingerprint === last) return;
 
-      const activeInPath = path.contains(document.activeElement);
-      if (activeInPath) return;
+      const activeInGraph = graph.contains(document.activeElement);
+      if (!force && activeInGraph) return;
 
       if (typeof data.html === "string") {
         const openItems = new Set(
-          Array.from(path.querySelectorAll('.trail-step[data-open="true"]'))
-            .map((step) => step.dataset.trailItem)
+          Array.from(graph.querySelectorAll('.trail-step[data-open="true"]'))
+            .map((step) => (step.dataset.pathBranch || "0") + ":" + step.dataset.trailItem)
             .filter(Boolean),
         );
-        path.innerHTML = data.html;
-        bindTrailItems();
-        for (const step of path.querySelectorAll(".trail-step")) {
-          if (openItems.has(step.dataset.trailItem)) setStepOpen(step, true);
+        graph.innerHTML = data.html;
+        bindGraph();
+        for (const step of graph.querySelectorAll(".trail-step")) {
+          const key = (step.dataset.pathBranch || "0") + ":" + step.dataset.trailItem;
+          if (openItems.has(key)) setStepOpen(step, true);
         }
         drawTrailRail();
       }
@@ -1134,11 +1423,11 @@ function trailLiveScript(): Response {
     }
   };
 
-  bindTrailItems();
+  bindGraph();
   const resizeObserver = typeof ResizeObserver !== "undefined"
     ? new ResizeObserver(() => drawTrailRail())
     : null;
-  if (resizeObserver) resizeObserver.observe(path);
+  if (resizeObserver) resizeObserver.observe(graph);
   window.addEventListener("resize", drawTrailRail);
 
   const settleTrailRail = () => {
@@ -1152,7 +1441,7 @@ function trailLiveScript(): Response {
   }
   window.addEventListener("load", settleTrailRail, { once: true });
 
-  const interval = window.setInterval(tick, 1200);
+  const interval = window.setInterval(() => tick(false), 1200);
   window.addEventListener("pagehide", () => {
     stopped = true;
     window.clearInterval(interval);
@@ -1162,9 +1451,9 @@ function trailLiveScript(): Response {
     window.removeEventListener("load", settleTrailRail);
   }, { once: true });
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) tick();
+    if (!document.hidden) tick(false);
   });
-  tick();
+  tick(false);
 })();
 `;
   return new Response(source, {
@@ -1425,18 +1714,80 @@ function withTrailCookie(response: Response, cookie: string | null): Response {
 }
 
 async function listTrailItems(env: Env, trailId: string): Promise<TrailItemRow[]> {
+  return listTrailItemsInBranch(env, trailId, 0);
+}
+
+async function listTrailItemsInBranch(
+  env: Env,
+  trailId: string,
+  branchId: number,
+): Promise<TrailItemRow[]> {
   const result = await env.DB.prepare(
-    `SELECT id, trail_id, kind, title, url, content, note, source_ref, position, created_at
-       FROM trail_items
-      WHERE trail_id = ?
-      ORDER BY position ASC, id ASC`,
+    `SELECT i.id, i.trail_id, i.kind, i.title, i.url, i.content, i.note,
+            i.source_ref, p.position AS position, i.created_at
+       FROM trail_item_placements p
+       JOIN trail_items i ON i.id = p.item_id
+      WHERE p.trail_id = ?
+        AND p.branch_id = ?
+        AND i.trail_id = ?
+      ORDER BY p.position ASC, i.id ASC`,
   )
-    .bind(trailId)
+    .bind(trailId, branchId, trailId)
     .all<TrailItemRow>();
   return result.results ?? [];
 }
 
-async function nextTrailPosition(env: Env, trailId: string): Promise<number> {
+async function listTrailBranches(env: Env, trailId: string): Promise<TrailBranchView[]> {
+  const result = await env.DB.prepare(
+    `SELECT id, trail_id, title, parent_item_id, created_at, updated_at
+       FROM trail_branches
+      WHERE trail_id = ?
+      ORDER BY created_at ASC, id ASC`,
+  )
+    .bind(trailId)
+    .all<TrailBranchRow>();
+
+  const branches = result.results ?? [];
+  return await Promise.all(
+    branches.map(async (branch) => ({
+      ...branch,
+      items: await listTrailItemsInBranch(env, trailId, branch.id),
+    })),
+  );
+}
+
+async function nextTrailPosition(
+  env: Env,
+  trailId: string,
+  branchId = 0,
+): Promise<number> {
+  const row = await env.DB.prepare(
+    `SELECT COALESCE(MAX(position), -1) + 1 AS next_position
+       FROM trail_item_placements
+      WHERE trail_id = ? AND branch_id = ?`,
+  )
+    .bind(trailId, branchId)
+    .first<{ next_position: number }>();
+  return Number(row?.next_position ?? 0);
+}
+
+async function placeTrailItem(
+  env: Env,
+  trailId: string,
+  itemId: number,
+  branchId = 0,
+): Promise<void> {
+  const position = await nextTrailPosition(env, trailId, branchId);
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO trail_item_placements
+       (trail_id, item_id, branch_id, position)
+     VALUES (?, ?, ?, ?)`,
+  )
+    .bind(trailId, itemId, branchId, position)
+    .run();
+}
+
+async function nextTrailItemStoragePosition(env: Env, trailId: string): Promise<number> {
   const row = await env.DB.prepare(
     "SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM trail_items WHERE trail_id = ?",
   )
@@ -1457,29 +1808,50 @@ async function addToTrail(request: Request, env: Env): Promise<Response> {
   return withTrailCookie(redirect("/trail", 303), trail.cookie);
 }
 
-async function insertTrailNote(env: Env, trailId: string, value: string, note: string | null = null): Promise<void> {
+async function insertTrailNote(
+  env: Env,
+  trailId: string,
+  value: string,
+  note: string | null = null,
+  branchId = 0,
+): Promise<number | null> {
   const compact = value.replace(/\s+/g, " ").trim();
-  if (!compact) return;
+  if (!compact) return null;
   const title = compact.length > 90 ? `${compact.slice(0, 87)}…` : compact;
-  const position = await nextTrailPosition(env, trailId);
-  await env.DB.prepare(
+  const storagePosition = await nextTrailItemStoragePosition(env, trailId);
+  const row = await env.DB.prepare(
     `INSERT INTO trail_items (trail_id, kind, title, content, note, position)
-     VALUES (?, 'note', ?, ?, ?, ?)`,
+     VALUES (?, 'note', ?, ?, ?, ?)
+     RETURNING id`,
   )
-    .bind(trailId, title, value.slice(0, 10000), note ? note.slice(0, 2000) : null, position)
-    .run();
+    .bind(
+      trailId,
+      title,
+      value.slice(0, 10000),
+      note ? note.slice(0, 2000) : null,
+      storagePosition,
+    )
+    .first<{ id: number }>();
+
+  if (!row?.id) return null;
+  await placeTrailItem(env, trailId, row.id, branchId);
+  return row.id;
 }
 
-async function insertTrailValue(env: Env, trailId: string, value: string): Promise<void> {
+async function insertTrailValue(
+  env: Env,
+  trailId: string,
+  value: string,
+  branchId = 0,
+): Promise<number | null> {
   const clean = value.trim();
-  if (!clean) return;
+  if (!clean) return null;
 
   // A pasted DOI, arXiv ID, Scholar result, or publisher URL should become a
   // first-class paper node when the resolver can identify it.
   if (normalizePaperInput(clean)) {
     try {
-      await insertPaperIntoTrail(env, trailId, clean);
-      return;
+      return await insertPaperIntoTrail(env, trailId, clean, null, branchId);
     } catch {
       // Not every safe URL is a paper. Fall through to a generic link.
     }
@@ -1487,7 +1859,7 @@ async function insertTrailValue(env: Env, trailId: string, value: string): Promi
 
   const normalizedUrl = normalizeTrailUrl(clean);
   if (normalizedUrl) {
-    const position = await nextTrailPosition(env, trailId);
+    const storagePosition = await nextTrailItemStoragePosition(env, trailId);
     let title = normalizedUrl;
     try {
       const parsed = new URL(normalizedUrl);
@@ -1496,19 +1868,23 @@ async function insertTrailValue(env: Env, trailId: string, value: string): Promi
       // Keep the URL as the title.
     }
 
-    await env.DB.prepare(
+    const row = await env.DB.prepare(
       `INSERT INTO trail_items (trail_id, kind, title, url, source_ref, position)
        VALUES (?, 'link', ?, ?, ?, ?)
        ON CONFLICT(trail_id, source_ref) DO UPDATE SET
          title = excluded.title,
-         url = excluded.url`,
+         url = excluded.url
+       RETURNING id`,
     )
-      .bind(trailId, title.slice(0, 300), normalizedUrl, `url:${normalizedUrl}`, position)
-      .run();
-    return;
+      .bind(trailId, title.slice(0, 300), normalizedUrl, `url:${normalizedUrl}`, storagePosition)
+      .first<{ id: number }>();
+
+    if (!row?.id) return null;
+    await placeTrailItem(env, trailId, row.id, branchId);
+    return row.id;
   }
 
-  await insertTrailNote(env, trailId, clean);
+  return await insertTrailNote(env, trailId, clean, null, branchId);
 }
 
 async function insertPaperIntoTrail(
@@ -1516,23 +1892,25 @@ async function insertPaperIntoTrail(
   trailId: string,
   rawPaper: string,
   note: string | null = null,
-): Promise<void> {
+  branchId = 0,
+): Promise<number | null> {
   const paperId = normalizePaperInput(rawPaper);
   if (!paperId) throw new Error("Invalid paper identifier or URL");
 
   const paper = await ensurePaper(env, paperId);
   const identifiers = await getPaperIdentifiers(env, paper.arxiv_id);
   const publicPaperId = preferredPaperId(identifiers, paper.arxiv_id);
-  const position = await nextTrailPosition(env, trailId);
+  const storagePosition = await nextTrailItemStoragePosition(env, trailId);
   const itemUrl = `/p/${encodeURIComponent(publicPaperId)}`;
 
-  await env.DB.prepare(
+  const row = await env.DB.prepare(
     `INSERT INTO trail_items (trail_id, kind, title, url, note, source_ref, position)
      VALUES (?, 'paper', ?, ?, ?, ?, ?)
      ON CONFLICT(trail_id, source_ref) DO UPDATE SET
        title = excluded.title,
        url = excluded.url,
-       note = COALESCE(excluded.note, trail_items.note)`,
+       note = COALESCE(excluded.note, trail_items.note)
+     RETURNING id`,
   )
     .bind(
       trailId,
@@ -1540,9 +1918,13 @@ async function insertPaperIntoTrail(
       itemUrl,
       note ? note.slice(0, 2000) : null,
       `paper:${paper.arxiv_id}`,
-      position,
+      storagePosition,
     )
-    .run();
+    .first<{ id: number }>();
+
+  if (!row?.id) return null;
+  await placeTrailItem(env, trailId, row.id, branchId);
+  return row.id;
 }
 
 async function addPaperToTrail(request: Request, env: Env): Promise<Response> {
@@ -1580,12 +1962,27 @@ async function mutateTrailItem(
 
   if (!item) return withTrailCookie(redirect("/trail", 303), trail.cookie);
 
+  const form = await request.formData();
+  const branchId = Math.max(0, Math.trunc(Number(form.get("branch_id") ?? 0)));
+
   if (action === "remove") {
-    await env.DB.prepare("DELETE FROM trail_items WHERE id = ? AND trail_id = ?")
-      .bind(itemId, trail.id)
+    await env.DB.prepare(
+      "DELETE FROM trail_item_placements WHERE trail_id = ? AND item_id = ? AND branch_id = ?",
+    )
+      .bind(trail.id, itemId, branchId)
       .run();
+
+    const remaining = await env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM trail_item_placements WHERE trail_id = ? AND item_id = ?",
+    )
+      .bind(trail.id, itemId)
+      .first<{ count: number }>();
+    if (Number(remaining?.count ?? 0) === 0) {
+      await env.DB.prepare("DELETE FROM trail_items WHERE id = ? AND trail_id = ?")
+        .bind(itemId, trail.id)
+        .run();
+    }
   } else if (action === "title") {
-    const form = await request.formData();
     const title = String(form.get("title") ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
     await env.DB.prepare(
       "UPDATE trail_items SET title = ? WHERE id = ? AND trail_id = ?",
@@ -1593,7 +1990,6 @@ async function mutateTrailItem(
       .bind(title || "untitled", itemId, trail.id)
       .run();
   } else if (action === "note") {
-    const form = await request.formData();
     const note = String(form.get("note") ?? "").trim().slice(0, 2000);
     await env.DB.prepare(
       "UPDATE trail_items SET note = ? WHERE id = ? AND trail_id = ?",
@@ -1601,31 +1997,54 @@ async function mutateTrailItem(
       .bind(note || null, itemId, trail.id)
       .run();
   } else if (action === "move") {
-    const form = await request.formData();
     const direction = Number(form.get("direction")) < 0 ? -1 : 1;
-    const neighbor = await env.DB.prepare(
-      direction < 0
-        ? `SELECT id, position FROM trail_items
-             WHERE trail_id = ? AND (position < ? OR (position = ? AND id < ?))
-             ORDER BY position DESC, id DESC LIMIT 1`
-        : `SELECT id, position FROM trail_items
-             WHERE trail_id = ? AND (position > ? OR (position = ? AND id > ?))
-             ORDER BY position ASC, id ASC LIMIT 1`,
+    const placement = await env.DB.prepare(
+      `SELECT position
+         FROM trail_item_placements
+        WHERE trail_id = ? AND item_id = ? AND branch_id = ?`,
     )
-      .bind(trail.id, item.position, item.position, item.id)
-      .first<{ id: number; position: number }>();
+      .bind(trail.id, itemId, branchId)
+      .first<{ position: number }>();
 
-    if (neighbor) {
-      const temporary = -1_000_000_000 - item.id;
-      await env.DB.prepare("UPDATE trail_items SET position = ? WHERE id = ?")
-        .bind(temporary, item.id)
-        .run();
-      await env.DB.prepare("UPDATE trail_items SET position = ? WHERE id = ?")
-        .bind(item.position, neighbor.id)
-        .run();
-      await env.DB.prepare("UPDATE trail_items SET position = ? WHERE id = ?")
-        .bind(neighbor.position, item.id)
-        .run();
+    if (placement) {
+      const neighbor = await env.DB.prepare(
+        direction < 0
+          ? `SELECT item_id, position
+               FROM trail_item_placements
+              WHERE trail_id = ? AND branch_id = ?
+                AND (position < ? OR (position = ? AND item_id < ?))
+              ORDER BY position DESC, item_id DESC
+              LIMIT 1`
+          : `SELECT item_id, position
+               FROM trail_item_placements
+              WHERE trail_id = ? AND branch_id = ?
+                AND (position > ? OR (position = ? AND item_id > ?))
+              ORDER BY position ASC, item_id ASC
+              LIMIT 1`,
+      )
+        .bind(
+          trail.id,
+          branchId,
+          placement.position,
+          placement.position,
+          itemId,
+        )
+        .first<{ item_id: number; position: number }>();
+
+      if (neighbor) {
+        await env.DB.batch([
+          env.DB.prepare(
+            `UPDATE trail_item_placements
+                SET position = ?
+              WHERE trail_id = ? AND item_id = ? AND branch_id = ?`,
+          ).bind(neighbor.position, trail.id, itemId, branchId),
+          env.DB.prepare(
+            `UPDATE trail_item_placements
+                SET position = ?
+              WHERE trail_id = ? AND item_id = ? AND branch_id = ?`,
+          ).bind(placement.position, trail.id, neighbor.item_id, branchId),
+        ]);
+      }
     }
   }
 
@@ -1665,14 +2084,12 @@ async function handleTrailApi(
   }
 
   if (request.method === "GET" && path === "/api/trail") {
-    const [items, title, description] = await Promise.all([
+    const [items, branches, title, description] = await Promise.all([
       listTrailItems(env, trail.id),
+      listTrailBranches(env, trail.id),
       getTrailTitle(env, trail.id),
       getTrailDescription(env, trail.id),
     ]);
-    const html = items.length
-      ? items.map((item, index) => renderTrailItem(item, index)).join("")
-      : `<p class="trail-empty">The path is empty. Add papers from their paper pages, or add a thought below.</p>`;
     return withTrailCookie(
       json({
         id: trail.id,
@@ -1680,10 +2097,96 @@ async function handleTrailApi(
         description: description ?? "",
         question: description ?? "",
         items,
-        html,
+        branches,
+        html: renderTrailGraph(items, branches),
       }),
       trail.cookie,
     );
+  }
+
+  if (request.method === "POST" && path === "/api/trail/branches") {
+    assertSameOrigin(request);
+    const payload = await request.json().catch(() => ({})) as {
+      parent_item_id?: number;
+      title?: string;
+    };
+    const parentItemId = Math.trunc(Number(payload.parent_item_id));
+    if (!Number.isFinite(parentItemId)) {
+      return withTrailCookie(json({ error: "invalid parent item" }, 400), trail.cookie);
+    }
+
+    const parent = await env.DB.prepare(
+      `SELECT i.id
+         FROM trail_item_placements p
+         JOIN trail_items i ON i.id = p.item_id
+        WHERE p.trail_id = ?
+          AND p.branch_id = 0
+          AND i.trail_id = ?
+          AND i.id = ?
+        LIMIT 1`,
+    )
+      .bind(trail.id, trail.id, parentItemId)
+      .first<{ id: number }>();
+
+    if (!parent) {
+      return withTrailCookie(json({ error: "branch parent must be on the main path" }, 400), trail.cookie);
+    }
+
+    const cleanTitle = String(payload.title ?? "branch")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120) || "branch";
+
+    const branch = await env.DB.prepare(
+      `INSERT INTO trail_branches (trail_id, title, parent_item_id)
+       VALUES (?, ?, ?)
+       RETURNING id, trail_id, title, parent_item_id, created_at, updated_at`,
+    )
+      .bind(trail.id, cleanTitle, parentItemId)
+      .first<TrailBranchRow>();
+
+    if (!branch) {
+      return withTrailCookie(json({ error: "could not create branch" }, 500), trail.cookie);
+    }
+
+    return withTrailCookie(json({ branch: { ...branch, items: [] } }, 201), trail.cookie);
+  }
+
+  const branchMatch = path.match(/^\/api\/trail\/branches\/(\d+)$/);
+  if (branchMatch && request.method === "PATCH") {
+    assertSameOrigin(request);
+    const branchId = Number(branchMatch[1]);
+    const payload = await request.json().catch(() => ({})) as { title?: string };
+    const existing = await env.DB.prepare(
+      "SELECT id FROM trail_branches WHERE id = ? AND trail_id = ?",
+    )
+      .bind(branchId, trail.id)
+      .first<{ id: number }>();
+    if (!existing) {
+      return withTrailCookie(json({ error: "branch not found" }, 404), trail.cookie);
+    }
+
+    if (payload.title !== undefined) {
+      const cleanTitle = String(payload.title)
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 120) || "branch";
+      await env.DB.prepare(
+        "UPDATE trail_branches SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND trail_id = ?",
+      )
+        .bind(cleanTitle, branchId, trail.id)
+        .run();
+    }
+
+    const branch = await env.DB.prepare(
+      `SELECT id, trail_id, title, parent_item_id, created_at, updated_at
+         FROM trail_branches
+        WHERE id = ? AND trail_id = ?`,
+    )
+      .bind(branchId, trail.id)
+      .first<TrailBranchRow>();
+
+    return withTrailCookie(json({ branch }), trail.cookie);
   }
 
   if (request.method === "POST" && path === "/api/trail/items") {
@@ -1695,27 +2198,45 @@ async function handleTrailApi(
       url?: string;
       content?: string;
       note?: string;
+      branch_id?: number;
     };
 
+    const branchId = Math.max(0, Math.trunc(Number(payload.branch_id ?? 0)));
+    if (branchId > 0) {
+      const branch = await env.DB.prepare(
+        "SELECT id FROM trail_branches WHERE id = ? AND trail_id = ?",
+      )
+        .bind(branchId, trail.id)
+        .first<{ id: number }>();
+      if (!branch) {
+        return withTrailCookie(json({ error: "branch not found" }, 404), trail.cookie);
+      }
+    }
+
     if (payload.value) {
-      await insertTrailValue(env, trail.id, String(payload.value));
+      await insertTrailValue(env, trail.id, String(payload.value), branchId);
     } else {
-      const position = await nextTrailPosition(env, trail.id);
+      const storagePosition = await nextTrailItemStoragePosition(env, trail.id);
       const kind = String(payload.kind ?? "note").slice(0, 40);
-      const title = String(payload.title ?? payload.content ?? payload.url ?? "untitled").slice(0, 300);
+      const itemTitle = String(payload.title ?? payload.content ?? payload.url ?? "untitled").slice(0, 300);
       const url = payload.url ? normalizeTrailUrl(String(payload.url)) : null;
       const content = payload.content ? String(payload.content).slice(0, 10000) : null;
       const note = payload.note ? String(payload.note).slice(0, 2000) : null;
-      await env.DB.prepare(
+      const row = await env.DB.prepare(
         `INSERT INTO trail_items (trail_id, kind, title, url, content, note, position)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         RETURNING id`,
       )
-        .bind(trail.id, kind, title, url, content, note, position)
-        .run();
+        .bind(trail.id, kind, itemTitle, url, content, note, storagePosition)
+        .first<{ id: number }>();
+      if (row?.id) await placeTrailItem(env, trail.id, row.id, branchId);
     }
 
-    const items = await listTrailItems(env, trail.id);
-    return withTrailCookie(json({ id: trail.id, items }, 201), trail.cookie);
+    const [items, branches] = await Promise.all([
+      listTrailItems(env, trail.id),
+      listTrailBranches(env, trail.id),
+    ]);
+    return withTrailCookie(json({ id: trail.id, items, branches }, 201), trail.cookie);
   }
 
   const match = path.match(/^\/api\/trail\/items\/(\d+)$/);
@@ -1734,6 +2255,7 @@ async function handleTrailApi(
       note?: string | null;
       content?: string | null;
       position?: number;
+      branch_id?: number;
     };
     const itemId = Number(match[1]);
     const existing = await env.DB.prepare(
@@ -1759,13 +2281,21 @@ async function handleTrailApi(
         .run();
     }
     if (payload.position !== undefined && Number.isFinite(Number(payload.position))) {
-      await env.DB.prepare("UPDATE trail_items SET position = ? WHERE id = ? AND trail_id = ?")
-        .bind(Math.trunc(Number(payload.position)), itemId, trail.id)
+      const branchId = Math.max(0, Math.trunc(Number(payload.branch_id ?? 0)));
+      await env.DB.prepare(
+        `UPDATE trail_item_placements
+            SET position = ?
+          WHERE trail_id = ? AND item_id = ? AND branch_id = ?`,
+      )
+        .bind(Math.trunc(Number(payload.position)), trail.id, itemId, branchId)
         .run();
     }
 
-    const items = await listTrailItems(env, trail.id);
-    return withTrailCookie(json({ id: trail.id, items }), trail.cookie);
+    const [items, branches] = await Promise.all([
+      listTrailItems(env, trail.id),
+      listTrailBranches(env, trail.id),
+    ]);
+    return withTrailCookie(json({ id: trail.id, items, branches }), trail.cookie);
   }
 
   return withTrailCookie(json({ error: "method not allowed" }, 405), trail.cookie);
@@ -1852,10 +2382,11 @@ async function handleSharedTrailMcp(request: Request, env: Env): Promise<Respons
     },
     async ({ key }) => {
       const trailId = await resolveTrail(key);
-      const [title, description, items] = await Promise.all([
+      const [title, description, items, branches] = await Promise.all([
         getTrailTitle(env, trailId),
         getTrailDescription(env, trailId),
         listTrailItems(env, trailId),
+        listTrailBranches(env, trailId),
       ]);
       const snapshot = {
         title,
@@ -1869,6 +2400,20 @@ async function handleSharedTrailMcp(request: Request, env: Env): Promise<Respons
           url: item.url ? new URL(item.url, origin).toString() : null,
           content: item.content,
           note: item.note,
+        })),
+        branches: branches.map((branch) => ({
+          id: branch.id,
+          title: branch.title,
+          parent_item_id: branch.parent_item_id,
+          items: branch.items.map((item, index) => ({
+            step: index + 1,
+            id: item.id,
+            kind: item.kind,
+            title: item.title,
+            url: item.url ? new URL(item.url, origin).toString() : null,
+            content: item.content,
+            note: item.note,
+          })),
         })),
       };
       return {
@@ -2034,10 +2579,11 @@ async function handleTrailMcp(request: Request, env: Env, token: string): Promis
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async () => {
-      const [title, description, items] = await Promise.all([
+      const [title, description, items, branches] = await Promise.all([
         getTrailTitle(env, integration.trail_id),
         getTrailDescription(env, integration.trail_id),
         listTrailItems(env, integration.trail_id),
+        listTrailBranches(env, integration.trail_id),
       ]);
       const snapshot = {
         title,
@@ -2053,6 +2599,22 @@ async function handleTrailMcp(request: Request, env: Env, token: string): Promis
             : null,
           content: item.content,
           note: item.note,
+        })),
+        branches: branches.map((branch) => ({
+          id: branch.id,
+          title: branch.title,
+          parent_item_id: branch.parent_item_id,
+          items: branch.items.map((item, index) => ({
+            step: index + 1,
+            id: item.id,
+            kind: item.kind,
+            title: item.title,
+            url: item.url
+              ? new URL(item.url, origin).toString()
+              : null,
+            content: item.content,
+            note: item.note,
+          })),
         })),
       };
       return {
@@ -5039,18 +5601,18 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-page {
-      max-width: 980px;
+      max-width: 1240px;
       padding: 48px 0 90px;
     }
     .trail-layout {
       display: grid;
-      grid-template-columns: 180px minmax(0, 1fr);
-      gap: 36px;
+      grid-template-columns: 170px minmax(0, 1fr);
+      gap: 30px;
       align-items: start;
     }
     .trail-main {
       min-width: 0;
-      max-width: 760px;
+      max-width: none;
     }
     .trail-heading {
       display: grid;
@@ -5215,6 +5777,146 @@ function htmlPage(title: string, body: string, status = 200): Response {
       outline: none;
       border-color: var(--wash);
       background: var(--field-focus);
+    }
+
+    .trail-graph {
+      position: relative;
+      display: grid;
+      grid-template-columns: 116px minmax(320px, 1fr) minmax(230px, .72fr);
+      column-gap: 18px;
+      align-items: start;
+      margin-top: 20px;
+      min-width: 0;
+    }
+    .trail-graph .trail-path {
+      margin-top: 0;
+      min-width: 0;
+    }
+    .trail-main-path {
+      grid-column: 2;
+      grid-row: 1;
+      z-index: 1;
+    }
+    .trail-branch-lane {
+      position: relative;
+      min-width: 0;
+      z-index: 1;
+    }
+    .trail-branch-lane-left {
+      grid-column: 1;
+      grid-row: 1;
+      min-height: 60px;
+    }
+    .trail-branch-lane-right {
+      grid-column: 3;
+      grid-row: 1;
+    }
+    .trail-branch-chip {
+      position: absolute;
+      right: 0;
+      width: 108px;
+      max-width: 108px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px;
+      align-items: baseline;
+      padding: 4px 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--soft);
+      font-size: .69rem;
+      line-height: 1.25;
+      text-align: right;
+      cursor: pointer;
+    }
+    .trail-branch-chip span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .trail-branch-chip small {
+      color: var(--soft);
+      font-size: .61rem;
+      font-weight: 500;
+    }
+    .trail-branch-chip:hover,
+    .trail-branch-chip:focus-visible {
+      color: var(--annotation);
+      outline: none;
+      filter: none;
+    }
+    .trail-branch-panel[hidden] {
+      display: none !important;
+    }
+    .trail-branch-heading {
+      min-height: 36px;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .trail-branch-back {
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--soft);
+      font-size: .65rem;
+      font-weight: 520;
+    }
+    .trail-branch-back:hover,
+    .trail-branch-back:focus-visible {
+      color: var(--annotation);
+      outline: none;
+      filter: none;
+    }
+    .trail-branch-title {
+      min-width: 0;
+      width: 100%;
+      padding: 2px 0;
+      border: 0;
+      border-bottom: 1px solid transparent;
+      border-radius: 0;
+      background: transparent;
+      color: var(--ink);
+      font-size: .82rem;
+      font-weight: 620;
+      line-height: 1.35;
+    }
+    .trail-branch-title:focus-visible {
+      outline: none;
+      border-bottom-color: var(--annotation);
+    }
+    .trail-branch-path .trail-step-title-display,
+    .trail-branch-path .trail-step-title-input {
+      font-size: .84rem;
+    }
+    .trail-branch-path .trail-step-body {
+      font-size: .75rem;
+    }
+    .trail-branch-empty {
+      margin-left: 30px;
+      font-size: .76rem;
+    }
+    .trail-branch-links {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .trail-branch-link {
+      fill: none;
+      stroke: var(--annotation);
+      stroke-width: 2.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: .46;
+      vector-effect: non-scaling-stroke;
     }
 
     .trail-path {
@@ -5487,6 +6189,13 @@ function htmlPage(title: string, body: string, status = 200): Response {
       gap: 8px;
       align-items: start;
     }
+    .trail-mark-context {
+      grid-column: 1 / -1;
+      color: var(--soft);
+      font-size: .64rem;
+      font-weight: 540;
+      line-height: 1;
+    }
     .trail-mark-add textarea {
       min-height: 64px;
       padding: 10px 11px;
@@ -5549,6 +6258,17 @@ function htmlPage(title: string, body: string, status = 200): Response {
     @media (hover: none) {
       .trail-step[open] .trail-step-actions {
         opacity: 1;
+      }
+    }
+
+    @media (max-width: 980px) {
+      .trail-graph {
+        grid-template-columns: 94px minmax(300px, 1fr) minmax(205px, .7fr);
+        column-gap: 14px;
+      }
+      .trail-branch-chip {
+        width: 88px;
+        max-width: 88px;
       }
     }
 
@@ -5624,6 +6344,42 @@ function htmlPage(title: string, body: string, status = 200): Response {
       }
       .trail-description {
         margin-top: 18px;
+      }
+      .trail-graph {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 14px;
+      }
+      .trail-branch-lane-left {
+        grid-column: 1;
+        grid-row: 1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 12px;
+        height: auto !important;
+        min-height: 0;
+      }
+      .trail-branch-chip {
+        position: static;
+        width: auto;
+        max-width: 160px;
+        text-align: left;
+      }
+      .trail-main-path {
+        grid-column: 1;
+        grid-row: 2;
+      }
+      .trail-branch-lane-right {
+        grid-column: 1;
+        grid-row: 3;
+      }
+      .trail-branch-panel {
+        margin-top: 0 !important;
+        padding-top: 10px;
+        border-top: 1px solid var(--wash);
+      }
+      .trail-branch-links {
+        display: none;
       }
       .trail-mark-add {
         grid-template-columns: 1fr;
