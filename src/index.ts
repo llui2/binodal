@@ -568,7 +568,7 @@ function renderTrailSidebar(
       <summary>switch user</summary>
       <form action="/trail/user" method="post">
         <input name="username" maxlength="32" autocomplete="username" aria-label="Username" placeholder="username" required>
-        <button class="text-button" type="submit">use</button>
+        <button class="text-button" type="submit">switch</button>
       </form>
     </details>`;
 }
@@ -6463,7 +6463,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-step-title-input:focus-visible {
       outline: none;
-      box-shadow: inset 0 -1px var(--annotation);
+      background: color-mix(in srgb, var(--annotation) 6%, transparent);
     }
     .trail-step-kind {
       color: var(--soft);
