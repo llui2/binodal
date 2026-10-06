@@ -1419,37 +1419,7 @@ function trailLiveScript(): Response {
     drawTrailMap();
   };
 
-  const bindBranches = () => {
-    graph.querySelectorAll("[data-new-branch]").forEach((button) => {
-      if (button.dataset.bound === "true") return;
-      button.dataset.bound = "true";
-      button.addEventListener("click", async () => {
-        const parentItemId = Number(button.dataset.newBranch);
-        if (!Number.isFinite(parentItemId)) return;
-        button.disabled = true;
-        try {
-          const response = await fetch("/api/trail/branches", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-            body: JSON.stringify({ parent_item_id: parentItemId }),
-          });
-          if (!response.ok) throw new Error("branch failed");
-          const data = await response.json();
-          activeBranchId = String(data.branch.id);
-          window.localStorage.setItem(branchStorageKey, activeBranchId);
-          last = "";
-          await tick(true);
-        } catch {
-          setSaveState("error");
-        } finally {
-          button.disabled = false;
-        }
-      });
-    });
-
+  const bindTopology = () => {
     if (mapSvg.dataset.bound !== "true") {
       mapSvg.dataset.bound = "true";
       mapSvg.addEventListener("click", (event) => {
@@ -1491,7 +1461,7 @@ function trailLiveScript(): Response {
 
   const bindGraph = () => {
     bindTrailItems();
-    bindBranches();
+    bindTopology();
     applyActiveBranch(false);
   };
 
@@ -1875,6 +1845,15 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
       COMMON_TRAIL_ID,
       "How should a research path preserve divergence, evidence, dead ends, and synthesis without becoming an unreadable graph?",
     )
+    .run();
+
+  await env.DB.prepare(
+    `UPDATE trail_contexts
+        SET question = 'How should a research trail preserve evidence, context, and the evolution of an argument without becoming an unreadable log?'
+      WHERE trail_id = ?
+        AND question = 'How should a research path preserve divergence, evidence, dead ends, and synthesis without becoming an unreadable graph?'`,
+  )
+    .bind(COMMON_TRAIL_ID)
     .run();
 
   const existing = await env.DB.prepare(
@@ -6011,9 +5990,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-sidebar {
       position: sticky;
       top: 28px;
-      width: 160px;
-      max-width: 160px;
-      min-width: 160px;
+      width: 150px;
+      max-width: 150px;
+      min-width: 150px;
       padding-top: 5px;
       overflow: hidden;
     }
