@@ -546,16 +546,15 @@ function renderTrailSidebar(
 }
 
 function renderTrailItem(item: TrailItemRow, _index: number): string {
-  const isOpenable = Boolean(item.url);
   const title = item.title || item.content || "untitled";
   const kind = item.kind === "paper" ? "paper" : item.kind === "link" ? "link" : "";
 
   const comparableText = (value: string): string =>
     value.replace(/\s+/g, " ").trim().replace(/[.!?;:]+$/, "").toLowerCase();
-  const mainText = item.kind === "note" &&
-    comparableText(item.content ?? "") !== comparableText(title)
-      ? item.content ?? ""
-      : "";
+  const rawContent = item.content ?? "";
+  const mainText = item.kind === "note" && comparableText(rawContent) === comparableText(title)
+    ? ""
+    : rawContent;
   const detailsText = item.note ?? "";
 
   return `<div class="trail-step" data-trail-item="${item.id}" data-open="false">
@@ -576,17 +575,15 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
         : `<span class="trail-step-kind" aria-hidden="true"></span>`}
     </div>
 
-    ${item.kind === "note"
-      ? `<textarea class="trail-step-body" rows="1" maxlength="10000" aria-label="Note text" placeholder="write…" data-item-content="${item.id}">${escapeHtml(mainText)}</textarea>`
-      : ""}
+    <textarea class="trail-step-body" rows="1" maxlength="10000"
+      aria-label="Permanent node text" placeholder="write…"
+      data-item-content="${item.id}">${escapeHtml(mainText)}</textarea>
 
     <div class="trail-step-detail" data-item-detail="${item.id}" hidden>
       <textarea class="trail-node-detail" rows="2" maxlength="2000" aria-label="Node details" placeholder="details…" data-item-note="${item.id}">${escapeHtml(detailsText)}</textarea>
 
       <div class="trail-step-footer">
-        ${isOpenable
-          ? `<a class="trail-step-open" href="${escapeAttr(item.url)}">open ${escapeHtml(kind)} ↗</a>`
-          : `<span></span>`}
+        <span></span>
         <details class="trail-item-menu">
           <summary aria-label="Node actions">⋯</summary>
           <div class="trail-item-menu-panel">
@@ -3094,7 +3091,9 @@ async function findArxivByTitleAndAuthors(
 
 type BioRxivServer = "biorxiv" | "medrxiv";
 
-function bioRxivPaperFromUrl(raw: string): { server: BioRxivServer; doi: string } | null {
+function bioRxivPaperFromUrl(
+  raw: string,
+): { server: BioRxivServer; doi: string; version: string | null; pageUrl: string } | null {
   try {
     const url = new URL(raw);
     const host = url.hostname.toLowerCase();
@@ -3103,13 +3102,18 @@ function bioRxivPaperFromUrl(raw: string): { server: BioRxivServer; doi: string 
     if (host === "medrxiv.org" || host === "www.medrxiv.org") server = "medrxiv";
     if (!server) return null;
 
-    const match = decodeURIComponent(url.pathname).match(
-      /\/content\/(10\.\d{4,9}\/[A-Za-z0-9._;()/:+-]+?)(?:v\d+)?(?:\.full)?(?:\.pdf)?(?:\/)?$/i,
+    const path = decodeURIComponent(url.pathname);
+    const match = path.match(
+      /\/content\/(10\.\d{4,9}\/[A-Za-z0-9._;()/:+-]+?)(v\d+)?(?:\.full)?(?:\.pdf)?\/?$/i,
     );
     if (!match) return null;
 
     const doi = normalizePublicationDoi(match[1]);
-    return doi ? { server, doi } : null;
+    if (!doi) return null;
+
+    const version = match[2] ?? null;
+    const pageUrl = `https://www.${server}.org/content/${doi}${version ?? ""}`;
+    return { server, doi, version, pageUrl };
   } catch {
     return null;
   }
@@ -3201,12 +3205,123 @@ async function fetchPaperFromBioRxiv(
   };
 }
 
+async function fetchPaperFromBioRxivHtml(
+  pageUrl: string,
+  server: BioRxivServer,
+  storageId: string,
+  sourceUrl?: string,
+): Promise<FetchedPaper> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6500);
+
+  try {
+    const response = await fetch(pageUrl, {
+      headers: {
+        "User-Agent": "trails/0.1",
+        Accept: "text/html,application/xhtml+xml",
+      },
+      redirect: "follow",
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`${server} page returned HTTP ${response.status}`);
+
+    const html = await response.text();
+    const title = cleanHtmlText(metaContent(html, "citation_title"));
+    const authors = metaContents(html, "citation_author")
+      .map(normalizeAuthorName)
+      .filter(Boolean);
+    const doi =
+      normalizePublicationDoi(metaContent(html, "citation_doi")) ||
+      normalizePublicationDoi(pageUrl);
+    const published =
+      metaContent(html, "citation_date") ||
+      metaContent(html, "DC.Date") ||
+      null;
+    const abstract =
+      cleanHtmlText(metaContent(html, "description")) ||
+      cleanHtmlText(metaPropertyContent(html, "og:description"));
+
+    if (!title || !doi) throw new Error(`Could not parse ${server} article metadata`);
+
+    const identifiers: PaperIdentifier[] = [
+      {
+        type: "doi",
+        value: doi,
+        label: server === "biorxiv" ? "bioRxiv" : "medRxiv",
+        url: pageUrl,
+      },
+      {
+        type: "url",
+        value: pageUrl,
+        label: server === "biorxiv" ? "bioRxiv" : "medRxiv",
+        url: pageUrl,
+      },
+    ];
+
+    if (sourceUrl && sourceUrl !== pageUrl) {
+      identifiers.push({
+        type: "url",
+        value: sourceUrl,
+        label: server === "biorxiv" ? "bioRxiv" : "medRxiv",
+        url: sourceUrl,
+      });
+    }
+
+    return {
+      paper: {
+        arxiv_id: storageId,
+        title,
+        authors_json: JSON.stringify(authors),
+        abstract,
+        published_at: published,
+        updated_at: published,
+      },
+      identifiers: dedupeIdentifiers(identifiers),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchPaperFromUrl(sourceUrl: string, storageId: string): Promise<FetchedPaper> {
   if (!isSafePaperUrl(sourceUrl)) throw new Error("Only public HTTPS paper URLs are supported");
 
   const bioRxiv = bioRxivPaperFromUrl(sourceUrl);
   if (bioRxiv) {
-    return fetchPaperFromBioRxiv(bioRxiv.doi, bioRxiv.server, storageId, sourceUrl);
+    try {
+      const fetched = await fetchPaperFromCrossref(bioRxiv.doi, storageId);
+      fetched.identifiers.push(
+        {
+          type: "url",
+          value: bioRxiv.pageUrl,
+          label: bioRxiv.server === "biorxiv" ? "bioRxiv" : "medRxiv",
+          url: bioRxiv.pageUrl,
+        },
+        {
+          type: "url",
+          value: sourceUrl,
+          label: bioRxiv.server === "biorxiv" ? "bioRxiv" : "medRxiv",
+          url: sourceUrl,
+        },
+      );
+      fetched.identifiers = dedupeIdentifiers(fetched.identifiers);
+      return fetched;
+    } catch (error) {
+      console.warn("Crossref bioRxiv lookup failed; trying bioRxiv API", error);
+    }
+
+    try {
+      return await fetchPaperFromBioRxiv(
+        bioRxiv.doi,
+        bioRxiv.server,
+        storageId,
+        sourceUrl,
+      );
+    } catch (error) {
+      console.warn("bioRxiv API lookup failed; trying article HTML", error);
+    }
+
+    return fetchPaperFromBioRxivHtml(bioRxiv.pageUrl, bioRxiv.server, storageId, sourceUrl);
   }
 
   if (isGoogleScholarUrl(sourceUrl)) {
@@ -5137,11 +5252,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       gap: 12px;
       min-height: 24px;
       margin-top: 4px;
-    }
-    .trail-step-open {
-      color: var(--annotation);
-      font-size: .72rem;
-      font-weight: 520;
     }
     .trail-item-menu {
       position: relative;
