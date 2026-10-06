@@ -5785,8 +5785,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-page {
-      width: min(1320px, calc(100% - 40px));
-      max-width: 1320px;
+      width: min(980px, calc(100% - 40px));
+      max-width: 980px;
       padding: 48px 0 90px;
     }
     .trail-layout {
@@ -5967,141 +5967,101 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-graph {
       position: relative;
       display: grid;
-      grid-template-columns: 150px minmax(560px, 1fr) minmax(340px, .82fr);
-      column-gap: 24px;
+      grid-template-columns: 112px minmax(0, 1fr);
+      column-gap: 16px;
       align-items: start;
       margin-top: 22px;
       min-width: 0;
     }
-    .trail-graph .trail-path {
-      margin-top: 0;
-      min-width: 0;
-    }
-    .trail-main-path {
-      grid-column: 2;
-      grid-row: 1;
-      z-index: 1;
-    }
-    .trail-branch-lane {
+    .trail-map {
       position: relative;
-      min-width: 0;
+      min-height: 150px;
+      width: 112px;
       z-index: 1;
     }
-    .trail-branch-lane-left {
-      grid-column: 1;
-      grid-row: 1;
-      min-height: 60px;
-    }
-    .trail-branch-lane-right {
-      grid-column: 3;
-      grid-row: 1;
-    }
-    .trail-branch-chip {
-      position: absolute;
-      right: 0;
-      width: 108px;
-      max-width: 108px;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 6px;
-      align-items: baseline;
-      padding: 4px 0;
-      border: 0;
-      border-radius: 0;
-      background: transparent;
-      color: var(--soft);
-      font-size: .69rem;
-      line-height: 1.25;
-      text-align: right;
-      cursor: pointer;
-    }
-    .trail-branch-chip span {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .trail-branch-chip small {
-      color: var(--soft);
-      font-size: .61rem;
-      font-weight: 500;
-    }
-    .trail-branch-chip:hover,
-    .trail-branch-chip:focus-visible {
-      color: var(--annotation);
-      outline: none;
-      filter: none;
-    }
-    .trail-branch-panel[hidden] {
-      display: none !important;
-    }
-    .trail-branch-heading {
-      min-height: 36px;
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 4px;
-    }
-    .trail-branch-back {
-      padding: 0;
-      border: 0;
-      border-radius: 0;
-      background: transparent;
-      color: var(--soft);
-      font-size: .65rem;
-      font-weight: 520;
-    }
-    .trail-branch-back:hover,
-    .trail-branch-back:focus-visible {
-      color: var(--annotation);
-      outline: none;
-      filter: none;
-    }
-    .trail-branch-title {
-      min-width: 0;
+    .trail-map-caption {
+      position: sticky;
+      top: 18px;
+      z-index: 2;
       width: 100%;
-      padding: 2px 0;
-      border: 0;
-      border-bottom: 1px solid transparent;
-      border-radius: 0;
-      background: transparent;
-      color: var(--ink);
-      font-size: .82rem;
-      font-weight: 620;
-      line-height: 1.35;
+      padding: 0 6px 8px 0;
+      color: var(--soft);
+      font-size: .64rem;
+      font-weight: 560;
+      line-height: 1.2;
+      text-align: right;
+      pointer-events: none;
     }
-    .trail-branch-title:focus-visible {
-      outline: none;
-      border-bottom-color: var(--annotation);
-    }
-    .trail-branch-path .trail-step-title-display,
-    .trail-branch-path .trail-step-title-input {
-      font-size: .95rem;
-    }
-    .trail-branch-path .trail-step-body {
-      font-size: .84rem;
-    }
-    .trail-branch-empty {
-      margin-left: 30px;
-      font-size: .76rem;
-    }
-    .trail-branch-links {
+    .trail-map-svg {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
       overflow: visible;
-      pointer-events: none;
-      z-index: 0;
     }
-    .trail-branch-link {
+    .trail-map-path {
       fill: none;
       stroke: var(--annotation);
-      stroke-width: 2.4;
       stroke-linecap: round;
       stroke-linejoin: round;
-      opacity: .46;
       vector-effect: non-scaling-stroke;
+      cursor: pointer;
+    }
+    path.trail-map-path {
+      stroke-width: 4.2;
+    }
+    circle.trail-map-path {
+      fill: var(--annotation);
+      stroke: none;
+    }
+    .trail-map-path-active {
+      opacity: 1;
+    }
+    .trail-map-path-muted {
+      opacity: .28;
+    }
+    .trail-map-path-muted:hover,
+    .trail-map-node:hover {
+      opacity: .72;
+    }
+    .trail-map-node {
+      cursor: pointer;
+    }
+    .trail-path-workspace {
+      min-width: 0;
+      max-width: 760px;
+    }
+    .trail-path-panel[hidden] {
+      display: none !important;
+    }
+    .trail-active-branch-heading {
+      min-height: 28px;
+      margin-bottom: 2px;
+    }
+    .trail-branch-title {
+      min-width: 0;
+      width: min(100%, 420px);
+      padding: 1px 0 4px;
+      border: 0;
+      border-bottom: 1px solid transparent;
+      border-radius: 0;
+      background: transparent;
+      color: var(--soft);
+      font-size: .72rem;
+      font-weight: 560;
+      line-height: 1.3;
+    }
+    .trail-branch-title:focus-visible {
+      outline: none;
+      color: var(--ink);
+      border-bottom-color: var(--annotation);
+    }
+    .trail-content-path {
+      margin-top: 0;
+    }
+    .trail-branch-empty {
+      margin-left: 0;
+      font-size: .82rem;
     }
 
     .trail-path {
@@ -6148,6 +6108,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
       align-items: center;
       min-height: 44px;
       padding: 7px 0 3px;
+    }
+    .trail-step-content-only .trail-step-summary {
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
     }
     .trail-step-rail {
       width: 20px;
@@ -6225,6 +6189,22 @@ function htmlPage(title: string, body: string, status = 200): Response {
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .trail-step-title-button {
+      display: block;
+      width: 100%;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+    }
+    .trail-step-title-button:hover,
+    .trail-step-title-button:focus-visible {
+      color: var(--annotation);
+      filter: none;
+      outline: none;
+    }
     .trail-step-title-display {
       display: block;
     }
@@ -6265,6 +6245,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-size: .86rem;
       line-height: 1.5;
     }
+    .trail-step-content-only .trail-step-body {
+      width: 100%;
+      margin-left: 0;
+    }
     .trail-step-body::placeholder {
       color: var(--soft);
     }
@@ -6278,6 +6262,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
       margin: -2px 0 0 30px;
       padding: 0 0 12px;
       max-width: 650px;
+    }
+    .trail-step-content-only .trail-step-detail {
+      margin-left: 0;
+      max-width: 680px;
     }
     .trail-node-detail {
       display: block;
@@ -6446,14 +6434,13 @@ function htmlPage(title: string, body: string, status = 200): Response {
       }
     }
 
-    @media (max-width: 1120px) {
+    @media (max-width: 820px) {
       .trail-graph {
-        grid-template-columns: 112px minmax(430px, 1fr) minmax(270px, .72fr);
-        column-gap: 16px;
+        grid-template-columns: 86px minmax(0, 1fr);
+        column-gap: 12px;
       }
-      .trail-branch-chip {
-        width: 104px;
-        max-width: 104px;
+      .trail-map {
+        width: 86px;
       }
     }
 
@@ -6531,39 +6518,13 @@ function htmlPage(title: string, body: string, status = 200): Response {
         margin-top: 18px;
       }
       .trail-graph {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 14px;
+        grid-template-columns: 62px minmax(0, 1fr);
+        gap: 10px;
       }
-      .trail-branch-lane-left {
-        grid-column: 1;
-        grid-row: 1;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px 12px;
-        height: auto !important;
-        min-height: 0;
+      .trail-map {
+        width: 62px;
       }
-      .trail-branch-chip {
-        position: static;
-        width: auto;
-        max-width: 160px;
-        text-align: left;
-      }
-      .trail-main-path {
-        grid-column: 1;
-        grid-row: 2;
-      }
-      .trail-branch-lane-right {
-        grid-column: 1;
-        grid-row: 3;
-      }
-      .trail-branch-panel {
-        margin-top: 0 !important;
-        padding-top: 10px;
-        border-top: 1px solid var(--wash);
-      }
-      .trail-branch-links {
+      .trail-map-caption {
         display: none;
       }
       .trail-mark-add {
