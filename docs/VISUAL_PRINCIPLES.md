@@ -34,6 +34,8 @@ The active path uses annotation blue and is rendered above every inactive path. 
 
 The focused path occupies the lane nearest the visible mark text. Node positions must remain aligned with the marks they represent. Opening a mark expands the visible path length naturally as later marks move down.
 
+Use one topology renderer only: the left SVG brush rail. Do not keep or reintroduce a second inline rail, duplicate node renderer, generic fallback graph, or dormant CSS path for an older topology. Old visual implementations should be removed rather than left beside the current one.
+
 ## Marks
 
 A mark has two layers:
@@ -50,6 +52,8 @@ Controls should be obvious when needed and visually quiet when not in use. Use c
 Use short, direct labels. Prefer plain verbs for actions. Avoid prototype or implementation language in the visible interface unless it is necessary for the user to understand what will happen.
 
 Keep interaction patterns consistent. If a topology node opens mark detail in one place, it should behave the same way everywhere.
+
+Editable trail and mark titles should look like ordinary typography. Editing is indicated by the text caret only: no underline, focus box, glow, tinted background, or other chrome. Browser spelling and grammar underlines are disabled inside the trail workspace because scientific terminology and notation make them noisy.
 
 ## Layout
 
