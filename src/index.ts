@@ -5874,14 +5874,16 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-title-input {
       min-width: 0;
       width: 100%;
-      padding: 0;
+      min-height: 1.3em;
+      padding: .03em 0 .16em;
+      overflow: visible;
       border: 0;
       border-radius: 0;
       background: transparent;
       color: var(--ink);
       font-size: clamp(2rem, 4vw, 2.8rem);
       font-weight: 500;
-      line-height: 1.08;
+      line-height: 1.14;
       letter-spacing: -.025em;
     }
     .trail-title-input:focus-visible {
