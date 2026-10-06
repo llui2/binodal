@@ -80,6 +80,12 @@ interface TrailSummary {
   created_at: string;
 }
 
+const TRAIL_BRUSH_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="48" viewBox="0 0 18 48">
+  <path d="M9 0 C7.4 7 10.5 13 8.1 20 C6.7 27 10.2 34 8.7 48" fill="none" stroke="#315c84" stroke-width="3.4" stroke-linecap="round"/>
+  <path d="M10.1 0 C8.1 10 10.6 28 8.4 48" fill="none" stroke="#315c84" stroke-width="1.15" stroke-linecap="round" opacity=".48"/>
+  <path d="M7.7 1 C8.8 12 7.1 34 9.2 47" fill="none" stroke="#315c84" stroke-width=".7" stroke-linecap="round" opacity=".28"/>
+</svg>`;
+
 const TRAILS_LOGO_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1058 1024\" role=\"img\" aria-label=\"Trails logo\"><g transform=\"matrix(0.1713375,0,0,-0.1713375,-781.55853,1372.7001)\" fill=\"#315c84\"><path d=\"m 9936,7854 c -86,-21 -172,-71 -252,-147 -85,-80 -128,-156 -174,-307 -37,-121 -65,-175 -115,-219 -20,-17 -109,-67 -198,-110 -238,-117 -315,-188 -520,-482 -187,-269 -362,-393 -637,-452 -74,-15 -132,-20 -260,-20 -182,1 -248,7 -549,54 -162,26 -207,30 -222,21 -15,-10 -19,-9 -19,2 0,10 -18,16 -63,21 -84,9 -402,0 -496,-14 -80,-12 -234,-57 -265,-77 -18,-12 -17,-13 9,-20 18,-4 36,-2 49,7 12,7 44,16 71,21 28,4 75,12 105,17 30,5 89,10 130,10 l 75,1 -30,-20 -30,-20 h 28 c 17,0 27,-5 25,-11 -3,-10 -34,-15 -164,-22 -28,-2 -56,-7 -62,-11 -7,-4 -12,-1 -12,9 0,9 5,13 10,10 6,-3 10,-1 10,5 0,7 -7,9 -16,6 -9,-3 -19,-6 -24,-6 -4,0 -7,-7 -6,-16 1,-10 -16,-23 -49,-36 -27,-11 -52,-23 -55,-28 -6,-9 -111,-30 -121,-24 -12,7 -145,-44 -247,-95 -57,-29 -109,-50 -115,-48 -18,7 85,102 148,138 31,17 54,34 51,36 -5,6 58,69 77,76 7,4 6,6 -5,6 -35,2 -198,-64 -325,-130 -72,-38 -141,-69 -153,-69 -12,0 -41,14 -66,31 -91,62 -151,83 -256,87 -78,3 -110,0 -165,-16 -163,-50 -286,-172 -343,-342 -18,-54 -21,-82 -18,-166 3,-89 7,-108 36,-166 61,-124 184,-219 322,-249 73,-16 202,-6 270,20 74,28 177,100 223,156 22,25 58,87 82,138 87,186 198,291 387,366 155,63 232,75 453,76 217,0 287,-10 448,-64 170,-58 323,-154 432,-274 37,-40 112,-132 168,-206 301,-398 575,-559 1108,-656 288,-52 445,-119 564,-239 101,-103 151,-213 170,-381 6,-45 10,-55 16,-40 9,23 12,8 9,-37 -1,-20 3,-28 14,-28 9,0 16,5 16,10 0,19 21,10 29,-12 11,-29 -12,-59 -31,-40 -7,7 -15,12 -19,12 -14,0 -47,-65 -54,-105 -8,-46 -32,-120 -69,-218 -29,-76 -32,-105 -13,-131 12,-16 14,-16 24,6 18,39 63,163 63,174 0,6 9,23 21,38 11,14 17,30 14,36 -7,11 25,48 34,40 3,-3 15,9 26,27 11,18 23,32 27,33 5,0 6,-60 5,-134 -3,-104 -8,-140 -20,-160 -10,-14 -17,-38 -17,-53 0,-15 -5,-35 -11,-43 -8,-11 -9,2 -4,47 7,71 -8,93 -25,36 -9,-32 -30,-225 -31,-288 -1,-62 11,-139 24,-153 27,-31 129,-254 124,-272 -3,-10 1,-27 9,-38 25,-35 53,-121 73,-217 37,-180 132,-289 301,-345 54,-18 82,-21 170,-18 96,3 112,6 174,37 99,48 185,133 226,223 30,63 35,86 38,170 6,146 -31,240 -131,336 -64,59 -115,87 -199,107 -84,20 -127,19 -248,-5 -115,-23 -152,-19 -225,24 -83,49 -135,161 -135,293 0,88 15,155 55,240 77,166 100,283 92,480 -4,109 -10,156 -31,226 -75,250 -224,425 -466,547 -149,75 -264,107 -535,149 -425,66 -602,163 -838,461 -207,262 -242,302 -312,362 -40,35 -73,63 -72,64 1,0 65,-6 142,-13 165,-17 398,-11 528,12 171,31 348,105 482,200 128,92 213,194 341,411 116,197 228,311 369,379 160,76 325,85 464,26 105,-45 177,-61 271,-61 162,0 295,54 405,165 118,119 161,237 153,419 -4,86 -7,101 -46,179 -68,137 -194,236 -343,272 -79,18 -205,18 -283,-1 z m -208,-708 c 3,-12 -1,-17 -10,-14 -7,3 -15,13 -16,22 -3,12 1,17 10,14 7,-3 15,-13 16,-22 z M 6660,6160 c 0,-5 -4,-10 -10,-10 -5,0 -10,5 -10,10 0,6 5,10 10,10 6,0 10,-4 10,-10 z m 102,-32 c -2,-25 0,-28 30,-29 18,-1 37,-1 41,0 5,1 7,-4 5,-11 -3,-9 -22,-12 -59,-10 -30,1 -75,4 -102,5 -52,2 -59,20 -9,25 23,2 32,8 32,21 0,25 10,32 40,29 21,-3 25,-8 22,-30 z m 212,-17 c 20,-16 52,-32 71,-35 21,-4 35,-13 35,-21 0,-11 -6,-12 -25,-5 -14,5 -25,7 -25,5 0,-3 -11,2 -24,10 -18,12 -30,13 -50,5 -15,-5 -41,-10 -58,-10 -27,0 -29,2 -17,17 11,13 11,17 2,20 -7,3 -13,13 -13,24 0,31 59,25 104,-10 z m 161,-71 c 3,-5 1,-10 -4,-10 -6,0 -11,5 -11,10 0,6 2,10 4,10 3,0 8,-4 11,-10 z m -88,-76 c -3,-3 -12,-4 -19,-1 -8,3 -5,6 6,6 11,1 17,-2 13,-5 z m 83,-15 c 0,-11 -27,-12 -34,0 -3,4 -3,11 0,14 8,8 34,-3 34,-14 z m 54,-85 c 4,-9 4,-19 1,-22 -8,-8 -55,16 -55,28 0,17 47,11 54,-6 z M 9465,4010 c 3,-5 1,-10 -4,-10 -6,0 -11,5 -11,10 0,6 2,10 4,10 3,0 8,-4 11,-10 z m 95,-35 c 10,-20 11,-30 1,-51 -9,-21 -14,-24 -26,-14 -16,13 -19,47 -9,74 9,23 19,20 34,-9 z m -20,-149 c 0,-24 -17,-28 -23,-6 -3,13 0,20 9,20 8,0 14,-6 14,-14 z m -139,-79 c -13,-13 -15,11 -4,40 7,16 8,15 11,-6 2,-13 -1,-28 -7,-34 z\" /><path d=\"m 9213,3343 c -17,-69 -2,-175 22,-151 6,6 7,7 5,111 -1,69 -14,89 -27,40 z\" /><path d=\"m 9249,3124 c -7,-8 -9,-27 -5,-45 9,-45 77,-178 124,-240 44,-59 102,-118 102,-103 0,19 -107,272 -140,331 -36,64 -61,81 -81,57 z\" /></g></svg>\n";
 
 export default {
@@ -269,6 +275,15 @@ async function route(request: Request, env: Env): Promise<Response> {
       headers: {
         "Content-Type": "image/svg+xml; charset=utf-8",
         "Cache-Control": "no-store, max-age=0",
+      },
+    });
+  }
+
+  if (request.method === "GET" && path === "/trail-brush.svg") {
+    return new Response(TRAIL_BRUSH_SVG, {
+      headers: {
+        "Content-Type": "image/svg+xml; charset=utf-8",
+        "Cache-Control": "public, max-age=86400",
       },
     });
   }
@@ -538,15 +553,11 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
 
   const comparableText = (value: string): string =>
     value.replace(/\s+/g, " ").trim().replace(/[.!?;:]+$/, "").toLowerCase();
-  const compactTitle = comparableText(title);
-  const compactContent = comparableText(item.content ?? "");
-  const noteDetail = compactContent && compactContent !== compactTitle
-    ? item.content ?? ""
-    : item.note ?? "";
-  const detailValue = item.kind === "note" ? noteDetail : item.note ?? "";
-  const detailAttribute = item.kind === "note"
-    ? `data-item-content="${item.id}"`
-    : `data-item-note="${item.id}"`;
+  const mainText = item.kind === "note" &&
+    comparableText(item.content ?? "") !== comparableText(title)
+      ? item.content ?? ""
+      : "";
+  const detailsText = item.note ?? "";
 
   return `<div class="trail-step" data-trail-item="${item.id}" data-open="false">
     <div class="trail-step-summary">
@@ -560,10 +571,12 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
       <span class="trail-step-kind">${escapeHtml(kind)}</span>
     </div>
 
-    <div class="trail-step-preview" data-item-preview="${item.id}">${escapeHtml(detailValue || "write…")}</div>
+    ${item.kind === "note"
+      ? `<textarea class="trail-step-body" rows="1" maxlength="10000" aria-label="Note text" placeholder="write…" data-item-content="${item.id}">${escapeHtml(mainText)}</textarea>`
+      : ""}
 
     <div class="trail-step-detail" data-item-detail="${item.id}" hidden>
-      <textarea class="trail-node-detail" rows="3" maxlength="10000" aria-label="Node notes" placeholder="write…" ${detailAttribute}>${escapeHtml(detailValue)}</textarea>
+      <textarea class="trail-node-detail" rows="2" maxlength="2000" aria-label="Node details" placeholder="details…" data-item-note="${item.id}">${escapeHtml(detailsText)}</textarea>
 
       <div class="trail-step-footer">
         ${isOpenable
@@ -849,11 +862,16 @@ function trailLiveScript(): Response {
     field.addEventListener("blur", () => flushSave(field, url, payload));
   };
 
+  const autoGrow = (field) => {
+    if (!field) return;
+    field.style.height = "auto";
+    field.style.height = field.scrollHeight + "px";
+  };
+
   const setStepOpen = (step, open) => {
     const toggle = step.querySelector("[data-item-toggle]");
     const titleDisplay = step.querySelector(".trail-step-title-display");
     const titleField = step.querySelector("[data-item-title]");
-    const preview = step.querySelector("[data-item-preview]");
     const detail = step.querySelector("[data-item-detail]");
 
     step.dataset.open = open ? "true" : "false";
@@ -866,8 +884,10 @@ function trailLiveScript(): Response {
       titleField.hidden = !open;
       if (!open && document.activeElement === titleField) titleField.blur();
     }
-    if (preview) preview.hidden = open;
-    if (detail) detail.hidden = !open;
+    if (detail) {
+      detail.hidden = !open;
+      if (open) detail.querySelectorAll("textarea").forEach(autoGrow);
+    }
   };
 
   const bindTrailItems = () => {
@@ -875,7 +895,6 @@ function trailLiveScript(): Response {
       const toggle = step.querySelector("[data-item-toggle]");
       const titleDisplay = step.querySelector(".trail-step-title-display");
       const titleField = step.querySelector("[data-item-title]");
-      const preview = step.querySelector("[data-item-preview]");
 
       if (step.dataset.bound !== "true") {
         step.dataset.bound = "true";
@@ -913,29 +932,27 @@ function trailLiveScript(): Response {
         );
       }
 
-      const noteField = step.querySelector("[data-item-note]");
-      if (noteField) {
-        noteField.addEventListener("input", () => {
-          if (preview) preview.textContent = noteField.value.trim() || "write…";
-        });
-        const itemId = noteField.dataset.itemNote;
-        bindAutosaveField(
-          noteField,
-          "/api/trail/items/" + itemId,
-          () => ({ note: noteField.value || null }),
-        );
-      }
-
       const contentField = step.querySelector("[data-item-content]");
       if (contentField) {
-        contentField.addEventListener("input", () => {
-          if (preview) preview.textContent = contentField.value.trim() || "write…";
-        });
+        autoGrow(contentField);
+        contentField.addEventListener("input", () => autoGrow(contentField));
         const itemId = contentField.dataset.itemContent;
         bindAutosaveField(
           contentField,
           "/api/trail/items/" + itemId,
           () => ({ content: contentField.value || null }),
+        );
+      }
+
+      const noteField = step.querySelector("[data-item-note]");
+      if (noteField) {
+        autoGrow(noteField);
+        noteField.addEventListener("input", () => autoGrow(noteField));
+        const itemId = noteField.dataset.itemNote;
+        bindAutosaveField(
+          noteField,
+          "/api/trail/items/" + itemId,
+          () => ({ note: noteField.value || null }),
         );
       }
     });
@@ -4671,13 +4688,13 @@ function htmlPage(title: string, body: string, status = 200): Response {
       content: "";
       position: absolute;
       left: 0;
-      top: 26px;
-      bottom: -14px;
-      width: 14px;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='32' viewBox='0 0 14 32'%3E%3Cpath d='M7 0 C5.8 5.5 8.3 10.5 6.6 16 C5.5 21 8.2 26.5 7 32' fill='none' stroke='%23315c84' stroke-width='2.4' stroke-linecap='round'/%3E%3Cpath d='M7.8 0 C6.4 8.5 8.4 22 6.9 32' fill='none' stroke='%23315c84' stroke-width='.8' stroke-linecap='round' opacity='.55'/%3E%3C/svg%3E");
+      top: 22px;
+      bottom: -22px;
+      width: 18px;
+      background-image: url("/trail-brush.svg");
       background-repeat: repeat-y;
       background-position: center top;
-      background-size: 14px 32px;
+      background-size: 18px 48px;
       pointer-events: none;
       z-index: 0;
     }
@@ -4685,26 +4702,26 @@ function htmlPage(title: string, body: string, status = 200): Response {
       position: relative;
       z-index: 1;
       display: grid;
-      grid-template-columns: 14px minmax(0, 1fr) auto;
+      grid-template-columns: 18px minmax(0, 1fr) auto;
       gap: 10px;
       align-items: center;
-      min-height: 40px;
+      min-height: 44px;
       padding: 7px 0 3px;
     }
     .trail-step-rail {
-      width: 14px;
-      height: 26px;
+      width: 18px;
+      height: 30px;
       display: grid;
       place-items: center;
       position: relative;
       z-index: 2;
     }
     .trail-step-node {
-      width: 12px;
-      height: 12px;
+      width: 16px;
+      height: 16px;
       padding: 0;
       border: 0;
-      border-radius: 52% 48% 46% 54%;
+      border-radius: 53% 47% 45% 55%;
       background: var(--annotation);
       cursor: pointer;
       position: relative;
@@ -4720,11 +4737,11 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-step-node:focus-visible {
       filter: none;
       outline: none;
-      transform: scale(1.16);
+      transform: scale(1.1);
     }
     .trail-step[data-open="true"] .trail-step-node {
-      transform: scale(1.42);
-      border-radius: 47% 53% 55% 45%;
+      transform: scale(1.46);
+      border-radius: 46% 54% 57% 43%;
     }
     .trail-step-line {
       min-width: 0;
@@ -4733,7 +4750,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-step-title-display[hidden],
     .trail-step-title-input[hidden],
-    .trail-step-preview[hidden],
     .trail-step-detail[hidden] {
       display: none !important;
     }
@@ -4772,49 +4788,59 @@ function htmlPage(title: string, body: string, status = 200): Response {
       letter-spacing: .035em;
       white-space: nowrap;
     }
-    .trail-step-preview {
+    .trail-step-body {
       position: relative;
       z-index: 1;
-      margin: -1px 0 10px 24px;
-      max-width: 650px;
-      color: var(--muted);
-      font-size: .78rem;
-      line-height: 1.45;
-      white-space: nowrap;
+      display: block;
+      width: calc(100% - 28px);
+      min-height: 26px;
+      margin: -2px 0 10px 28px;
+      padding: 2px 0 4px;
       overflow: hidden;
-      text-overflow: ellipsis;
+      resize: none;
+      border: 0;
+      border-bottom: 1px solid transparent;
+      border-radius: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: .79rem;
+      line-height: 1.48;
     }
-    .trail-step-preview:empty {
-      min-height: 1.1em;
+    .trail-step-body::placeholder {
+      color: var(--soft);
+    }
+    .trail-step-body:focus-visible {
+      outline: none;
+      border-bottom-color: var(--wash);
     }
     .trail-step-detail {
       position: relative;
       z-index: 1;
-      margin: -1px 0 0 24px;
+      margin: -2px 0 0 28px;
       padding: 0 0 12px;
       max-width: 650px;
     }
     .trail-node-detail {
       display: block;
       width: 100%;
-      min-height: 76px;
-      padding: 4px 0 6px;
-      border: 0;
-      border-bottom: 1px solid transparent;
-      border-radius: 0;
-      background: transparent;
+      min-height: 58px;
+      padding: 8px 10px;
+      overflow: hidden;
+      resize: none;
+      border: 1px solid var(--wash);
+      border-radius: 2px;
+      background: var(--field-muted);
       color: var(--body-muted);
-      font-size: .84rem;
-      line-height: 1.5;
-      resize: vertical;
+      font-size: .82rem;
+      line-height: 1.48;
     }
     .trail-node-detail::placeholder {
       color: var(--soft);
     }
     .trail-node-detail:focus-visible {
       outline: none;
-      border-bottom-color: var(--wash);
-      background: transparent;
+      border-color: color-mix(in srgb, var(--annotation) 35%, var(--wash));
+      background: var(--field-focus);
     }
     .trail-step-footer {
       display: flex;
@@ -4822,7 +4848,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       justify-content: space-between;
       gap: 12px;
       min-height: 24px;
-      margin-top: 2px;
+      margin-top: 4px;
     }
     .trail-step-open {
       color: var(--annotation);
