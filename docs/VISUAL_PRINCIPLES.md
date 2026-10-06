@@ -45,7 +45,7 @@ A mark has two layers:
 1. permanent content that remains visible in the trail;
 2. a secondary detail block that opens and closes from the corresponding topology node.
 
-The permanent layer should stay compact and readable. The detail layer can use a quiet filled surface to distinguish it from the surrounding page.
+The permanent layer should stay compact and readable. Mark titles may span multiple lines and should grow naturally rather than being forced into a single-line ellipsis. Their topology node stays anchored to the first title line so adding title lines does not move the node downward. The detail layer can use a quiet filled surface to distinguish it from the surrounding page.
 
 Paper/link type labels live in a dedicated right-hand metadata gutter outside the mark text column. Permanent text and expanded detail content must never run underneath that gutter. Node actions belong as quiet inline icon controls at the bottom right of the detail block rather than behind a separate overflow menu.
 
@@ -57,7 +57,7 @@ Use short, direct labels. Prefer plain verbs for actions. Avoid prototype or imp
 
 Keep interaction patterns consistent. If a topology node opens mark detail in one place, it should behave the same way everywhere.
 
-Editable trail and mark titles should look like ordinary typography. Editing is indicated by the text caret only: no underline, focus box, glow, tinted background, or other chrome. Use a small structured caret rather than either a hairline or a full block; an underscore-style caret is preferred where supported. Browser spelling and grammar underlines are disabled inside the trail workspace because scientific terminology and notation make them noisy.
+Editable trail and mark titles should look like ordinary typography. Editing is indicated by the text caret only: no underline, focus box, glow, tinted background, or other chrome. Use a short, thick horizontal caret with a fixed visual length and no blinking; do not rely on the browser's hairline or variable-width underscore caret. Browser spelling and grammar underlines are disabled inside the trail workspace because scientific terminology and notation make them noisy.
 
 ## Layout
 
