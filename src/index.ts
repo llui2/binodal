@@ -1962,12 +1962,27 @@ async function mutateTrailItem(
 
   if (!item) return withTrailCookie(redirect("/trail", 303), trail.cookie);
 
+  const form = await request.formData();
+  const branchId = Math.max(0, Math.trunc(Number(form.get("branch_id") ?? 0)));
+
   if (action === "remove") {
-    await env.DB.prepare("DELETE FROM trail_items WHERE id = ? AND trail_id = ?")
-      .bind(itemId, trail.id)
+    await env.DB.prepare(
+      "DELETE FROM trail_item_placements WHERE trail_id = ? AND item_id = ? AND branch_id = ?",
+    )
+      .bind(trail.id, itemId, branchId)
       .run();
+
+    const remaining = await env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM trail_item_placements WHERE trail_id = ? AND item_id = ?",
+    )
+      .bind(trail.id, itemId)
+      .first<{ count: number }>();
+    if (Number(remaining?.count ?? 0) === 0) {
+      await env.DB.prepare("DELETE FROM trail_items WHERE id = ? AND trail_id = ?")
+        .bind(itemId, trail.id)
+        .run();
+    }
   } else if (action === "title") {
-    const form = await request.formData();
     const title = String(form.get("title") ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
     await env.DB.prepare(
       "UPDATE trail_items SET title = ? WHERE id = ? AND trail_id = ?",
@@ -1975,7 +1990,6 @@ async function mutateTrailItem(
       .bind(title || "untitled", itemId, trail.id)
       .run();
   } else if (action === "note") {
-    const form = await request.formData();
     const note = String(form.get("note") ?? "").trim().slice(0, 2000);
     await env.DB.prepare(
       "UPDATE trail_items SET note = ? WHERE id = ? AND trail_id = ?",
@@ -1983,31 +1997,54 @@ async function mutateTrailItem(
       .bind(note || null, itemId, trail.id)
       .run();
   } else if (action === "move") {
-    const form = await request.formData();
     const direction = Number(form.get("direction")) < 0 ? -1 : 1;
-    const neighbor = await env.DB.prepare(
-      direction < 0
-        ? `SELECT id, position FROM trail_items
-             WHERE trail_id = ? AND (position < ? OR (position = ? AND id < ?))
-             ORDER BY position DESC, id DESC LIMIT 1`
-        : `SELECT id, position FROM trail_items
-             WHERE trail_id = ? AND (position > ? OR (position = ? AND id > ?))
-             ORDER BY position ASC, id ASC LIMIT 1`,
+    const placement = await env.DB.prepare(
+      `SELECT position
+         FROM trail_item_placements
+        WHERE trail_id = ? AND item_id = ? AND branch_id = ?`,
     )
-      .bind(trail.id, item.position, item.position, item.id)
-      .first<{ id: number; position: number }>();
+      .bind(trail.id, itemId, branchId)
+      .first<{ position: number }>();
 
-    if (neighbor) {
-      const temporary = -1_000_000_000 - item.id;
-      await env.DB.prepare("UPDATE trail_items SET position = ? WHERE id = ?")
-        .bind(temporary, item.id)
-        .run();
-      await env.DB.prepare("UPDATE trail_items SET position = ? WHERE id = ?")
-        .bind(item.position, neighbor.id)
-        .run();
-      await env.DB.prepare("UPDATE trail_items SET position = ? WHERE id = ?")
-        .bind(neighbor.position, item.id)
-        .run();
+    if (placement) {
+      const neighbor = await env.DB.prepare(
+        direction < 0
+          ? `SELECT item_id, position
+               FROM trail_item_placements
+              WHERE trail_id = ? AND branch_id = ?
+                AND (position < ? OR (position = ? AND item_id < ?))
+              ORDER BY position DESC, item_id DESC
+              LIMIT 1`
+          : `SELECT item_id, position
+               FROM trail_item_placements
+              WHERE trail_id = ? AND branch_id = ?
+                AND (position > ? OR (position = ? AND item_id > ?))
+              ORDER BY position ASC, item_id ASC
+              LIMIT 1`,
+      )
+        .bind(
+          trail.id,
+          branchId,
+          placement.position,
+          placement.position,
+          itemId,
+        )
+        .first<{ item_id: number; position: number }>();
+
+      if (neighbor) {
+        await env.DB.batch([
+          env.DB.prepare(
+            `UPDATE trail_item_placements
+                SET position = ?
+              WHERE trail_id = ? AND item_id = ? AND branch_id = ?`,
+          ).bind(neighbor.position, trail.id, itemId, branchId),
+          env.DB.prepare(
+            `UPDATE trail_item_placements
+                SET position = ?
+              WHERE trail_id = ? AND item_id = ? AND branch_id = ?`,
+          ).bind(placement.position, trail.id, neighbor.item_id, branchId),
+        ]);
+      }
     }
   }
 
