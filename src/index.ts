@@ -1444,24 +1444,77 @@ function withTrailCookie(response: Response, cookie: string | null): Response {
 }
 
 async function listTrailItems(env: Env, trailId: string): Promise<TrailItemRow[]> {
+  return listTrailItemsInBranch(env, trailId, 0);
+}
+
+async function listTrailItemsInBranch(
+  env: Env,
+  trailId: string,
+  branchId: number,
+): Promise<TrailItemRow[]> {
   const result = await env.DB.prepare(
-    `SELECT id, trail_id, kind, title, url, content, note, source_ref, position, created_at
-       FROM trail_items
-      WHERE trail_id = ?
-      ORDER BY position ASC, id ASC`,
+    `SELECT i.id, i.trail_id, i.kind, i.title, i.url, i.content, i.note,
+            i.source_ref, p.position AS position, i.created_at
+       FROM trail_item_placements p
+       JOIN trail_items i ON i.id = p.item_id
+      WHERE p.trail_id = ?
+        AND p.branch_id = ?
+        AND i.trail_id = ?
+      ORDER BY p.position ASC, i.id ASC`,
   )
-    .bind(trailId)
+    .bind(trailId, branchId, trailId)
     .all<TrailItemRow>();
   return result.results ?? [];
 }
 
-async function nextTrailPosition(env: Env, trailId: string): Promise<number> {
-  const row = await env.DB.prepare(
-    "SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM trail_items WHERE trail_id = ?",
+async function listTrailBranches(env: Env, trailId: string): Promise<TrailBranchView[]> {
+  const result = await env.DB.prepare(
+    `SELECT id, trail_id, title, parent_item_id, created_at, updated_at
+       FROM trail_branches
+      WHERE trail_id = ?
+      ORDER BY created_at ASC, id ASC`,
   )
     .bind(trailId)
+    .all<TrailBranchRow>();
+
+  const branches = result.results ?? [];
+  return await Promise.all(
+    branches.map(async (branch) => ({
+      ...branch,
+      items: await listTrailItemsInBranch(env, trailId, branch.id),
+    })),
+  );
+}
+
+async function nextTrailPosition(
+  env: Env,
+  trailId: string,
+  branchId = 0,
+): Promise<number> {
+  const row = await env.DB.prepare(
+    `SELECT COALESCE(MAX(position), -1) + 1 AS next_position
+       FROM trail_item_placements
+      WHERE trail_id = ? AND branch_id = ?`,
+  )
+    .bind(trailId, branchId)
     .first<{ next_position: number }>();
   return Number(row?.next_position ?? 0);
+}
+
+async function placeTrailItem(
+  env: Env,
+  trailId: string,
+  itemId: number,
+  branchId = 0,
+): Promise<void> {
+  const position = await nextTrailPosition(env, trailId, branchId);
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO trail_item_placements
+       (trail_id, item_id, branch_id, position)
+     VALUES (?, ?, ?, ?)`,
+  )
+    .bind(trailId, itemId, branchId, position)
+    .run();
 }
 
 async function addToTrail(request: Request, env: Env): Promise<Response> {
