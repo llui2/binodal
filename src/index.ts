@@ -64,6 +64,19 @@ interface TrailItemRow {
   created_at: string;
 }
 
+interface TrailBranchRow {
+  id: number;
+  trail_id: string;
+  title: string;
+  parent_item_id: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface TrailBranchView extends TrailBranchRow {
+  items: TrailItemRow[];
+}
+
 interface TrailContext {
   id: string;
   cookie: string | null;
@@ -225,7 +238,13 @@ async function route(request: Request, env: Env): Promise<Response> {
     return mutateTrailItem(request, env, Number(trailAction[1]), trailAction[2]);
   }
 
-  if (path === "/api/trail" || path === "/api/trail/items" || /^\/api\/trail\/items\/\d+$/.test(path)) {
+  if (
+    path === "/api/trail" ||
+    path === "/api/trail/items" ||
+    /^\/api\/trail\/items\/\d+$/.test(path) ||
+    path === "/api/trail/branches" ||
+    /^\/api\/trail\/branches\/\d+$/.test(path)
+  ) {
     return handleTrailApi(request, env, path);
   }
 
