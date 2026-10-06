@@ -69,6 +69,17 @@ interface TrailContext {
   cookie: string | null;
 }
 
+interface TrailUser {
+  id: number;
+  username: string;
+}
+
+interface TrailSummary {
+  id: string;
+  question: string | null;
+  created_at: string;
+}
+
 const TRAILS_LOGO_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1058 1024\" role=\"img\" aria-label=\"Trails logo\"><g transform=\"matrix(0.1713375,0,0,-0.1713375,-781.55853,1372.7001)\" fill=\"#315c84\"><path d=\"m 9936,7854 c -86,-21 -172,-71 -252,-147 -85,-80 -128,-156 -174,-307 -37,-121 -65,-175 -115,-219 -20,-17 -109,-67 -198,-110 -238,-117 -315,-188 -520,-482 -187,-269 -362,-393 -637,-452 -74,-15 -132,-20 -260,-20 -182,1 -248,7 -549,54 -162,26 -207,30 -222,21 -15,-10 -19,-9 -19,2 0,10 -18,16 -63,21 -84,9 -402,0 -496,-14 -80,-12 -234,-57 -265,-77 -18,-12 -17,-13 9,-20 18,-4 36,-2 49,7 12,7 44,16 71,21 28,4 75,12 105,17 30,5 89,10 130,10 l 75,1 -30,-20 -30,-20 h 28 c 17,0 27,-5 25,-11 -3,-10 -34,-15 -164,-22 -28,-2 -56,-7 -62,-11 -7,-4 -12,-1 -12,9 0,9 5,13 10,10 6,-3 10,-1 10,5 0,7 -7,9 -16,6 -9,-3 -19,-6 -24,-6 -4,0 -7,-7 -6,-16 1,-10 -16,-23 -49,-36 -27,-11 -52,-23 -55,-28 -6,-9 -111,-30 -121,-24 -12,7 -145,-44 -247,-95 -57,-29 -109,-50 -115,-48 -18,7 85,102 148,138 31,17 54,34 51,36 -5,6 58,69 77,76 7,4 6,6 -5,6 -35,2 -198,-64 -325,-130 -72,-38 -141,-69 -153,-69 -12,0 -41,14 -66,31 -91,62 -151,83 -256,87 -78,3 -110,0 -165,-16 -163,-50 -286,-172 -343,-342 -18,-54 -21,-82 -18,-166 3,-89 7,-108 36,-166 61,-124 184,-219 322,-249 73,-16 202,-6 270,20 74,28 177,100 223,156 22,25 58,87 82,138 87,186 198,291 387,366 155,63 232,75 453,76 217,0 287,-10 448,-64 170,-58 323,-154 432,-274 37,-40 112,-132 168,-206 301,-398 575,-559 1108,-656 288,-52 445,-119 564,-239 101,-103 151,-213 170,-381 6,-45 10,-55 16,-40 9,23 12,8 9,-37 -1,-20 3,-28 14,-28 9,0 16,5 16,10 0,19 21,10 29,-12 11,-29 -12,-59 -31,-40 -7,7 -15,12 -19,12 -14,0 -47,-65 -54,-105 -8,-46 -32,-120 -69,-218 -29,-76 -32,-105 -13,-131 12,-16 14,-16 24,6 18,39 63,163 63,174 0,6 9,23 21,38 11,14 17,30 14,36 -7,11 25,48 34,40 3,-3 15,9 26,27 11,18 23,32 27,33 5,0 6,-60 5,-134 -3,-104 -8,-140 -20,-160 -10,-14 -17,-38 -17,-53 0,-15 -5,-35 -11,-43 -8,-11 -9,2 -4,47 7,71 -8,93 -25,36 -9,-32 -30,-225 -31,-288 -1,-62 11,-139 24,-153 27,-31 129,-254 124,-272 -3,-10 1,-27 9,-38 25,-35 53,-121 73,-217 37,-180 132,-289 301,-345 54,-18 82,-21 170,-18 96,3 112,6 174,37 99,48 185,133 226,223 30,63 35,86 38,170 6,146 -31,240 -131,336 -64,59 -115,87 -199,107 -84,20 -127,19 -248,-5 -115,-23 -152,-19 -225,24 -83,49 -135,161 -135,293 0,88 15,155 55,240 77,166 100,283 92,480 -4,109 -10,156 -31,226 -75,250 -224,425 -466,547 -149,75 -264,107 -535,149 -425,66 -602,163 -838,461 -207,262 -242,302 -312,362 -40,35 -73,63 -72,64 1,0 65,-6 142,-13 165,-17 398,-11 528,12 171,31 348,105 482,200 128,92 213,194 341,411 116,197 228,311 369,379 160,76 325,85 464,26 105,-45 177,-61 271,-61 162,0 295,54 405,165 118,119 161,237 153,419 -4,86 -7,101 -46,179 -68,137 -194,236 -343,272 -79,18 -205,18 -283,-1 z m -208,-708 c 3,-12 -1,-17 -10,-14 -7,3 -15,13 -16,22 -3,12 1,17 10,14 7,-3 15,-13 16,-22 z M 6660,6160 c 0,-5 -4,-10 -10,-10 -5,0 -10,5 -10,10 0,6 5,10 10,10 6,0 10,-4 10,-10 z m 102,-32 c -2,-25 0,-28 30,-29 18,-1 37,-1 41,0 5,1 7,-4 5,-11 -3,-9 -22,-12 -59,-10 -30,1 -75,4 -102,5 -52,2 -59,20 -9,25 23,2 32,8 32,21 0,25 10,32 40,29 21,-3 25,-8 22,-30 z m 212,-17 c 20,-16 52,-32 71,-35 21,-4 35,-13 35,-21 0,-11 -6,-12 -25,-5 -14,5 -25,7 -25,5 0,-3 -11,2 -24,10 -18,12 -30,13 -50,5 -15,-5 -41,-10 -58,-10 -27,0 -29,2 -17,17 11,13 11,17 2,20 -7,3 -13,13 -13,24 0,31 59,25 104,-10 z m 161,-71 c 3,-5 1,-10 -4,-10 -6,0 -11,5 -11,10 0,6 2,10 4,10 3,0 8,-4 11,-10 z m -88,-76 c -3,-3 -12,-4 -19,-1 -8,3 -5,6 6,6 11,1 17,-2 13,-5 z m 83,-15 c 0,-11 -27,-12 -34,0 -3,4 -3,11 0,14 8,8 34,-3 34,-14 z m 54,-85 c 4,-9 4,-19 1,-22 -8,-8 -55,16 -55,28 0,17 47,11 54,-6 z M 9465,4010 c 3,-5 1,-10 -4,-10 -6,0 -11,5 -11,10 0,6 2,10 4,10 3,0 8,-4 11,-10 z m 95,-35 c 10,-20 11,-30 1,-51 -9,-21 -14,-24 -26,-14 -16,13 -19,47 -9,74 9,23 19,20 34,-9 z m -20,-149 c 0,-24 -17,-28 -23,-6 -3,13 0,20 9,20 8,0 14,-6 14,-14 z m -139,-79 c -13,-13 -15,11 -4,40 7,16 8,15 11,-6 2,-13 -1,-28 -7,-34 z\" /><path d=\"m 9213,3343 c -17,-69 -2,-175 22,-151 6,6 7,7 5,111 -1,69 -14,89 -27,40 z\" /><path d=\"m 9249,3124 c -7,-8 -9,-27 -5,-45 9,-45 77,-178 124,-240 44,-59 102,-118 102,-103 0,19 -107,272 -140,331 -36,64 -61,81 -81,57 z\" /></g></svg>\n";
 
 export default {
@@ -124,7 +135,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === "GET" && path === "/privacy") {
     return renderPolicyPage(
       "Privacy",
-      `<p>Trails stores the information needed to provide the service, including research trails and their items, paper metadata, discussion content, and account information when you sign in with ORCID.</p>
+      `<p>Trails stores the information needed to provide the service, including research trails and their items, paper metadata, discussion content, a provisional trail username when you choose one, and account information when you sign in with ORCID.</p>
        <p>Trails uses a browser cookie to keep the current research trail associated with your browser. A private trail key can also grant access to a specific trail through integrations, so it should be treated as a secret.</p>
        <p>When Trails resolves a paper identifier or URL, it may contact the corresponding public scholarly service or publication page to retrieve metadata. Authentication through ORCID is handled through ORCID's authorization flow.</p>
        <p>Do not put confidential, regulated, or sensitive personal information into a trail while the service remains experimental.</p>
@@ -161,6 +172,18 @@ async function route(request: Request, env: Env): Promise<Response> {
 
   if (request.method === "POST" && path === "/trail/question") {
     return updateTrailQuestion(request, env);
+  }
+
+  if (request.method === "POST" && path === "/trail/user") {
+    return setTrailUser(request, env);
+  }
+
+  if (request.method === "POST" && path === "/trail/new") {
+    return createTrailForUser(request, env);
+  }
+
+  if (request.method === "POST" && path === "/trail/select") {
+    return selectTrailForUser(request, env);
   }
 
   if (request.method === "GET" && path === "/trail/connect") {
@@ -399,10 +422,16 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
 
 async function renderTrail(request: Request, env: Env): Promise<Response> {
   const trail = await ensureCurrentTrail(request, env);
-  const [items, question, user] = await Promise.all([
+  const trailUser = await currentTrailUser(request, env);
+  if (trailUser) {
+    await claimTrailForUser(env, trail.id, trailUser.id);
+  }
+
+  const [items, question, user, userTrails] = await Promise.all([
     listTrailItems(env, trail.id),
     getTrailQuestion(env, trail.id),
     currentUser(request, env),
+    trailUser ? listUserTrails(env, trailUser.id) : Promise.resolve([] as TrailSummary[]),
   ]);
 
   const itemHtml = items.length
@@ -416,31 +445,77 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
       ${renderIdentity(user)}
     </header>
     <main class="shell trail-page">
-      <div class="trail-heading">
-        <h1>trail</h1>
-        <a class="trail-connect-link" href="/trail/connect">connect ChatGPT</a>
-      </div>
+      <div class="trail-layout">
+        <div class="trail-main">
+          <div class="trail-heading">
+            <h1>trail</h1>
+            <a class="trail-connect-link" href="/trail/connect">connect ChatGPT</a>
+          </div>
 
-      <form class="trail-question" action="/trail/question" method="post">
-        <textarea id="trail-question" name="question" rows="2" maxlength="600" aria-label="Research question" placeholder="What are you trying to understand?">${escapeHtml(question ?? "")}</textarea>
-        <button class="text-button" type="submit">save</button>
-      </form>
+          <form class="trail-question" action="/trail/question" method="post">
+            <textarea id="trail-question" name="question" rows="2" maxlength="600" aria-label="Research question" placeholder="What are you trying to understand?">${escapeHtml(question ?? "")}</textarea>
+            <button class="text-button" type="submit">save</button>
+          </form>
 
-      <section class="trail-path" data-trail-live aria-label="Research path">
-        ${itemHtml}
-      </section>
+          <section class="trail-path" data-trail-live aria-label="Research path">
+            ${itemHtml}
+          </section>
 
-      <form class="trail-note-add" action="/trail/add" method="post">
-        <input type="hidden" name="kind" value="note">
-        <div>
-          <textarea id="trail-note" name="value" rows="2" maxlength="10000" aria-label="Add a thought, connection, or next question" placeholder="Add a thought, connection, or next question" required></textarea>
-          <button type="submit">Add note</button>
+          <form class="trail-note-add" action="/trail/add" method="post">
+            <input type="hidden" name="kind" value="note">
+            <div>
+              <textarea id="trail-note" name="value" rows="2" maxlength="10000" aria-label="Add a thought, connection, or next question" placeholder="Add a thought, connection, or next question" required></textarea>
+              <button type="submit">Add note</button>
+            </div>
+          </form>
         </div>
-      </form>
+
+        <aside class="trail-sidebar" aria-label="Your trails">
+          ${renderTrailSidebar(trailUser, userTrails, trail.id)}
+        </aside>
+      </div>
     </main>`,
   );
 
   return withTrailCookie(response, trail.cookie);
+}
+
+function renderTrailSidebar(
+  user: TrailUser | null,
+  trails: TrailSummary[],
+  currentTrailId: string,
+): string {
+  if (!user) {
+    return `<form class="trail-user-form" action="/trail/user" method="post">
+      <input name="username" maxlength="32" autocomplete="username" aria-label="Username" placeholder="username" required>
+      <button class="text-button" type="submit">use</button>
+      <p>prototype identity · no password</p>
+    </form>`;
+  }
+
+  const items = trails.length
+    ? trails.map((trail) => {
+        const label = trail.question?.trim() || "untitled trail";
+        const active = trail.id === currentTrailId ? " active" : "";
+        return `<form action="/trail/select" method="post">
+          <input type="hidden" name="trail_id" value="${escapeAttr(trail.id)}">
+          <button class="trail-list-button${active}" type="submit" title="${escapeAttr(label)}">${escapeHtml(label)}</button>
+        </form>`;
+      }).join("")
+    : `<p class="trail-sidebar-empty">no trails yet</p>`;
+
+  return `<div class="trail-sidebar-user">@${escapeHtml(user.username)}</div>
+    <form class="trail-new-form" action="/trail/new" method="post">
+      <button class="text-button" type="submit">+ new trail</button>
+    </form>
+    <div class="trail-list">${items}</div>
+    <details class="trail-user-switch">
+      <summary>switch user</summary>
+      <form action="/trail/user" method="post">
+        <input name="username" maxlength="32" autocomplete="username" aria-label="Username" placeholder="username" required>
+        <button class="text-button" type="submit">use</button>
+      </form>
+    </details>`;
 }
 
 function renderTrailItem(item: TrailItemRow, _index: number): string {
@@ -608,6 +683,9 @@ async function openTrailByIntegrationKey(
     .bind(token, trailId)
     .run();
 
+  const trailUser = await currentTrailUser(request, env);
+  if (trailUser) await claimTrailForUser(env, trailId, trailUser.id);
+
   const response = redirect("/trail", 303);
   const headers = new Headers(response.headers);
   headers.append("Set-Cookie", trailCookie(token, request));
@@ -701,9 +779,138 @@ function trailLiveScript(): Response {
   });
 }
 
+async function currentTrailUser(request: Request, env: Env): Promise<TrailUser | null> {
+  const cookies = parseCookies(request.headers.get("Cookie") ?? "");
+  const token = cookies.get("trail_user");
+  if (!token) return null;
+
+  return await env.DB.prepare(
+    `SELECT u.id, u.username
+       FROM trail_user_sessions s
+       JOIN trail_users u ON u.id = s.user_id
+      WHERE s.token = ?`,
+  )
+    .bind(token)
+    .first<TrailUser>();
+}
+
+function normalizeTrailUsername(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Za-z0-9_.-]/g, "")
+    .slice(0, 32);
+}
+
+function trailUserCookie(token: string, request: Request): string {
+  const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
+  return `trail_user=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${secure}`;
+}
+
+async function claimTrailForUser(env: Env, trailId: string, userId: number): Promise<void> {
+  await env.DB.prepare(
+    "INSERT INTO trail_owners (trail_id, user_id) VALUES (?, ?) ON CONFLICT(trail_id) DO NOTHING",
+  )
+    .bind(trailId, userId)
+    .run();
+}
+
+async function listUserTrails(env: Env, userId: number): Promise<TrailSummary[]> {
+  const result = await env.DB.prepare(
+    `SELECT t.id, c.question, t.created_at
+       FROM trail_owners o
+       JOIN trails t ON t.id = o.trail_id
+       LEFT JOIN trail_contexts c ON c.trail_id = t.id
+      WHERE o.user_id = ?
+      ORDER BY t.created_at DESC`,
+  )
+    .bind(userId)
+    .all<TrailSummary>();
+  return result.results ?? [];
+}
+
+async function setTrailUser(request: Request, env: Env): Promise<Response> {
+  assertSameOrigin(request);
+  const form = await request.formData();
+  const username = normalizeTrailUsername(String(form.get("username") ?? ""));
+  if (!username) return redirect("/trail", 303);
+
+  await env.DB.prepare(
+    "INSERT INTO trail_users (username) VALUES (?) ON CONFLICT(username) DO NOTHING",
+  )
+    .bind(username)
+    .run();
+
+  const user = await env.DB.prepare(
+    "SELECT id, username FROM trail_users WHERE username = ? COLLATE NOCASE",
+  )
+    .bind(username)
+    .first<TrailUser>();
+  if (!user) throw new Error("Could not create trail user");
+
+  const sessionToken = randomToken();
+  await env.DB.prepare(
+    "INSERT INTO trail_user_sessions (token, user_id) VALUES (?, ?)",
+  )
+    .bind(sessionToken, user.id)
+    .run();
+
+  const trail = await ensureCurrentTrail(request, env);
+  await claimTrailForUser(env, trail.id, user.id);
+
+  const response = redirect("/trail", 303);
+  const headers = new Headers(response.headers);
+  headers.append("Set-Cookie", trailUserCookie(sessionToken, request));
+  if (trail.cookie) headers.append("Set-Cookie", trail.cookie);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+async function createTrailForUser(request: Request, env: Env): Promise<Response> {
+  assertSameOrigin(request);
+  const user = await currentTrailUser(request, env);
+  if (!user) return redirect("/trail", 303);
+
+  const trailId = `trail_${randomToken()}`;
+  const trailToken = randomToken();
+  await env.DB.prepare("INSERT INTO trails (id) VALUES (?)").bind(trailId).run();
+  await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
+    .bind(trailToken, trailId)
+    .run();
+  await claimTrailForUser(env, trailId, user.id);
+
+  return withTrailCookie(redirect("/trail", 303), trailCookie(trailToken, request));
+}
+
+async function selectTrailForUser(request: Request, env: Env): Promise<Response> {
+  assertSameOrigin(request);
+  const user = await currentTrailUser(request, env);
+  if (!user) return redirect("/trail", 303);
+
+  const form = await request.formData();
+  const trailId = String(form.get("trail_id") ?? "");
+  const owned = await env.DB.prepare(
+    "SELECT 1 AS ok FROM trail_owners WHERE trail_id = ? AND user_id = ?",
+  )
+    .bind(trailId, user.id)
+    .first<{ ok: number }>();
+  if (!owned) return redirect("/trail", 303);
+
+  const trailToken = randomToken();
+  await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
+    .bind(trailToken, trailId)
+    .run();
+
+  return withTrailCookie(redirect("/trail", 303), trailCookie(trailToken, request));
+}
+
 async function ensureCurrentTrail(request: Request, env: Env): Promise<TrailContext> {
   const cookies = parseCookies(request.headers.get("Cookie") ?? "");
   const token = cookies.get("trail");
+  const trailUser = await currentTrailUser(request, env);
 
   if (token) {
     const existing = await env.DB.prepare(
@@ -715,7 +922,31 @@ async function ensureCurrentTrail(request: Request, env: Env): Promise<TrailCont
       .bind(token)
       .first<{ id: string }>();
 
-    if (existing) return { id: existing.id, cookie: null };
+    if (existing) {
+      if (trailUser) await claimTrailForUser(env, existing.id, trailUser.id);
+      return { id: existing.id, cookie: null };
+    }
+  }
+
+  if (trailUser) {
+    const owned = await env.DB.prepare(
+      `SELECT t.id
+         FROM trail_owners o
+         JOIN trails t ON t.id = o.trail_id
+        WHERE o.user_id = ?
+        ORDER BY t.created_at DESC
+        LIMIT 1`,
+    )
+      .bind(trailUser.id)
+      .first<{ id: string }>();
+
+    if (owned) {
+      const trailToken = randomToken();
+      await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
+        .bind(trailToken, owned.id)
+        .run();
+      return { id: owned.id, cookie: trailCookie(trailToken, request) };
+    }
   }
 
   const trailId = `trail_${randomToken()}`;
@@ -725,6 +956,7 @@ async function ensureCurrentTrail(request: Request, env: Env): Promise<TrailCont
   await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
     .bind(trailToken, trailId)
     .run();
+  if (trailUser) await claimTrailForUser(env, trailId, trailUser.id);
 
   return {
     id: trailId,
@@ -3823,9 +4055,16 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-page {
-      max-width: 760px;
+      max-width: 980px;
       padding: 48px 0 90px;
     }
+    .trail-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 760px) 180px;
+      gap: 36px;
+      align-items: start;
+    }
+    .trail-main { min-width: 0; }
     .trail-heading {
       display: flex;
       align-items: flex-end;
@@ -3842,6 +4081,94 @@ function htmlPage(title: string, body: string, status = 200): Response {
       color: var(--muted);
       font-size: .78rem;
       white-space: nowrap;
+    }
+
+    .trail-sidebar {
+      position: sticky;
+      top: 28px;
+      min-width: 0;
+      padding-top: 4px;
+    }
+    .trail-sidebar-user {
+      margin-bottom: 12px;
+      color: var(--ink);
+      font-size: .82rem;
+      font-weight: 620;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .trail-new-form {
+      margin: 0 0 14px;
+    }
+    .trail-new-form .text-button {
+      color: var(--annotation);
+      font-size: .75rem;
+    }
+    .trail-list {
+      display: grid;
+      gap: 2px;
+    }
+    .trail-list form { margin: 0; }
+    .trail-list-button {
+      display: block;
+      width: 100%;
+      padding: 4px 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: .76rem;
+      font-weight: 480;
+      line-height: 1.35;
+      text-align: left;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .trail-list-button:hover,
+    .trail-list-button.active {
+      color: var(--annotation);
+      filter: none;
+    }
+    .trail-sidebar-empty,
+    .trail-user-form p {
+      margin: 8px 0 0;
+      color: var(--soft);
+      font-size: .68rem;
+      line-height: 1.35;
+    }
+    .trail-user-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px;
+      align-items: center;
+    }
+    .trail-user-form input,
+    .trail-user-switch input {
+      min-width: 0;
+      padding: 7px 8px;
+      background: var(--field-muted);
+      font-size: .75rem;
+    }
+    .trail-user-form p {
+      grid-column: 1 / -1;
+    }
+    .trail-user-switch {
+      margin-top: 18px;
+      color: var(--soft);
+      font-size: .68rem;
+    }
+    .trail-user-switch summary {
+      cursor: pointer;
+      list-style: none;
+    }
+    .trail-user-switch summary::-webkit-details-marker { display: none; }
+    .trail-user-switch form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px;
+      margin-top: 8px;
     }
 
     .trail-question {
@@ -4102,6 +4429,21 @@ function htmlPage(title: string, body: string, status = 200): Response {
     @media (hover: none) {
       .trail-step[open] .trail-step-actions {
         opacity: 1;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .trail-layout {
+        grid-template-columns: 1fr;
+        gap: 28px;
+      }
+      .trail-sidebar {
+        position: static;
+        padding-top: 22px;
+        border-top: 1px solid var(--wash);
+      }
+      .trail-list {
+        max-width: 420px;
       }
     }
 
