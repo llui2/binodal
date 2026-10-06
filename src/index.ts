@@ -535,8 +535,10 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
   const title = item.title || item.content || "untitled";
   const kind = item.kind === "paper" ? "paper" : item.kind === "note" ? "note" : "link";
 
-  const compactTitle = title.replace(/\s+/g, " ").trim();
-  const compactContent = (item.content ?? "").replace(/\s+/g, " ").trim();
+  const comparableText = (value: string): string =>
+    value.replace(/\s+/g, " ").trim().replace(/[.!?;:]+$/, "").toLowerCase();
+  const compactTitle = comparableText(title);
+  const compactContent = comparableText(item.content ?? "");
   const noteDetail = compactContent && compactContent !== compactTitle
     ? item.content ?? ""
     : item.note ?? "";
