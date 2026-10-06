@@ -874,7 +874,7 @@ function trailLiveScript(): Response {
   if (!graph || !map || !mapSvg || !workspace) return;
 
   const trailId = graph.dataset.trailId || "trail";
-  const branchStorageKey = "trails:active-branch:" + trailId;
+  const branchStorageKey = "trails:active-path-v2:" + trailId;
   const storedBranchPreference = window.localStorage.getItem(branchStorageKey);
   let activeBranchId = storedBranchPreference && storedBranchPreference !== "main"
     ? storedBranchPreference
@@ -1101,7 +1101,8 @@ function trailLiveScript(): Response {
       mapSvg.appendChild(path);
     }
 
-    points.slice(1).forEach((point) => {
+    const nodePoints = branchId === "0" ? points : points.slice(1);
+    nodePoints.forEach((point) => {
       const circle = svgNode("circle", {
         cx: point.x,
         cy: point.y,
