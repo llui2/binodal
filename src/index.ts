@@ -1195,6 +1195,9 @@ function trailLiveScript(): Response {
 
   // Keep the topology orthogonal, but render each horizontal/vertical segment
   // as a slightly irregular brush stroke rather than a perfect vector line.
+  // DESIGN INVARIANT: the topology is rendered as a visibly irregular brush
+  // stroke, matching the Trails logo. Do not simplify this into straight SVG
+  // wiring or reduce the wobble unless the visual direction is explicitly changed.
   const brushSegmentPath = (
     a,
     b,
@@ -1204,34 +1207,70 @@ function trailLiveScript(): Response {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const horizontal = Math.abs(dx) >= Math.abs(dy);
-    const sign = ((phase % 2) * 2 - 1) || 1;
-    const wobble = 0.9 + (phase % 3) * 0.22;
+    const span = horizontal ? dx : dy;
+    const direction = span >= 0 ? 1 : -1;
+    const length = Math.abs(span);
+    if (length < 0.01) return "";
 
-    if (horizontal) {
-      const y = a.y + offset;
-      const x0 = a.x;
-      const x1 = b.x;
-      const span = x1 - x0;
-      return (
-        "M " + x0.toFixed(2) + " " + y.toFixed(2) +
-        " C " +
-        (x0 + span * 0.31).toFixed(2) + " " + (y + wobble * sign).toFixed(2) + " " +
-        (x0 + span * 0.68).toFixed(2) + " " + (y - wobble * sign * 0.72).toFixed(2) + " " +
-        x1.toFixed(2) + " " + y.toFixed(2)
-      );
+    const seed = (phase % 7) + 1;
+    const base = 2.2 + (seed % 3) * 0.55;
+    const shifts = [
+      0,
+      base * (seed % 2 === 0 ? 1 : -1),
+      -base * (0.65 + (seed % 4) * 0.08),
+      base * (0.52 + (seed % 5) * 0.07),
+      0,
+    ];
+    const ts = [0, 0.22, 0.49, 0.76, 1];
+
+    const guide = ts.map((t, index) => {
+      if (horizontal) {
+        return {
+          x: a.x + dx * t,
+          y: a.y + offset + shifts[index],
+        };
+      }
+      return {
+        x: a.x + offset + shifts[index],
+        y: a.y + dy * t,
+      };
+    });
+
+    const smoothPath = (points) => {
+      let d = "M " + points[0].x.toFixed(2) + " " + points[0].y.toFixed(2);
+      for (let i = 0; i < points.length - 1; i += 1) {
+        const p0 = points[Math.max(0, i - 1)];
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const p3 = points[Math.min(points.length - 1, i + 2)];
+        const c1x = p1.x + (p2.x - p0.x) / 6;
+        const c1y = p1.y + (p2.y - p0.y) / 6;
+        const c2x = p2.x - (p3.x - p1.x) / 6;
+        const c2y = p2.y - (p3.y - p1.y) / 6;
+        d +=
+          " C " + c1x.toFixed(2) + " " + c1y.toFixed(2) +
+          " " + c2x.toFixed(2) + " " + c2y.toFixed(2) +
+          " " + p2.x.toFixed(2) + " " + p2.y.toFixed(2);
+      }
+      return d;
+    };
+
+    // For very short links, reduce the excursion so the brush still reads as
+    // intentional rather than kinked.
+    if (length < 28) {
+      guide.forEach((point, index) => {
+        const attenuation = Math.max(0.35, length / 28);
+        if (horizontal) {
+          point.y = a.y + offset + shifts[index] * attenuation;
+        } else {
+          point.x = a.x + offset + shifts[index] * attenuation;
+        }
+      });
     }
 
-    const x = a.x + offset;
-    const y0 = a.y;
-    const y1 = b.y;
-    const span = y1 - y0;
-    return (
-      "M " + x.toFixed(2) + " " + y0.toFixed(2) +
-      " C " +
-      (x + wobble * sign).toFixed(2) + " " + (y0 + span * 0.31).toFixed(2) + " " +
-      (x - wobble * sign * 0.72).toFixed(2) + " " + (y0 + span * 0.68).toFixed(2) + " " +
-      x.toFixed(2) + " " + y1.toFixed(2)
-    );
+    // Keep the direction variable semantically explicit for future branch turns.
+    void direction;
+    return smoothPath(guide);
   };
 
   const drawBrushSegments = (group, points, brushClass, offset, phaseBase) => {
@@ -1274,15 +1313,15 @@ function trailLiveScript(): Response {
         group,
         points,
         "trail-map-brush-fiber trail-map-brush-fiber-a",
-        1.15,
-        4,
+        1.35,
+        5,
       );
       drawBrushSegments(
         group,
         points,
         "trail-map-brush-fiber trail-map-brush-fiber-b",
-        -1.0,
-        7,
+        -1.2,
+        9,
       );
     }
 
@@ -1306,11 +1345,6 @@ function trailLiveScript(): Response {
       if (itemId) nodeAttrs["data-item-toggle-map"] = itemId;
 
       group.appendChild(svgNode("path", nodeAttrs));
-      group.appendChild(svgNode("path", {
-        d: TRAIL_MAP_NODE_SHAPE,
-        transform,
-        class: "trail-map-brush-node-fiber",
-      }));
     });
 
     mapSvg.appendChild(group);
@@ -6368,38 +6402,29 @@ function htmlPage(title: string, body: string, status = 200): Response {
       pointer-events: none;
     }
     .trail-map-brush-main {
-      stroke-width: 7;
+      stroke-width: 7.2;
     }
     .trail-map-brush-fiber {
-      stroke-width: 1.55;
-      opacity: .44;
+      stroke-width: 1.5;
+      opacity: .36;
     }
     .trail-map-brush-fiber-a {
-      stroke-dasharray: 11 1.5 17 2;
+      stroke-width: 1.35;
+      opacity: .32;
     }
     .trail-map-brush-fiber-b {
-      stroke-width: 1.15;
-      opacity: .3;
-      stroke-dasharray: 5 1 21 1.5;
+      stroke-width: .95;
+      opacity: .24;
     }
     .trail-map-brush-node {
       fill: currentColor;
-      stroke: currentColor;
-      stroke-width: 0;
+      stroke: none;
       cursor: pointer;
       pointer-events: all;
-      vector-effect: non-scaling-stroke;
-      transition: stroke-width 90ms ease;
     }
     .trail-map-brush-node:hover {
-      stroke-width: 3;
-    }
-    .trail-map-brush-node-fiber {
-      fill: none;
       stroke: currentColor;
-      stroke-width: 1.35;
-      opacity: .34;
-      pointer-events: none;
+      stroke-width: 3;
       vector-effect: non-scaling-stroke;
     }
     .trail-path-workspace {
