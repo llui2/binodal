@@ -1197,8 +1197,8 @@ function trailLiveScript(): Response {
   // as a slightly irregular brush stroke rather than a perfect vector line.
   // DESIGN INVARIANT: the uploaded Trails logo is a filled vector silhouette,
   // not a clean stroked line and not a filter effect. Build links the same way:
-  // a mostly straight filled ribbon with uneven outer edges and only occasional
-  // unpainted defects. Do not replace this with SVG filters, dash patterns, or
+  // a mostly straight filled ribbon with uneven outer edges. Keep the fill
+  // continuous; do not add interior holes, SVG filters, dash patterns, or
   // parallel helper strokes.
   const brushRibbonPath = (
     a,
@@ -1247,34 +1247,6 @@ function trailLiveScript(): Response {
     });
     path += " Z";
 
-    // A real brush occasionally leaves a small local void. Keep these sparse
-    // and asymmetrical so they read as missing paint rather than decoration.
-    if (length > 70 && phase % 3 === 0) {
-      const t = 0.34 + (phase % 2) * 0.21;
-      const along = 4.8 + (phase % 4) * 0.65;
-      const across = 0.72 + (phase % 2) * 0.18;
-      const offset = phase % 2 === 0 ? 0.72 : -0.66;
-
-      if (horizontal) {
-        const cx = a.x + dx * t;
-        const cy = a.y + offset;
-        path +=
-          " M " + (cx - along / 2).toFixed(2) + " " + cy.toFixed(2) +
-          " L " + (cx - along * 0.16).toFixed(2) + " " + (cy - across).toFixed(2) +
-          " L " + (cx + along / 2).toFixed(2) + " " + (cy + 0.10).toFixed(2) +
-          " L " + (cx + along * 0.08).toFixed(2) + " " + (cy + across).toFixed(2) +
-          " Z";
-      } else {
-        const cx = a.x + offset;
-        const cy = a.y + dy * t;
-        path +=
-          " M " + cx.toFixed(2) + " " + (cy - along / 2).toFixed(2) +
-          " L " + (cx - across).toFixed(2) + " " + (cy - along * 0.16).toFixed(2) +
-          " L " + (cx + 0.10).toFixed(2) + " " + (cy + along / 2).toFixed(2) +
-          " L " + (cx + across).toFixed(2) + " " + (cy + along * 0.08).toFixed(2) +
-          " Z";
-      }
-    }
 
     return path;
   };
@@ -1284,8 +1256,6 @@ function trailLiveScript(): Response {
       group.appendChild(svgNode("path", {
         d: brushRibbonPath(points[i - 1], points[i], phaseBase + i),
         class: brushClass,
-        "fill-rule": "evenodd",
-        "clip-rule": "evenodd",
       }));
     }
   };
