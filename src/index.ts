@@ -525,7 +525,7 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
           <form class="trail-mark-add" action="/trail/add" method="post" data-trail-add>
             <textarea id="trail-add-value" name="value" rows="2" maxlength="10000"
               aria-label="Add a mark"
-              placeholder="Add a mark — thought, paper, or link" required></textarea>
+              placeholder="Thought, paper, or link" required></textarea>
             <button type="submit">mark</button>
           </form>
         </div>
@@ -543,8 +543,8 @@ function renderTrailSidebar(
   if (!user) {
     return `<form class="trail-user-form" action="/trail/user" method="post">
       <input name="username" maxlength="32" autocomplete="username" aria-label="Username" placeholder="username" required>
-      <button class="text-button" type="submit">use</button>
-      <p>prototype identity · no password</p>
+      <button class="text-button" type="submit">continue</button>
+      <p>temporary username</p>
     </form>`;
   }
 
@@ -3202,7 +3202,7 @@ function renderComposer(
     ${replyTo ? `<p class="reply-note">Replying to comment #${replyTo}</p>` : ""}
     <textarea name="body" rows="5" maxlength="5000" placeholder="Add to the discussion…" required></textarea>
     <div class="composer-actions">
-      <span>Plain text · 5,000 characters max</span>
+      <span>Plain text, 5,000 characters max</span>
       <button type="submit">Post comment</button>
     </div>
   </form>`;
@@ -5999,7 +5999,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
     .notice {
       max-width: 640px;
-      margin-top: 22px;
+      margin-top: 28px;
       padding: 11px 13px;
       background: var(--notice-bg);
       border-radius: 2px;
@@ -6028,15 +6028,19 @@ function htmlPage(title: string, body: string, status = 200): Response {
       max-width: 620px;
     }
 
+    .trail-topbar {
+      padding-left: max(20px, calc((100vw - 1120px) / 2));
+      padding-right: max(20px, calc((100vw - 1120px) / 2));
+    }
     .trail-page {
       width: min(1120px, calc(100% - 40px));
       max-width: 1120px;
-      padding: 48px 0 90px;
+      padding: 42px 0 96px;
     }
     .trail-layout {
       display: grid;
-      grid-template-columns: 170px minmax(0, 1fr);
-      gap: 30px;
+      grid-template-columns: 160px minmax(0, 1fr);
+      gap: 36px;
       align-items: start;
     }
     .trail-main {
@@ -6046,7 +6050,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-heading {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 24px;
+      gap: 28px;
       align-items: baseline;
       padding-left: 20px;
     }
@@ -6067,12 +6071,12 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-title-input:focus-visible {
       outline: none;
-      box-shadow: inset 0 -1px var(--annotation);
+      background: color-mix(in srgb, var(--annotation) 6%, transparent);
     }
     .trail-heading-meta {
       display: flex;
       align-items: baseline;
-      gap: 12px;
+      gap: 14px;
       white-space: nowrap;
     }
     .trail-save-state {
@@ -6085,68 +6089,83 @@ function htmlPage(title: string, body: string, status = 200): Response {
       color: var(--notice-ink);
     }
     .trail-connect-link {
-      color: var(--muted);
-      font-size: .76rem;
+      color: var(--soft);
+      font-size: .74rem;
       white-space: nowrap;
+    }
+    .trail-connect-link:hover,
+    .trail-connect-link:focus-visible {
+      color: var(--annotation);
+      outline: none;
     }
 
     .trail-sidebar {
       position: sticky;
       top: 28px;
-      width: 180px;
-      max-width: 180px;
-      min-width: 180px;
-      padding-top: 4px;
+      width: 160px;
+      max-width: 160px;
+      min-width: 160px;
+      padding-top: 5px;
       overflow: hidden;
     }
     .trail-sidebar-user {
-      margin-bottom: 12px;
-      color: var(--ink);
-      font-size: .82rem;
-      font-weight: 620;
+      margin-bottom: 14px;
+      color: var(--muted);
+      font-size: .78rem;
+      font-weight: 560;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
     .trail-new-form {
-      margin: 0 0 14px;
+      margin: 0 0 16px;
     }
     .trail-new-form .text-button {
+      color: var(--muted);
+      font-size: .73rem;
+      font-weight: 560;
+    }
+    .trail-new-form .text-button:hover,
+    .trail-new-form .text-button:focus-visible {
       color: var(--annotation);
-      font-size: .75rem;
+      outline: none;
     }
     .trail-list {
       display: grid;
-      gap: 2px;
+      gap: 1px;
     }
     .trail-list form { margin: 0; }
     .trail-list-button {
       display: block;
       width: 100%;
-      padding: 4px 0;
+      padding: 5px 0;
       border: 0;
       border-radius: 0;
       background: transparent;
-      color: var(--muted);
-      font-size: .76rem;
-      font-weight: 480;
+      color: var(--soft);
+      font-size: .75rem;
+      font-weight: 500;
       line-height: 1.35;
       text-align: left;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .trail-list-button:hover,
-    .trail-list-button.active {
+    .trail-list-button:hover {
       color: var(--annotation);
+      filter: none;
+    }
+    .trail-list-button.active {
+      color: var(--ink);
+      font-weight: 640;
       filter: none;
     }
     .trail-sidebar-empty,
     .trail-user-form p {
       margin: 8px 0 0;
       color: var(--soft);
-      font-size: .68rem;
-      line-height: 1.35;
+      font-size: .66rem;
+      line-height: 1.4;
     }
     .trail-user-form {
       display: grid;
@@ -6157,17 +6176,18 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-user-form input,
     .trail-user-switch input {
       min-width: 0;
-      padding: 7px 8px;
+      padding: 8px 9px;
       background: var(--field-muted);
+      border-radius: 3px;
       font-size: .75rem;
     }
     .trail-user-form p {
       grid-column: 1 / -1;
     }
     .trail-user-switch {
-      margin-top: 18px;
+      margin-top: 22px;
       color: var(--soft);
-      font-size: .68rem;
+      font-size: .67rem;
     }
     .trail-user-switch summary {
       cursor: pointer;
@@ -6182,9 +6202,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-description {
-      margin: 24px 0 0 20px;
-      padding-bottom: 26px;
-      border-bottom: 1px solid var(--wash);
+      margin: 22px 0 0 20px;
+      padding-bottom: 18px;
     }
     .trail-endpoint-label {
       padding-top: 10px;
@@ -6194,20 +6213,24 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-description textarea {
       display: block;
       width: 100%;
-      min-height: 104px;
-      padding: 13px 14px;
-      border: 1px solid transparent;
-      border-radius: 2px;
-      background: var(--field-muted);
-      color: var(--ink);
-      font-size: .98rem;
-      line-height: 1.52;
+      min-height: 88px;
+      padding: 9px 10px;
+      border: 0;
+      border-radius: 3px;
+      background: transparent;
+      color: var(--body-muted);
+      font-size: .96rem;
+      line-height: 1.58;
       resize: vertical;
+      transition: background 110ms ease, color 110ms ease;
+    }
+    .trail-description textarea:hover {
+      background: color-mix(in srgb, var(--field-muted) 58%, transparent);
     }
     .trail-description textarea:focus-visible {
       outline: none;
-      border-color: var(--wash);
-      background: var(--field-focus);
+      background: var(--field-muted);
+      color: var(--ink);
     }
 
     .trail-graph {
@@ -6465,8 +6488,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       overflow: hidden;
       resize: none;
       border: 0;
-      border-bottom: 1px solid transparent;
-      border-radius: 0;
+      border-radius: 3px;
       background: transparent;
       color: var(--muted);
       font-size: .86rem;
@@ -6481,7 +6503,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-step-body:focus-visible {
       outline: none;
-      border-bottom-color: var(--wash);
+      background: color-mix(in srgb, var(--field-muted) 62%, transparent);
+      color: var(--ink);
     }
     .trail-step-detail {
       position: relative;
@@ -6497,12 +6520,12 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-node-detail {
       display: block;
       width: 100%;
-      min-height: 58px;
-      padding: 8px 10px;
+      min-height: 62px;
+      padding: 10px 12px;
       overflow: hidden;
       resize: none;
-      border: 1px solid var(--wash);
-      border-radius: 2px;
+      border: 0;
+      border-radius: 4px;
       background: var(--field-muted);
       color: var(--body-muted);
       font-size: .82rem;
@@ -6513,8 +6536,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-node-detail:focus-visible {
       outline: none;
-      border-color: color-mix(in srgb, var(--annotation) 35%, var(--wash));
       background: var(--field-focus);
+      color: var(--ink);
     }
     .trail-step-footer {
       display: flex;
@@ -6549,17 +6572,18 @@ function htmlPage(title: string, body: string, status = 200): Response {
       right: 0;
       top: 23px;
       z-index: 5;
-      width: 108px;
-      padding: 4px 0;
-      background: var(--paper);
-      border: 1px solid var(--wash);
+      width: 112px;
+      padding: 5px;
+      background: var(--field);
+      border: 0;
+      border-radius: 4px;
     }
     .trail-item-menu-panel form {
       margin: 0;
     }
     .trail-item-menu-panel button {
       width: 100%;
-      padding: 6px 9px;
+      padding: 7px 8px;
       background: transparent;
       color: var(--muted);
       border-radius: 0;
@@ -6579,9 +6603,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-mark-add {
-      margin: 10px 0 0 30px;
-      padding-top: 22px;
-      border-top: 1px solid var(--wash);
+      margin: 28px 0 0 30px;
+      padding-top: 0;
     }
     .trail-mark-add {
       display: grid;
@@ -6598,9 +6621,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-mark-add textarea {
       min-height: 64px;
-      padding: 10px 11px;
+      padding: 11px 12px;
       overflow: hidden;
       background: var(--field-muted);
+      border-radius: 4px;
       color: var(--ink);
       font-size: .84rem;
       line-height: 1.45;
@@ -6611,12 +6635,11 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-mark-add textarea:focus-visible {
       outline: none;
-      border-color: color-mix(in srgb, var(--annotation) 30%, var(--wash));
       background: var(--field-focus);
     }
     .trail-mark-add button {
       min-height: 40px;
-      padding: 9px 14px;
+      padding: 9px 15px;
       background: var(--annotation);
       color: var(--button-ink);
       font-size: .78rem;
@@ -6682,8 +6705,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
         max-width: 320px;
         min-width: 0;
         padding-top: 0;
-        padding-bottom: 20px;
-        border-bottom: 1px solid var(--wash);
+        padding-bottom: 8px;
       }
       .trail-list {
         max-width: 320px;
