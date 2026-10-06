@@ -2047,14 +2047,12 @@ async function handleTrailApi(
   }
 
   if (request.method === "GET" && path === "/api/trail") {
-    const [items, title, description] = await Promise.all([
+    const [items, branches, title, description] = await Promise.all([
       listTrailItems(env, trail.id),
+      listTrailBranches(env, trail.id),
       getTrailTitle(env, trail.id),
       getTrailDescription(env, trail.id),
     ]);
-    const html = items.length
-      ? items.map((item, index) => renderTrailItem(item, index)).join("")
-      : `<p class="trail-empty">The path is empty. Add papers from their paper pages, or add a thought below.</p>`;
     return withTrailCookie(
       json({
         id: trail.id,
@@ -2062,10 +2060,96 @@ async function handleTrailApi(
         description: description ?? "",
         question: description ?? "",
         items,
-        html,
+        branches,
+        html: renderTrailGraph(items, branches),
       }),
       trail.cookie,
     );
+  }
+
+  if (request.method === "POST" && path === "/api/trail/branches") {
+    assertSameOrigin(request);
+    const payload = await request.json().catch(() => ({})) as {
+      parent_item_id?: number;
+      title?: string;
+    };
+    const parentItemId = Math.trunc(Number(payload.parent_item_id));
+    if (!Number.isFinite(parentItemId)) {
+      return withTrailCookie(json({ error: "invalid parent item" }, 400), trail.cookie);
+    }
+
+    const parent = await env.DB.prepare(
+      `SELECT i.id
+         FROM trail_item_placements p
+         JOIN trail_items i ON i.id = p.item_id
+        WHERE p.trail_id = ?
+          AND p.branch_id = 0
+          AND i.trail_id = ?
+          AND i.id = ?
+        LIMIT 1`,
+    )
+      .bind(trail.id, trail.id, parentItemId)
+      .first<{ id: number }>();
+
+    if (!parent) {
+      return withTrailCookie(json({ error: "branch parent must be on the main path" }, 400), trail.cookie);
+    }
+
+    const cleanTitle = String(payload.title ?? "branch")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120) || "branch";
+
+    const branch = await env.DB.prepare(
+      `INSERT INTO trail_branches (trail_id, title, parent_item_id)
+       VALUES (?, ?, ?)
+       RETURNING id, trail_id, title, parent_item_id, created_at, updated_at`,
+    )
+      .bind(trail.id, cleanTitle, parentItemId)
+      .first<TrailBranchRow>();
+
+    if (!branch) {
+      return withTrailCookie(json({ error: "could not create branch" }, 500), trail.cookie);
+    }
+
+    return withTrailCookie(json({ branch: { ...branch, items: [] } }, 201), trail.cookie);
+  }
+
+  const branchMatch = path.match(/^\/api\/trail\/branches\/(\d+)$/);
+  if (branchMatch && request.method === "PATCH") {
+    assertSameOrigin(request);
+    const branchId = Number(branchMatch[1]);
+    const payload = await request.json().catch(() => ({})) as { title?: string };
+    const existing = await env.DB.prepare(
+      "SELECT id FROM trail_branches WHERE id = ? AND trail_id = ?",
+    )
+      .bind(branchId, trail.id)
+      .first<{ id: number }>();
+    if (!existing) {
+      return withTrailCookie(json({ error: "branch not found" }, 404), trail.cookie);
+    }
+
+    if (payload.title !== undefined) {
+      const cleanTitle = String(payload.title)
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 120) || "branch";
+      await env.DB.prepare(
+        "UPDATE trail_branches SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND trail_id = ?",
+      )
+        .bind(cleanTitle, branchId, trail.id)
+        .run();
+    }
+
+    const branch = await env.DB.prepare(
+      `SELECT id, trail_id, title, parent_item_id, created_at, updated_at
+         FROM trail_branches
+        WHERE id = ? AND trail_id = ?`,
+    )
+      .bind(branchId, trail.id)
+      .first<TrailBranchRow>();
+
+    return withTrailCookie(json({ branch }), trail.cookie);
   }
 
   if (request.method === "POST" && path === "/api/trail/items") {
@@ -2077,27 +2161,45 @@ async function handleTrailApi(
       url?: string;
       content?: string;
       note?: string;
+      branch_id?: number;
     };
 
+    const branchId = Math.max(0, Math.trunc(Number(payload.branch_id ?? 0)));
+    if (branchId > 0) {
+      const branch = await env.DB.prepare(
+        "SELECT id FROM trail_branches WHERE id = ? AND trail_id = ?",
+      )
+        .bind(branchId, trail.id)
+        .first<{ id: number }>();
+      if (!branch) {
+        return withTrailCookie(json({ error: "branch not found" }, 404), trail.cookie);
+      }
+    }
+
     if (payload.value) {
-      await insertTrailValue(env, trail.id, String(payload.value));
+      await insertTrailValue(env, trail.id, String(payload.value), branchId);
     } else {
-      const position = await nextTrailPosition(env, trail.id);
+      const storagePosition = await nextTrailItemStoragePosition(env, trail.id);
       const kind = String(payload.kind ?? "note").slice(0, 40);
-      const title = String(payload.title ?? payload.content ?? payload.url ?? "untitled").slice(0, 300);
+      const itemTitle = String(payload.title ?? payload.content ?? payload.url ?? "untitled").slice(0, 300);
       const url = payload.url ? normalizeTrailUrl(String(payload.url)) : null;
       const content = payload.content ? String(payload.content).slice(0, 10000) : null;
       const note = payload.note ? String(payload.note).slice(0, 2000) : null;
-      await env.DB.prepare(
+      const row = await env.DB.prepare(
         `INSERT INTO trail_items (trail_id, kind, title, url, content, note, position)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         RETURNING id`,
       )
-        .bind(trail.id, kind, title, url, content, note, position)
-        .run();
+        .bind(trail.id, kind, itemTitle, url, content, note, storagePosition)
+        .first<{ id: number }>();
+      if (row?.id) await placeTrailItem(env, trail.id, row.id, branchId);
     }
 
-    const items = await listTrailItems(env, trail.id);
-    return withTrailCookie(json({ id: trail.id, items }, 201), trail.cookie);
+    const [items, branches] = await Promise.all([
+      listTrailItems(env, trail.id),
+      listTrailBranches(env, trail.id),
+    ]);
+    return withTrailCookie(json({ id: trail.id, items, branches }, 201), trail.cookie);
   }
 
   const match = path.match(/^\/api\/trail\/items\/(\d+)$/);
@@ -2116,6 +2218,7 @@ async function handleTrailApi(
       note?: string | null;
       content?: string | null;
       position?: number;
+      branch_id?: number;
     };
     const itemId = Number(match[1]);
     const existing = await env.DB.prepare(
@@ -2141,13 +2244,21 @@ async function handleTrailApi(
         .run();
     }
     if (payload.position !== undefined && Number.isFinite(Number(payload.position))) {
-      await env.DB.prepare("UPDATE trail_items SET position = ? WHERE id = ? AND trail_id = ?")
-        .bind(Math.trunc(Number(payload.position)), itemId, trail.id)
+      const branchId = Math.max(0, Math.trunc(Number(payload.branch_id ?? 0)));
+      await env.DB.prepare(
+        `UPDATE trail_item_placements
+            SET position = ?
+          WHERE trail_id = ? AND item_id = ? AND branch_id = ?`,
+      )
+        .bind(Math.trunc(Number(payload.position)), trail.id, itemId, branchId)
         .run();
     }
 
-    const items = await listTrailItems(env, trail.id);
-    return withTrailCookie(json({ id: trail.id, items }), trail.cookie);
+    const [items, branches] = await Promise.all([
+      listTrailItems(env, trail.id),
+      listTrailBranches(env, trail.id),
+    ]);
+    return withTrailCookie(json({ id: trail.id, items, branches }), trail.cookie);
   }
 
   return withTrailCookie(json({ error: "method not allowed" }, 405), trail.cookie);
