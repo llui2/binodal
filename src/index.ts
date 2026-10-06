@@ -1043,6 +1043,8 @@ function trailLiveScript(): Response {
   const addForm = document.querySelector("[data-trail-add]");
   const addField = document.getElementById("trail-add-value");
   if (addForm && addField) {
+    autoGrow(addField);
+    addField.addEventListener("input", () => autoGrow(addField));
     addField.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
@@ -1066,6 +1068,7 @@ function trailLiveScript(): Response {
         });
         if (!response.ok) throw new Error("add failed");
         addField.value = "";
+        autoGrow(addField);
         last = "";
         await tick();
       } catch {
@@ -1103,6 +1106,7 @@ function trailLiveScript(): Response {
         for (const step of path.querySelectorAll(".trail-step")) {
           if (openItems.has(step.dataset.trailItem)) setStepOpen(step, true);
         }
+        drawTrailRail();
       }
       if (
         title &&
@@ -1132,7 +1136,17 @@ function trailLiveScript(): Response {
     : null;
   if (resizeObserver) resizeObserver.observe(path);
   window.addEventListener("resize", drawTrailRail);
-  drawTrailRail();
+
+  const settleTrailRail = () => {
+    drawTrailRail();
+    requestAnimationFrame(() => drawTrailRail());
+    window.setTimeout(() => drawTrailRail(), 80);
+  };
+  settleTrailRail();
+  if (document.fonts?.ready) {
+    document.fonts.ready.then(() => settleTrailRail()).catch(() => {});
+  }
+  window.addEventListener("load", settleTrailRail, { once: true });
 
   const interval = window.setInterval(tick, 1200);
   window.addEventListener("pagehide", () => {
@@ -1141,6 +1155,7 @@ function trailLiveScript(): Response {
     window.cancelAnimationFrame(railFrame);
     if (resizeObserver) resizeObserver.disconnect();
     window.removeEventListener("resize", drawTrailRail);
+    window.removeEventListener("load", settleTrailRail);
   }, { once: true });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) tick();
@@ -5321,11 +5336,12 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-mark-add textarea {
       min-height: 64px;
       padding: 10px 11px;
+      overflow: hidden;
       background: var(--field-muted);
       color: var(--ink);
       font-size: .84rem;
       line-height: 1.45;
-      resize: vertical;
+      resize: none;
     }
     .trail-mark-add textarea::placeholder {
       color: var(--soft);
@@ -5336,15 +5352,16 @@ function htmlPage(title: string, body: string, status = 200): Response {
       background: var(--field-focus);
     }
     .trail-mark-add button {
-      min-height: 36px;
-      padding: 8px 11px;
-      background: transparent;
-      color: var(--annotation);
-      font-size: .76rem;
+      min-height: 40px;
+      padding: 9px 14px;
+      background: var(--annotation);
+      color: var(--button-ink);
+      font-size: .78rem;
       font-weight: 600;
     }
     .trail-mark-add button:hover {
-      filter: none;
+      color: var(--button-ink);
+      filter: brightness(.96);
     }
 
     .trail-connect-page {
