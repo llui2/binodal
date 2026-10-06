@@ -650,9 +650,7 @@ function renderTrailItem(
         </button>
       </span>`}
       <span class="trail-step-line">
-        <button class="trail-step-title-button" type="button" data-item-toggle="${item.id}" aria-expanded="false">
-          <span class="trail-step-title-display">${escapeHtml(title)}</span>
-        </button>
+        <span class="trail-step-title-display">${escapeHtml(title)}</span>
         <input class="trail-step-title-input" value="${escapeAttr(title)}" maxlength="300" aria-label="Node title" data-item-title="${item.id}" hidden>
       </span>
       ${kind && item.url
@@ -6381,22 +6379,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-    }
-    .trail-step-title-button {
-      display: block;
-      width: 100%;
-      padding: 0;
-      border: 0;
-      border-radius: 0;
-      background: transparent;
-      color: inherit;
-      text-align: left;
-    }
-    .trail-step-title-button:hover,
-    .trail-step-title-button:focus-visible {
-      color: var(--annotation);
-      filter: none;
-      outline: none;
     }
     .trail-step-title-display {
       display: block;
