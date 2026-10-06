@@ -3121,7 +3121,8 @@ async function fetchPaperFromBioRxiv(
   storageId = `doi:${doi.toLowerCase()}`,
   sourceUrl?: string,
 ): Promise<FetchedPaper> {
-  const endpoint = `https://api.biorxiv.org/details/${server}/${encodeURIComponent(doi)}/na/json`;
+  const doiPath = doi.split("/").map((part) => encodeURIComponent(part)).join("/");
+  const endpoint = `https://api.biorxiv.org/details/${server}/${doiPath}/na/json`;
   const response = await fetch(endpoint, {
     headers: {
       "User-Agent": "trails/0.1",
