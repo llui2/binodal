@@ -486,6 +486,7 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
           </form>
         </div>
       </div>
+      <script src="/trail-live.js" defer></script>
     </main>`,
   );
 
