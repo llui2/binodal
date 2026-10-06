@@ -657,27 +657,23 @@ function renderTrailItem(
       <textarea class="trail-node-detail" rows="2" maxlength="2000" aria-label="Node details" placeholder="details…" data-item-note="${item.id}" spellcheck="false">${escapeHtml(detailsText)}</textarea>
 
       <div class="trail-step-footer">
-        <span></span>
-        <details class="trail-item-menu">
-          <summary aria-label="Node actions">⋯</summary>
-          <div class="trail-item-menu-panel">
-            <form action="/trail/items/${item.id}/move" method="post">
-              <input type="hidden" name="branch_id" value="${branchId}">
-              <button type="submit" name="direction" value="-1">move up</button>
-            </form>
-            <form action="/trail/items/${item.id}/move" method="post">
-              <input type="hidden" name="branch_id" value="${branchId}">
-              <button type="submit" name="direction" value="1">move down</button>
-            </form>
-            ${allowBranch
-              ? `<button type="button" data-new-branch="${item.id}">branch</button>`
-              : ""}
-            <form action="/trail/items/${item.id}/remove" method="post">
-              <input type="hidden" name="branch_id" value="${branchId}">
-              <button type="submit">remove</button>
-            </form>
-          </div>
-        </details>
+        <div class="trail-step-actions" aria-label="Node actions">
+          <form action="/trail/items/${item.id}/move" method="post">
+            <input type="hidden" name="branch_id" value="${branchId}">
+            <button class="trail-action-icon" type="submit" name="direction" value="-1" aria-label="Move up" title="Move up"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 11.5 10 7l4.5 4.5"/></svg></button>
+          </form>
+          <form action="/trail/items/${item.id}/move" method="post">
+            <input type="hidden" name="branch_id" value="${branchId}">
+            <button class="trail-action-icon" type="submit" name="direction" value="1" aria-label="Move down" title="Move down"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 8.5 4.5 4.5 4.5-4.5"/></svg></button>
+          </form>
+          ${allowBranch
+            ? `<button class="trail-action-icon" type="button" data-new-branch="${item.id}" aria-label="Branch from this mark" title="Branch"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4v9.5M6 8h5.5c1.4 0 2.5-1.1 2.5-2.5V4M4 4h4M12 4h4M4 14h4"/></svg></button>`
+            : ""}
+          <form action="/trail/items/${item.id}/remove" method="post">
+            <input type="hidden" name="branch_id" value="${branchId}">
+            <button class="trail-action-icon" type="submit" aria-label="Remove mark" title="Remove"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6.5 6.5 7 7m0-7-7 7"/></svg></button>
+          </form>
+        </div>
       </div>
     </div>
   </div>`;
@@ -6343,6 +6339,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
       margin-top: 20px;
     }
     .trail-step {
+      --trail-kind-gutter: 52px;
+      --trail-kind-gap: 14px;
       position: relative;
       z-index: 1;
       margin: 0;
@@ -6351,8 +6349,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
       position: relative;
       z-index: 1;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 48px;
-      gap: 12px;
+      grid-template-columns: minmax(0, 1fr) var(--trail-kind-gutter);
+      column-gap: var(--trail-kind-gap);
       align-items: baseline;
       min-height: 44px;
       padding: 7px 0 3px;
@@ -6398,7 +6396,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       box-shadow: none;
     }
     .trail-step-kind {
-      width: 48px;
+      width: var(--trail-kind-gutter);
       color: var(--soft);
       font-size: .62rem;
       font-weight: 520;
@@ -6416,7 +6414,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       position: relative;
       z-index: 1;
       display: block;
-      width: 100%;
+      width: calc(100% - var(--trail-kind-gutter) - var(--trail-kind-gap));
       min-height: 26px;
       margin: -2px 0 10px 0;
       padding: 2px 0 4px;
@@ -6440,8 +6438,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-step-detail {
       position: relative;
       z-index: 1;
+      width: calc(100% - var(--trail-kind-gutter) - var(--trail-kind-gap));
       margin: -2px 0 0 0;
-      padding: 0 0 12px;
+      padding: 0 0 10px;
       max-width: 680px;
     }
     .trail-node-detail {
@@ -6468,59 +6467,50 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-step-footer {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
+      justify-content: flex-end;
       min-height: 24px;
-      margin-top: 4px;
+      margin-top: 5px;
     }
-    .trail-item-menu {
-      position: relative;
+    .trail-step-actions {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 2px;
       margin-left: auto;
-    }
-    .trail-item-menu > summary {
-      width: 24px;
-      height: 22px;
-      display: grid;
-      place-items: center;
-      cursor: pointer;
-      list-style: none;
       color: var(--soft);
-      font-size: .95rem;
-      line-height: 1;
     }
-    .trail-item-menu > summary::-webkit-details-marker { display: none; }
-    .trail-item-menu > summary:hover,
-    .trail-item-menu[open] > summary {
-      color: var(--annotation);
-    }
-    .trail-item-menu-panel {
-      position: absolute;
-      right: 0;
-      top: 23px;
-      z-index: 5;
-      width: 112px;
-      padding: 5px;
-      background: var(--field);
-      border: 0;
-      border-radius: 4px;
-    }
-    .trail-item-menu-panel form {
+    .trail-step-actions form {
+      display: contents;
       margin: 0;
     }
-    .trail-item-menu-panel button {
-      width: 100%;
-      padding: 7px 8px;
-      background: transparent;
-      color: var(--muted);
+    .trail-action-icon {
+      width: 26px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
       border-radius: 0;
-      font-size: .69rem;
-      font-weight: 500;
-      text-align: left;
+      background: transparent;
+      color: var(--soft);
+      line-height: 1;
     }
-    .trail-item-menu-panel button:hover {
+    .trail-action-icon svg {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.55;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      pointer-events: none;
+    }
+    .trail-action-icon:hover,
+    .trail-action-icon:focus-visible {
       color: var(--annotation);
+      background: transparent;
       filter: none;
+      outline: none;
     }
 
     .trail-empty {

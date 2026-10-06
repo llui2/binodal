@@ -45,6 +45,8 @@ A mark has two layers:
 
 The permanent layer should stay compact and readable. The detail layer can use a quiet filled surface to distinguish it from the surrounding page.
 
+Paper/link type labels live in a dedicated right-hand metadata gutter outside the mark text column. Permanent text and expanded detail content must never run underneath that gutter. Node actions belong as quiet inline icon controls at the bottom right of the detail block rather than behind a separate overflow menu.
+
 ## Controls and copy
 
 Controls should be obvious when needed and visually quiet when not in use. Use color and background state rather than unnecessary borders, size jumps, or decorative chrome.
