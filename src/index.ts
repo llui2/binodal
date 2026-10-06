@@ -560,8 +560,10 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
       <span class="trail-step-kind">${escapeHtml(kind)}</span>
     </div>
 
+    <div class="trail-step-preview" data-item-preview="${item.id}">${escapeHtml(detailValue || "write…")}</div>
+
     <div class="trail-step-detail" data-item-detail="${item.id}" hidden>
-      <textarea class="trail-node-detail" rows="2" maxlength="10000" aria-label="Node notes" placeholder="write…" ${detailAttribute}>${escapeHtml(detailValue)}</textarea>
+      <textarea class="trail-node-detail" rows="3" maxlength="10000" aria-label="Node notes" placeholder="write…" ${detailAttribute}>${escapeHtml(detailValue)}</textarea>
 
       <div class="trail-step-footer">
         ${isOpenable
@@ -851,6 +853,7 @@ function trailLiveScript(): Response {
     const toggle = step.querySelector("[data-item-toggle]");
     const titleDisplay = step.querySelector(".trail-step-title-display");
     const titleField = step.querySelector("[data-item-title]");
+    const preview = step.querySelector("[data-item-preview]");
     const detail = step.querySelector("[data-item-detail]");
 
     step.dataset.open = open ? "true" : "false";
@@ -863,6 +866,7 @@ function trailLiveScript(): Response {
       titleField.hidden = !open;
       if (!open && document.activeElement === titleField) titleField.blur();
     }
+    if (preview) preview.hidden = open;
     if (detail) detail.hidden = !open;
   };
 
@@ -871,6 +875,7 @@ function trailLiveScript(): Response {
       const toggle = step.querySelector("[data-item-toggle]");
       const titleDisplay = step.querySelector(".trail-step-title-display");
       const titleField = step.querySelector("[data-item-title]");
+      const preview = step.querySelector("[data-item-preview]");
 
       if (step.dataset.bound !== "true") {
         step.dataset.bound = "true";
@@ -878,11 +883,6 @@ function trailLiveScript(): Response {
         if (toggle) {
           toggle.addEventListener("click", () => {
             const opening = step.dataset.open !== "true";
-            if (opening) {
-              path.querySelectorAll('.trail-step[data-open="true"]').forEach((other) => {
-                if (other !== step) setStepOpen(other, false);
-              });
-            }
             setStepOpen(step, opening);
             if (opening && titleField) {
               requestAnimationFrame(() => titleField.focus());
@@ -915,6 +915,9 @@ function trailLiveScript(): Response {
 
       const noteField = step.querySelector("[data-item-note]");
       if (noteField) {
+        noteField.addEventListener("input", () => {
+          if (preview) preview.textContent = noteField.value.trim() || "write…";
+        });
         const itemId = noteField.dataset.itemNote;
         bindAutosaveField(
           noteField,
@@ -925,6 +928,9 @@ function trailLiveScript(): Response {
 
       const contentField = step.querySelector("[data-item-content]");
       if (contentField) {
+        contentField.addEventListener("input", () => {
+          if (preview) preview.textContent = contentField.value.trim() || "write…";
+        });
         const itemId = contentField.dataset.itemContent;
         bindAutosaveField(
           contentField,
@@ -961,16 +967,15 @@ function trailLiveScript(): Response {
       if (activeInPath) return;
 
       if (typeof data.html === "string") {
-        const openItem = path.querySelector('.trail-step[data-open="true"]')?.dataset.trailItem ?? null;
+        const openItems = new Set(
+          Array.from(path.querySelectorAll('.trail-step[data-open="true"]'))
+            .map((step) => step.dataset.trailItem)
+            .filter(Boolean),
+        );
         path.innerHTML = data.html;
         bindTrailItems();
-        if (openItem) {
-          for (const step of path.querySelectorAll(".trail-step")) {
-            if (step.dataset.trailItem === openItem) {
-              setStepOpen(step, true);
-              break;
-            }
-          }
+        for (const step of path.querySelectorAll(".trail-step")) {
+          if (openItems.has(step.dataset.trailItem)) setStepOpen(step, true);
         }
       }
       if (
@@ -4665,11 +4670,14 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-step:not(:last-child)::after {
       content: "";
       position: absolute;
-      left: 6px;
+      left: 0;
       top: 26px;
       bottom: -14px;
-      width: 2px;
-      background: var(--annotation);
+      width: 14px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='32' viewBox='0 0 14 32'%3E%3Cpath d='M7 0 C5.8 5.5 8.3 10.5 6.6 16 C5.5 21 8.2 26.5 7 32' fill='none' stroke='%23315c84' stroke-width='2.4' stroke-linecap='round'/%3E%3Cpath d='M7.8 0 C6.4 8.5 8.4 22 6.9 32' fill='none' stroke='%23315c84' stroke-width='.8' stroke-linecap='round' opacity='.55'/%3E%3C/svg%3E");
+      background-repeat: repeat-y;
+      background-position: center top;
+      background-size: 14px 32px;
       pointer-events: none;
       z-index: 0;
     }
@@ -4681,7 +4689,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       gap: 10px;
       align-items: center;
       min-height: 40px;
-      padding: 7px 0;
+      padding: 7px 0 3px;
     }
     .trail-step-rail {
       width: 14px;
@@ -4696,25 +4704,27 @@ function htmlPage(title: string, body: string, status = 200): Response {
       height: 12px;
       padding: 0;
       border: 0;
-      border-radius: 50%;
+      border-radius: 52% 48% 46% 54%;
       background: var(--annotation);
       cursor: pointer;
       position: relative;
+      transition: transform 120ms ease, border-radius 120ms ease;
     }
     .trail-step-node::after {
       content: "";
       position: absolute;
-      inset: -7px;
+      inset: -8px;
       border-radius: 50%;
     }
     .trail-step-node:hover,
     .trail-step-node:focus-visible {
       filter: none;
-      outline: 2px solid color-mix(in srgb, var(--annotation) 35%, transparent);
-      outline-offset: 3px;
+      outline: none;
+      transform: scale(1.16);
     }
     .trail-step[data-open="true"] .trail-step-node {
-      box-shadow: inset 0 0 0 3px var(--paper);
+      transform: scale(1.42);
+      border-radius: 47% 53% 55% 45%;
     }
     .trail-step-line {
       min-width: 0;
@@ -4723,6 +4733,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-step-title-display[hidden],
     .trail-step-title-input[hidden],
+    .trail-step-preview[hidden],
     .trail-step-detail[hidden] {
       display: none !important;
     }
@@ -4761,17 +4772,32 @@ function htmlPage(title: string, body: string, status = 200): Response {
       letter-spacing: .035em;
       white-space: nowrap;
     }
+    .trail-step-preview {
+      position: relative;
+      z-index: 1;
+      margin: -1px 0 10px 24px;
+      max-width: 650px;
+      color: var(--muted);
+      font-size: .78rem;
+      line-height: 1.45;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .trail-step-preview:empty {
+      min-height: 1.1em;
+    }
     .trail-step-detail {
       position: relative;
       z-index: 1;
-      margin: 0 0 0 24px;
+      margin: -1px 0 0 24px;
       padding: 0 0 12px;
       max-width: 650px;
     }
     .trail-node-detail {
       display: block;
       width: 100%;
-      min-height: 46px;
+      min-height: 76px;
       padding: 4px 0 6px;
       border: 0;
       border-bottom: 1px solid transparent;
@@ -4779,7 +4805,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
       background: transparent;
       color: var(--body-muted);
       font-size: .84rem;
-      line-height: 1.48;
+      line-height: 1.5;
       resize: vertical;
     }
     .trail-node-detail::placeholder {
