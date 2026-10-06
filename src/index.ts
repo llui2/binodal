@@ -507,7 +507,7 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
 
         <div class="trail-main">
           <div class="trail-heading">
-            <input id="trail-title" class="trail-title-input" maxlength="140" aria-label="Trail title" placeholder="untitled trail" value="${escapeAttr(title ?? "")}" data-autosave-trail="title">
+            <input id="trail-title" class="trail-title-input" maxlength="140" aria-label="Trail title" placeholder="untitled trail" value="${escapeAttr(title ?? "")}" data-autosave-trail="title" spellcheck="false">
             <div class="trail-heading-meta">
               <span id="trail-save-state" class="trail-save-state" role="status" aria-live="polite"></span>
               <a class="trail-connect-link" href="/trail/connect">connect ChatGPT</a>
@@ -515,7 +515,7 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
           </div>
 
           <div class="trail-description">
-            <textarea id="trail-description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="Describe what this trail is trying to understand." data-autosave-trail="description">${escapeHtml(description ?? "")}</textarea>
+            <textarea id="trail-description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="Describe what this trail is trying to understand." data-autosave-trail="description" spellcheck="false">${escapeHtml(description ?? "")}</textarea>
           </div>
 
           <section class="trail-graph" data-trail-live data-trail-id="${escapeAttr(trail.id)}" aria-label="Research paths">
@@ -524,7 +524,7 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
 
           <form class="trail-mark-add" action="/trail/add" method="post" data-trail-add>
             <textarea id="trail-add-value" name="value" rows="2" maxlength="10000"
-              aria-label="Add a mark"
+              aria-label="Add a mark" spellcheck="false"
               placeholder="Thought, paper, or link" required></textarea>
             <button type="submit">mark</button>
           </form>
@@ -578,13 +578,13 @@ function renderTrailGraph(
   branches: TrailBranchView[],
 ): string {
   const mainHtml = items.length
-    ? items.map((item, index) => renderTrailItem(item, index, 0, true, true)).join("")
+    ? items.map((item, index) => renderTrailItem(item, index, 0, true)).join("")
     : `<p class="trail-empty">The path is empty. Add a mark below.</p>`;
 
   const branchPanels = branches
     .map((branch) => {
       const branchItems = branch.items.length
-        ? branch.items.map((item, index) => renderTrailItem(item, index, branch.id, false, true)).join("")
+        ? branch.items.map((item, index) => renderTrailItem(item, index, branch.id, false)).join("")
         : `<p class="trail-empty trail-branch-empty">This branch is empty.</p>`;
 
       return `<section class="trail-path-panel"
@@ -626,7 +626,6 @@ function renderTrailItem(
   _index: number,
   branchId = 0,
   allowBranch = false,
-  contentOnly = false,
 ): string {
   const title = item.title || item.content || "untitled";
   const kind = item.kind === "paper" ? "paper" : item.kind === "link" ? "link" : "";
@@ -638,20 +637,12 @@ function renderTrailItem(
     ? ""
     : rawContent;
   const detailsText = item.note ?? "";
-  const contentClass = contentOnly ? " trail-step-content-only" : "";
 
-  return `<div class="trail-step${contentClass}" data-trail-item="${item.id}" data-path-branch="${branchId}" data-open="false">
+  return `<div class="trail-step" data-trail-item="${item.id}" data-path-branch="${branchId}" data-open="false">
     <div class="trail-step-summary">
-      ${contentOnly ? "" : `<span class="trail-step-rail">
-        <button class="trail-step-node" type="button" data-item-toggle="${item.id}" aria-label="Open node" aria-expanded="false">
-          <svg class="trail-step-node-svg" viewBox="0 0 20 20" aria-hidden="true">
-            <path class="trail-step-node-shape" d="M10 1.2 C15.1 1.1 18.6 5 18.4 10.1 C18.6 15 14.8 18.8 9.8 18.6 C4.8 18.9 1.4 15.1 1.6 10 C1.3 5.1 4.9 1.4 10 1.2 Z"/>
-          </svg>
-        </button>
-      </span>`}
       <span class="trail-step-line">
         <span class="trail-step-title-display">${escapeHtml(title)}</span>
-        <input class="trail-step-title-input" value="${escapeAttr(title)}" maxlength="300" aria-label="Node title" data-item-title="${item.id}" hidden>
+        <input class="trail-step-title-input" value="${escapeAttr(title)}" maxlength="300" aria-label="Node title" data-item-title="${item.id}" spellcheck="false" hidden>
       </span>
       ${kind && item.url
         ? `<a class="trail-step-kind" href="${escapeAttr(item.url)}"${item.kind === "link" ? ` target="_blank" rel="noreferrer"` : ""}>${escapeHtml(kind)}</a>`
@@ -659,11 +650,11 @@ function renderTrailItem(
     </div>
 
     <textarea class="trail-step-body" rows="1" maxlength="10000"
-      aria-label="Permanent node text" placeholder="write…"
+      aria-label="Permanent node text" placeholder="write…" spellcheck="false"
       data-item-content="${item.id}">${escapeHtml(mainText)}</textarea>
 
     <div class="trail-step-detail" data-item-detail="${item.id}" hidden>
-      <textarea class="trail-node-detail" rows="2" maxlength="2000" aria-label="Node details" placeholder="details…" data-item-note="${item.id}">${escapeHtml(detailsText)}</textarea>
+      <textarea class="trail-node-detail" rows="2" maxlength="2000" aria-label="Node details" placeholder="details…" data-item-note="${item.id}" spellcheck="false">${escapeHtml(detailsText)}</textarea>
 
       <div class="trail-step-footer">
         <span></span>
@@ -999,16 +990,11 @@ function trailLiveScript(): Response {
   };
 
   const setStepOpen = (step, open) => {
-    const toggles = step.querySelectorAll("[data-item-toggle]");
     const titleDisplay = step.querySelector(".trail-step-title-display");
     const titleField = step.querySelector("[data-item-title]");
     const detail = step.querySelector("[data-item-detail]");
 
     step.dataset.open = open ? "true" : "false";
-    toggles.forEach((toggle) => {
-      toggle.setAttribute("aria-expanded", open ? "true" : "false");
-      toggle.setAttribute("aria-label", open ? "Close node" : "Open node");
-    });
     if (titleDisplay) titleDisplay.hidden = open;
     if (titleField) {
       titleField.hidden = !open;
@@ -1023,22 +1009,8 @@ function trailLiveScript(): Response {
 
   const bindTrailItems = () => {
     graph.querySelectorAll(".trail-step").forEach((step) => {
-      const toggle = step.querySelector("[data-item-toggle]");
       const titleDisplay = step.querySelector(".trail-step-title-display");
       const titleField = step.querySelector("[data-item-title]");
-
-      if (step.dataset.bound !== "true") {
-        step.dataset.bound = "true";
-        if (toggle) {
-          toggle.addEventListener("click", () => {
-            const opening = step.dataset.open !== "true";
-            setStepOpen(step, opening);
-            if (opening && titleField) {
-              requestAnimationFrame(() => titleField.focus());
-            }
-          });
-        }
-      }
 
       if (titleField) {
         if (titleField.dataset.titleBound !== "true") {
@@ -1131,7 +1103,7 @@ function trailLiveScript(): Response {
     const dy = b.y - a.y;
     const horizontal = Math.abs(dx) >= Math.abs(dy);
     const sign = ((phase % 2) * 2 - 1) || 1;
-    const wobble = 0.62 + (phase % 3) * 0.18;
+    const wobble = 0.9 + (phase % 3) * 0.22;
 
     if (horizontal) {
       const y = a.y + offset;
@@ -1200,14 +1172,14 @@ function trailLiveScript(): Response {
         group,
         points,
         "trail-map-brush-fiber trail-map-brush-fiber-a",
-        0.9,
+        1.15,
         4,
       );
       drawBrushSegments(
         group,
         points,
         "trail-map-brush-fiber trail-map-brush-fiber-b",
-        -0.75,
+        -1.0,
         7,
       );
     }
@@ -1215,7 +1187,7 @@ function trailLiveScript(): Response {
     const nodePoints = explicitNodePoints ||
       (branchId === "0" ? points : points.slice(1));
     nodePoints.forEach((point, index) => {
-      const scale = 0.7;
+      const scale = 0.9;
       const rotation = ((index % 3) - 1) * 4;
       const transform =
         "translate(" + (point.x - 10 * scale).toFixed(2) + " " +
@@ -6069,9 +6041,13 @@ function htmlPage(title: string, body: string, status = 200): Response {
       line-height: 1.14;
       letter-spacing: -.025em;
     }
+    .trail-title-input {
+      caret-color: var(--annotation);
+    }
     .trail-title-input:focus-visible {
       outline: none;
-      background: color-mix(in srgb, var(--annotation) 6%, transparent);
+      background: transparent;
+      box-shadow: none;
     }
     .trail-heading-meta {
       display: flex;
@@ -6271,7 +6247,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-map-hit {
       fill: none;
       stroke: transparent;
-      stroke-width: 16;
+      stroke-width: 20;
       stroke-linecap: round;
       stroke-linejoin: round;
       pointer-events: stroke;
@@ -6287,18 +6263,18 @@ function htmlPage(title: string, body: string, status = 200): Response {
       pointer-events: none;
     }
     .trail-map-brush-main {
-      stroke-width: 5.8;
+      stroke-width: 7;
     }
     .trail-map-brush-fiber {
-      stroke-width: 1.25;
-      opacity: .42;
+      stroke-width: 1.55;
+      opacity: .44;
     }
     .trail-map-brush-fiber-a {
       stroke-dasharray: 11 1.5 17 2;
     }
     .trail-map-brush-fiber-b {
-      stroke-width: .95;
-      opacity: .28;
+      stroke-width: 1.15;
+      opacity: .3;
       stroke-dasharray: 5 1 21 1.5;
     }
     .trail-map-brush-node {
@@ -6310,8 +6286,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-map-brush-node-fiber {
       fill: none;
       stroke: currentColor;
-      stroke-width: 1.05;
-      opacity: .32;
+      stroke-width: 1.35;
+      opacity: .34;
       pointer-events: none;
       vector-effect: non-scaling-stroke;
     }
@@ -6333,99 +6309,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-path {
       position: relative;
       margin-top: 20px;
-    }
-    .trail-path-rail {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      overflow: visible;
-      pointer-events: none;
-      z-index: 0;
-    }
-    .trail-path-rail path {
-      fill: none;
-      stroke: var(--annotation);
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      vector-effect: non-scaling-stroke;
-    }
-    .trail-path-rail .trail-brush-main {
-      stroke-width: 5.5;
-    }
-    .trail-path-rail .trail-brush-fiber {
-      stroke-width: 1.15;
-      opacity: .34;
-    }
-    .trail-path-rail .trail-brush-fiber-b {
-      opacity: .2;
-    }
-    .trail-step {
-      position: relative;
-      z-index: 1;
-      margin: 0;
-    }
-    .trail-step-summary {
-      position: relative;
-      z-index: 1;
-      display: grid;
-      grid-template-columns: 20px minmax(0, 1fr) auto;
-      gap: 10px;
-      align-items: center;
-      min-height: 44px;
-      padding: 7px 0 3px;
-    }
-    .trail-step-content-only .trail-step-summary {
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 12px;
-    }
-    .trail-step-rail {
-      width: 20px;
-      height: 30px;
-      display: grid;
-      place-items: center;
-      position: relative;
-      z-index: 2;
-    }
-    .trail-step-node {
-      width: 20px;
-      height: 20px;
-      display: grid;
-      place-items: center;
-      padding: 0;
-      border: 0;
-      background: transparent;
-      cursor: pointer;
-      position: relative;
-    }
-    .trail-step-node::after {
-      content: "";
-      position: absolute;
-      inset: -7px;
-      border-radius: 50%;
-    }
-    .trail-step-node-svg {
-      display: block;
-      width: 20px;
-      height: 20px;
-      overflow: visible;
-      transform-origin: 10px 10px;
-      transition: transform 120ms ease;
-    }
-    .trail-step-node-shape {
-      fill: var(--annotation);
-    }
-    .trail-step-node:hover,
-    .trail-step-node:focus-visible {
-      filter: none;
-      outline: none;
-    }
-    .trail-step-node:hover .trail-step-node-svg,
-    .trail-step-node:focus-visible .trail-step-node-svg {
-      transform: scale(1.08);
-    }
-    .trail-step[data-open="true"] .trail-step-node-svg {
-      transform: scale(1.28);
     }
     .trail-step-line {
       min-width: 0;
@@ -6460,10 +6343,12 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .trail-step-title-input {
       cursor: text;
+      caret-color: var(--annotation);
     }
     .trail-step-title-input:focus-visible {
       outline: none;
-      background: color-mix(in srgb, var(--annotation) 6%, transparent);
+      background: transparent;
+      box-shadow: none;
     }
     .trail-step-kind {
       color: var(--soft);
@@ -6481,9 +6366,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
       position: relative;
       z-index: 1;
       display: block;
-      width: calc(100% - 30px);
+      width: 100%;
       min-height: 26px;
-      margin: -2px 0 10px 30px;
+      margin: -2px 0 10px 0;
       padding: 2px 0 4px;
       overflow: hidden;
       resize: none;
@@ -6493,10 +6378,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       color: var(--muted);
       font-size: .86rem;
       line-height: 1.5;
-    }
-    .trail-step-content-only .trail-step-body {
-      width: 100%;
-      margin-left: 0;
     }
     .trail-step-body::placeholder {
       color: var(--soft);
@@ -6509,12 +6390,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-step-detail {
       position: relative;
       z-index: 1;
-      margin: -2px 0 0 30px;
+      margin: -2px 0 0 0;
       padding: 0 0 12px;
-      max-width: 650px;
-    }
-    .trail-step-content-only .trail-step-detail {
-      margin-left: 0;
       max-width: 680px;
     }
     .trail-node-detail {
