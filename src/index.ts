@@ -4137,6 +4137,14 @@ function normalizePaperInput(raw: string): string | null {
 
   value = unwrapKnownRedirectUrl(value);
 
+  // bioRxiv/medRxiv URLs often contain a DOI plus version/PDF suffixes in the
+  // path. Recognize them before generic DOI extraction so
+  // "...735472v1.full.pdf" is not mistaken for the DOI itself.
+  const bioRxiv = bioRxivPaperFromUrl(value);
+  if (bioRxiv) {
+    return `url:${encodeURIComponent(value)}`;
+  }
+
   const arxiv = normalizeArxivInput(value);
   if (arxiv) return arxiv;
 
