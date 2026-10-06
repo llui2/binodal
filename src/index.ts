@@ -768,6 +768,7 @@ function trailLiveScript(): Response {
   let last = "";
   let stopped = false;
   let savedTimer = 0;
+  let pendingSaves = 0;
   const timers = new WeakMap();
 
   const setSaveState = (state) => {
@@ -784,6 +785,7 @@ function trailLiveScript(): Response {
   };
 
   const patch = async (url, payload) => {
+    pendingSaves += 1;
     setSaveState("saving");
     try {
       const response = await fetch(url, {
@@ -800,6 +802,8 @@ function trailLiveScript(): Response {
     } catch {
       setSaveState("error");
       return false;
+    } finally {
+      pendingSaves = Math.max(0, pendingSaves - 1);
     }
   };
 
@@ -867,7 +871,7 @@ function trailLiveScript(): Response {
   bindAutosaveField(description, "/api/trail", () => ({ description: description.value }));
 
   const tick = async () => {
-    if (stopped || document.hidden) return;
+    if (stopped || document.hidden || pendingSaves > 0) return;
     try {
       const response = await fetch("/api/trail", {
         headers: { Accept: "application/json" },
