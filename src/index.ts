@@ -315,6 +315,7 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
           <button type="submit">Open</button>
         </div>
       </form>
+      <div class="home-trails-link"><a href="/trail">trails →</a></div>
       <script src="/trail-live.js" defer></script>
     </main>`,
   );
@@ -549,17 +550,19 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
     </summary>
 
     <div class="trail-step-detail">
-      <form class="trail-item-title-edit" action="/trail/items/${item.id}/title" method="post">
-        <input name="title" maxlength="300" aria-label="Node title" value="${escapeAttr(title)}">
-        <button class="text-button" type="submit">save title</button>
-      </form>
-
       ${content}
       ${isOpenable
         ? `<a class="trail-step-open" href="${escapeAttr(item.url)}">open ${escapeHtml(kind)} ↗</a>`
         : ""}
 
       <div class="trail-step-actions">
+        <details class="trail-title-edit">
+          <summary>edit title</summary>
+          <form action="/trail/items/${item.id}/title" method="post">
+            <input name="title" maxlength="300" aria-label="Node title" value="${escapeAttr(title)}">
+            <button type="submit">save</button>
+          </form>
+        </details>
         <details class="trail-note-edit">
           <summary>${item.note ? "edit why" : "why here?"}</summary>
           <form action="/trail/items/${item.id}/note" method="post">
@@ -3767,13 +3770,11 @@ function renderBrand(): string {
 function renderIdentity(user: User | null): string {
   if (!user) {
     return `<div class="identity">
-      <a class="identity-link" href="/trail">trail</a>
       <a class="identity-link" href="/auth/orcid?next=/">Sign in with ORCID</a>
     </div>`;
   }
 
   return `<div class="identity">
-    <a class="identity-link" href="/trail">trail</a>
     <a href="https://orcid.org/${escapeAttr(user.orcid)}" rel="noreferrer">${escapeHtml(user.display_name)}</a>
     <form action="/logout" method="post"><button class="text-button" type="submit">sign out</button></form>
   </div>`;
@@ -3914,6 +3915,15 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .lookup {
       margin-top: 40px;
       max-width: 640px;
+    }
+    .home-trails-link {
+      margin-top: 16px;
+      max-width: 640px;
+      font-size: .8rem;
+      font-weight: 520;
+    }
+    .home-trails-link a {
+      color: var(--annotation);
     }
     .lookup label,
     .eyebrow {
@@ -4465,8 +4475,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
       left: 4px;
       top: 21px;
       bottom: -1px;
-      width: 1px;
-      background: var(--wash);
+      width: 2px;
+      background: var(--annotation);
       pointer-events: none;
     }
     .trail-step-summary {
@@ -4547,23 +4557,33 @@ function htmlPage(title: string, body: string, status = 200): Response {
       padding: 2px 0 15px;
       max-width: 650px;
     }
-    .trail-item-title-edit {
+    .trail-title-edit summary,
+    .trail-note-edit summary {
+      cursor: pointer;
+      list-style: none;
+      color: var(--muted);
+    }
+    .trail-title-edit summary::-webkit-details-marker,
+    .trail-note-edit summary::-webkit-details-marker { display: none; }
+    .trail-title-edit[open],
+    .trail-note-edit[open] {
+      width: min(100%, 520px);
+      margin: 7px 0;
+    }
+    .trail-title-edit form,
+    .trail-note-edit form {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 8px;
-      align-items: center;
-      margin: 2px 0 10px;
+      width: 100%;
+      gap: 7px;
+      margin-top: 8px;
     }
-    .trail-item-title-edit input {
+    .trail-title-edit input {
       min-width: 0;
-      padding: 7px 8px;
+      padding: 9px 10px;
       background: var(--field-muted);
-      font-size: .8rem;
+      font-size: .78rem;
     }
-    .trail-item-title-edit .text-button {
-      color: var(--annotation);
-      font-size: .7rem;
-    }
+    .trail-title-edit button,
     .trail-content {
       max-width: 650px;
       margin: 3px 0 9px;
@@ -4599,22 +4619,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       display: inline-flex;
       gap: 6px;
       margin: 0;
-    }
-    .trail-note-edit summary {
-      cursor: pointer;
-      list-style: none;
-      color: var(--muted);
-    }
-    .trail-note-edit summary::-webkit-details-marker { display: none; }
-    .trail-note-edit[open] {
-      width: min(100%, 520px);
-      margin: 7px 0;
-    }
-    .trail-note-edit form {
-      display: grid;
-      width: 100%;
-      gap: 7px;
-      margin-top: 8px;
     }
     .trail-note-edit textarea {
       min-height: 74px;
