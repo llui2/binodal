@@ -1085,20 +1085,66 @@ function trailLiveScript(): Response {
     return node;
   };
 
-  const orthogonalPath = (points, offsetX = 0, offsetY = 0) => {
+  const orthogonalHitPath = (points) => {
     if (!points.length) return "";
-    const shifted = points.map((point) => ({
-      x: point.x + offsetX,
-      y: point.y + offsetY,
-    }));
-    let d = "M " + shifted[0].x.toFixed(2) + " " + shifted[0].y.toFixed(2);
-    for (let i = 1; i < shifted.length; i += 1) {
-      const a = shifted[i - 1];
-      const b = shifted[i];
+    let d = "M " + points[0].x.toFixed(2) + " " + points[0].y.toFixed(2);
+    for (let i = 1; i < points.length; i += 1) {
+      const a = points[i - 1];
+      const b = points[i];
       if (Math.abs(b.x - a.x) > 0.01) d += " H " + b.x.toFixed(2);
       if (Math.abs(b.y - a.y) > 0.01) d += " V " + b.y.toFixed(2);
     }
     return d;
+  };
+
+  // Keep the topology orthogonal, but render each horizontal/vertical segment
+  // as a slightly irregular brush stroke rather than a perfect vector line.
+  const brushSegmentPath = (
+    a,
+    b,
+    offset = 0,
+    phase = 0,
+  ) => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const horizontal = Math.abs(dx) >= Math.abs(dy);
+    const sign = ((phase % 2) * 2 - 1) || 1;
+    const wobble = 0.62 + (phase % 3) * 0.18;
+
+    if (horizontal) {
+      const y = a.y + offset;
+      const x0 = a.x;
+      const x1 = b.x;
+      const span = x1 - x0;
+      return (
+        "M " + x0.toFixed(2) + " " + y.toFixed(2) +
+        " C " +
+        (x0 + span * 0.31).toFixed(2) + " " + (y + wobble * sign).toFixed(2) + " " +
+        (x0 + span * 0.68).toFixed(2) + " " + (y - wobble * sign * 0.72).toFixed(2) + " " +
+        x1.toFixed(2) + " " + y.toFixed(2)
+      );
+    }
+
+    const x = a.x + offset;
+    const y0 = a.y;
+    const y1 = b.y;
+    const span = y1 - y0;
+    return (
+      "M " + x.toFixed(2) + " " + y0.toFixed(2) +
+      " C " +
+      (x + wobble * sign).toFixed(2) + " " + (y0 + span * 0.31).toFixed(2) + " " +
+      (x - wobble * sign * 0.72).toFixed(2) + " " + (y0 + span * 0.68).toFixed(2) + " " +
+      x.toFixed(2) + " " + y1.toFixed(2)
+    );
+  };
+
+  const drawBrushSegments = (group, points, brushClass, offset, phaseBase) => {
+    for (let i = 1; i < points.length; i += 1) {
+      group.appendChild(svgNode("path", {
+        d: brushSegmentPath(points[i - 1], points[i], offset, phaseBase + i),
+        class: brushClass,
+      }));
+    }
   };
 
   const TRAIL_MAP_NODE_SHAPE =
@@ -1115,21 +1161,26 @@ function trailLiveScript(): Response {
 
     if (points.length >= 2) {
       group.appendChild(svgNode("path", {
-        d: orthogonalPath(points),
+        d: orthogonalHitPath(points),
         class: "trail-map-hit",
         "data-branch-select": branchId,
       }));
 
-      [
-        ["trail-map-brush-main", 0, 0],
-        ["trail-map-brush-fiber trail-map-brush-fiber-a", 0.8, -0.5],
-        ["trail-map-brush-fiber trail-map-brush-fiber-b", -0.7, 0.6],
-      ].forEach(([brushClass, offsetX, offsetY]) => {
-        group.appendChild(svgNode("path", {
-          d: orthogonalPath(points, Number(offsetX), Number(offsetY)),
-          class: String(brushClass),
-        }));
-      });
+      drawBrushSegments(group, points, "trail-map-brush-main", 0, 1);
+      drawBrushSegments(
+        group,
+        points,
+        "trail-map-brush-fiber trail-map-brush-fiber-a",
+        0.9,
+        4,
+      );
+      drawBrushSegments(
+        group,
+        points,
+        "trail-map-brush-fiber trail-map-brush-fiber-b",
+        -0.75,
+        7,
+      );
     }
 
     const nodePoints = branchId === "0" ? points : points.slice(1);
@@ -6118,14 +6169,19 @@ function htmlPage(title: string, body: string, status = 200): Response {
       pointer-events: none;
     }
     .trail-map-brush-main {
-      stroke-width: 5.4;
+      stroke-width: 5.8;
     }
     .trail-map-brush-fiber {
-      stroke-width: 1.35;
-      opacity: .38;
+      stroke-width: 1.25;
+      opacity: .42;
+    }
+    .trail-map-brush-fiber-a {
+      stroke-dasharray: 11 1.5 17 2;
     }
     .trail-map-brush-fiber-b {
-      opacity: .22;
+      stroke-width: .95;
+      opacity: .28;
+      stroke-dasharray: 5 1 21 1.5;
     }
     .trail-map-brush-node {
       fill: currentColor;
