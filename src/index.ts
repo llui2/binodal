@@ -1342,7 +1342,13 @@ function trailLiveScript(): Response {
         const summary = step.querySelector(".trail-step-summary") || step;
         const anchor = titleField || titleDisplay || summary;
         const rect = anchor.getBoundingClientRect();
-        return rect.top - graphRect.top + rect.height / 2;
+        const anchorStyle = window.getComputedStyle(anchor);
+        const parsedLineHeight = Number.parseFloat(anchorStyle.lineHeight);
+        const parsedFontSize = Number.parseFloat(anchorStyle.fontSize) || 16;
+        const lineHeight = Number.isFinite(parsedLineHeight)
+          ? parsedLineHeight
+          : parsedFontSize * 1.2;
+        return rect.top - graphRect.top + Math.min(rect.height, lineHeight) / 2;
       });
 
       const semanticMainYs = mainSteps.map(
