@@ -2411,7 +2411,7 @@ async function handleTrailApi(
         question: description ?? "",
         items,
         branches,
-        html: renderTrailGraph(items, branches),
+        html: renderTrailGraph(items, []),
       }),
       trail.cookie,
     );
