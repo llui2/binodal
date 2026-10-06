@@ -176,6 +176,10 @@ async function route(request: Request, env: Env): Promise<Response> {
     return trailLiveScript();
   }
 
+  if (request.method === "GET" && path === "/theme.js") {
+    return themeScript();
+  }
+
   if (request.method === "POST" && path === "/trail/question") {
     return updateTrailDescription(request, env);
   }
@@ -4366,16 +4370,102 @@ function renderBrand(): string {
 }
 
 function renderIdentity(user: User | null): string {
+  const themeToggle = `<button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme">dark</button>`;
+
   if (!user) {
     return `<div class="identity">
       <a class="identity-link" href="/auth/orcid?next=/">Sign in with ORCID</a>
+      ${themeToggle}
     </div>`;
   }
 
   return `<div class="identity">
     <a href="https://orcid.org/${escapeAttr(user.orcid)}" rel="noreferrer">${escapeHtml(user.display_name)}</a>
     <form action="/logout" method="post"><button class="text-button" type="submit">sign out</button></form>
+    ${themeToggle}
   </div>`;
+}
+
+function themeScript(): Response {
+  const source = `
+(() => {
+  const root = document.documentElement;
+  const key = "trails-theme";
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+
+  const storedTheme = () => {
+    try {
+      const value = window.localStorage.getItem(key);
+      return value === "light" || value === "dark" ? value : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const systemTheme = () => media.matches ? "dark" : "light";
+  const activeTheme = () => root.dataset.theme || systemTheme();
+
+  const updateChrome = () => {
+    const active = activeTheme();
+    root.style.colorScheme = active;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", active === "dark" ? "#1d1e1c" : "#f7f4ed");
+
+    document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
+      const next = active === "dark" ? "light" : "dark";
+      button.textContent = next;
+      button.setAttribute("aria-label", "Switch to " + next + " mode");
+      button.setAttribute("title", "Switch to " + next + " mode");
+    });
+  };
+
+  const saved = storedTheme();
+  if (saved) root.dataset.theme = saved;
+  updateChrome();
+
+  const bind = () => {
+    document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
+      if (button.dataset.themeBound === "true") return;
+      button.dataset.themeBound = "true";
+      button.addEventListener("click", () => {
+        const next = activeTheme() === "dark" ? "light" : "dark";
+        root.dataset.theme = next;
+        try {
+          window.localStorage.setItem(key, next);
+        } catch {
+          // Theme still applies for the current page if storage is unavailable.
+        }
+        updateChrome();
+      });
+    });
+    updateChrome();
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bind, { once: true });
+  } else {
+    bind();
+  }
+
+  const onSystemThemeChange = () => {
+    if (!storedTheme()) {
+      delete root.dataset.theme;
+      updateChrome();
+    }
+  };
+  if (typeof media.addEventListener === "function") {
+    media.addEventListener("change", onSystemThemeChange);
+  }
+})();
+`;
+
+  return new Response(source, {
+    headers: {
+      "Content-Type": "text/javascript; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }
 
 function htmlPage(title: string, body: string, status = 200): Response {
@@ -4386,8 +4476,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f7f4ed" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1d1e1c" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f7f4ed">
+  <script src="/theme.js"></script>
   <link rel="icon" href="/trails-logo.svg?v=3" type="image/svg+xml">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400..700&display=swap">
   <title>${escapeHtml(title)}</title>
@@ -4427,8 +4517,34 @@ function htmlPage(title: string, body: string, status = 200): Response {
       text-rendering: optimizeLegibility;
     }
 
+    :root[data-theme="dark"] {
+      --paper: #1d1e1c;
+      --ink: #e7e2d8;
+      --annotation: #7e9fbd;
+      --stone: #76756f;
+      --muted: #aaa59b;
+      --wash: #292a26;
+      --surface: rgba(255, 255, 255, .035);
+      --field: #252622;
+      --field-muted: #292a26;
+      --field-focus: #30312c;
+      --button-ink: #f7f4ed;
+      --soft: #969289;
+      --body-muted: #c5c0b6;
+      --body-soft: #bbb6ac;
+      --signin: #b9b4aa;
+      --notice-bg: #26333e;
+      --notice-ink: #adc4d7;
+    }
+    :root[data-theme="dark"] .brand-mark {
+      filter: brightness(1.75) saturate(.72);
+    }
+    :root[data-theme="light"] .brand-mark {
+      filter: none;
+    }
+
     @media (prefers-color-scheme: dark) {
-      :root {
+      :root:not([data-theme]) {
         --paper: #1d1e1c;
         --ink: #e7e2d8;
         --annotation: #7e9fbd;
@@ -4448,7 +4564,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
         --notice-ink: #adc4d7;
       }
 
-      .brand-mark {
+      :root:not([data-theme]) .brand-mark {
         filter: brightness(1.75) saturate(.72);
       }
     }
@@ -4846,6 +4962,25 @@ function htmlPage(title: string, body: string, status = 200): Response {
       text-decoration: none;
     }
     .identity form { margin: 0; }
+    .theme-toggle {
+      min-width: 42px;
+      padding: 4px 7px;
+      border: 1px solid var(--wash);
+      border-radius: 2px;
+      background: transparent;
+      color: var(--muted);
+      font-size: .7rem;
+      font-weight: 520;
+      line-height: 1.2;
+    }
+    .theme-toggle:hover,
+    .theme-toggle:focus-visible {
+      color: var(--annotation);
+      border-color: var(--annotation);
+      background: transparent;
+      filter: none;
+      outline: none;
+    }
 
     .text-button {
       background: none;
