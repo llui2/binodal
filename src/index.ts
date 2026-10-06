@@ -462,17 +462,16 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
 
         <div class="trail-main">
           <div class="trail-heading">
-            <form class="trail-title-form" action="/trail/title" method="post">
-              <input id="trail-title" name="title" maxlength="140" aria-label="Trail title" placeholder="untitled trail" value="${escapeAttr(title ?? "")}">
-              <button class="text-button" type="submit">save</button>
-            </form>
-            <a class="trail-connect-link" href="/trail/connect">connect ChatGPT</a>
+            <input id="trail-title" class="trail-title-input" maxlength="140" aria-label="Trail title" placeholder="untitled trail" value="${escapeAttr(title ?? "")}" data-autosave-trail="title">
+            <div class="trail-heading-meta">
+              <span id="trail-save-state" class="trail-save-state" role="status" aria-live="polite"></span>
+              <a class="trail-connect-link" href="/trail/connect">connect ChatGPT</a>
+            </div>
           </div>
 
-          <form class="trail-description" action="/trail/description" method="post">
-            <textarea id="trail-description" name="description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="Describe what this trail is trying to understand.">${escapeHtml(description ?? "")}</textarea>
-            <button class="text-button" type="submit">save</button>
-          </form>
+          <div class="trail-description">
+            <textarea id="trail-description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="Describe what this trail is trying to understand." data-autosave-trail="description">${escapeHtml(description ?? "")}</textarea>
+          </div>
 
           <section class="trail-path" data-trail-live aria-label="Research path">
             ${itemHtml}
@@ -543,7 +542,7 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
     <summary class="trail-step-summary">
       <span class="trail-step-rail" aria-hidden="true"><span class="trail-step-dot"></span></span>
       <span class="trail-step-line">
-        <span class="trail-step-title">${escapeHtml(title)}</span>
+        <input class="trail-step-title-input" value="${escapeAttr(title)}" maxlength="300" aria-label="Node title" data-item-title="${item.id}">
       </span>
       <span class="trail-step-kind">${escapeHtml(kind)}</span>
       <span class="trail-step-chevron" aria-hidden="true"></span>
@@ -556,19 +555,9 @@ function renderTrailItem(item: TrailItemRow, _index: number): string {
         : ""}
 
       <div class="trail-step-actions">
-        <details class="trail-title-edit">
-          <summary>edit title</summary>
-          <form action="/trail/items/${item.id}/title" method="post">
-            <input name="title" maxlength="300" aria-label="Node title" value="${escapeAttr(title)}">
-            <button type="submit">save</button>
-          </form>
-        </details>
         <details class="trail-note-edit">
-          <summary>${item.note ? "edit why" : "why here?"}</summary>
-          <form action="/trail/items/${item.id}/note" method="post">
-            <textarea name="note" rows="3" maxlength="2000" placeholder="What does this add to the path?">${escapeHtml(item.note ?? "")}</textarea>
-            <button type="submit">save</button>
-          </form>
+          <summary>${item.note ? "why" : "why here?"}</summary>
+          <textarea rows="3" maxlength="2000" placeholder="What does this add to the path?" aria-label="Why this node is here" data-item-note="${item.id}">${escapeHtml(item.note ?? "")}</textarea>
         </details>
         <form action="/trail/items/${item.id}/move" method="post">
           <button class="trail-mini" type="submit" name="direction" value="-1" aria-label="Move up">↑</button>
@@ -773,23 +762,109 @@ function trailLiveScript(): Response {
   const path = document.querySelector("[data-trail-live]");
   const title = document.getElementById("trail-title");
   const description = document.getElementById("trail-description");
+  const saveState = document.getElementById("trail-save-state");
   if (!path) return;
 
   let last = "";
   let stopped = false;
+  let savedTimer = 0;
+  const timers = new WeakMap();
+
+  const setSaveState = (state) => {
+    if (!saveState) return;
+    window.clearTimeout(savedTimer);
+    saveState.dataset.state = state;
+    saveState.textContent = state === "saving" ? "saving…" : state === "error" ? "not saved" : state === "saved" ? "saved" : "";
+    if (state === "saved") {
+      savedTimer = window.setTimeout(() => {
+        saveState.dataset.state = "";
+        saveState.textContent = "";
+      }, 900);
+    }
+  };
+
+  const patch = async (url, payload) => {
+    setSaveState("saving");
+    try {
+      const response = await fetch(url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error("save failed");
+      setSaveState("saved");
+      return true;
+    } catch {
+      setSaveState("error");
+      return false;
+    }
+  };
+
+  const queueSave = (field, url, payload, delay = 450) => {
+    const previous = timers.get(field);
+    if (previous) window.clearTimeout(previous);
+    const timer = window.setTimeout(() => {
+      timers.delete(field);
+      patch(url, payload());
+    }, delay);
+    timers.set(field, timer);
+  };
+
+  const flushSave = (field, url, payload) => {
+    const previous = timers.get(field);
+    if (previous) window.clearTimeout(previous);
+    timers.delete(field);
+    patch(url, payload());
+  };
+
+  const bindAutosaveField = (field, url, payload) => {
+    if (!field || field.dataset.autosaveBound === "true") return;
+    field.dataset.autosaveBound = "true";
+    field.addEventListener("input", () => queueSave(field, url, payload));
+    field.addEventListener("blur", () => flushSave(field, url, payload));
+  };
 
   const bindTrailItems = () => {
     path.querySelectorAll("details.trail-step").forEach((step) => {
-      if (step.dataset.bound === "true") return;
-      step.dataset.bound = "true";
-      step.addEventListener("toggle", () => {
-        if (!step.open) return;
-        path.querySelectorAll("details.trail-step[open]").forEach((other) => {
-          if (other !== step) other.open = false;
+      if (step.dataset.bound !== "true") {
+        step.dataset.bound = "true";
+        step.addEventListener("toggle", () => {
+          if (!step.open) return;
+          path.querySelectorAll("details.trail-step[open]").forEach((other) => {
+            if (other !== step) other.open = false;
+          });
         });
-      });
+      }
+
+      const titleField = step.querySelector("[data-item-title]");
+      if (titleField) {
+        titleField.addEventListener("click", (event) => event.stopPropagation());
+        titleField.addEventListener("keydown", (event) => event.stopPropagation());
+        const itemId = titleField.dataset.itemTitle;
+        bindAutosaveField(
+          titleField,
+          "/api/trail/items/" + itemId,
+          () => ({ title: titleField.value }),
+        );
+      }
+
+      const noteField = step.querySelector("[data-item-note]");
+      if (noteField) {
+        const itemId = noteField.dataset.itemNote;
+        bindAutosaveField(
+          noteField,
+          "/api/trail/items/" + itemId,
+          () => ({ note: noteField.value || null }),
+        );
+      }
     });
   };
+
+  bindAutosaveField(title, "/api/trail", () => ({ title: title.value }));
+  bindAutosaveField(description, "/api/trail", () => ({ description: description.value }));
 
   const tick = async () => {
     if (stopped || document.hidden) return;
@@ -802,7 +877,9 @@ function trailLiveScript(): Response {
       const data = await response.json();
       const fingerprint = JSON.stringify([data.title, data.description, data.items]);
       if (fingerprint === last) return;
-      last = fingerprint;
+
+      const activeInPath = path.contains(document.activeElement);
+      if (activeInPath) return;
 
       if (typeof data.html === "string") {
         const openItem = path.querySelector("details.trail-step[open]")?.dataset.trailItem ?? null;
@@ -833,6 +910,7 @@ function trailLiveScript(): Response {
       ) {
         description.value = data.description;
       }
+      last = fingerprint;
     } catch {
       // A transient network failure should not disturb the research session.
     }
@@ -1313,6 +1391,31 @@ async function handleTrailApi(
   path: string,
 ): Promise<Response> {
   const trail = await ensureCurrentTrail(request, env);
+
+  if (request.method === "PATCH" && path === "/api/trail") {
+    assertSameOrigin(request);
+    const payload = await request.json().catch(() => ({})) as {
+      title?: string;
+      description?: string;
+    };
+
+    if (payload.title !== undefined) {
+      await setTrailTitle(env, trail.id, String(payload.title));
+    }
+    if (payload.description !== undefined) {
+      await setTrailDescription(env, trail.id, String(payload.description));
+    }
+
+    const [title, description] = await Promise.all([
+      getTrailTitle(env, trail.id),
+      getTrailDescription(env, trail.id),
+    ]);
+    return withTrailCookie(json({
+      id: trail.id,
+      title: title ?? "",
+      description: description ?? "",
+    }), trail.cookie);
+  }
 
   if (request.method === "GET" && path === "/api/trail") {
     const [items, title, description] = await Promise.all([
@@ -4309,38 +4412,47 @@ function htmlPage(title: string, body: string, status = 200): Response {
       max-width: 760px;
     }
     .trail-heading {
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 24px;
-    }
-    .trail-title-form {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 10px;
-      align-items: center;
-      min-width: 0;
-      flex: 1 1 auto;
+      gap: 24px;
+      align-items: baseline;
+      padding-left: 20px;
     }
-    .trail-title-form input {
+    .trail-title-input {
       min-width: 0;
+      width: 100%;
       padding: 0;
-      background: transparent;
+      border: 0;
       border-radius: 0;
+      background: transparent;
+      color: var(--ink);
       font-size: clamp(2rem, 4vw, 2.8rem);
       font-weight: 500;
-      line-height: 1;
+      line-height: 1.08;
       letter-spacing: -.025em;
     }
-    .trail-title-form input:focus-visible {
-      background: transparent;
+    .trail-title-input:focus-visible {
+      outline: none;
+      box-shadow: inset 0 -1px var(--annotation);
     }
-    .trail-title-form .text-button {
-      color: var(--annotation);
+    .trail-heading-meta {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      white-space: nowrap;
+    }
+    .trail-save-state {
+      min-width: 0;
+      color: var(--soft);
+      font-size: .68rem;
+      opacity: .85;
+    }
+    .trail-save-state[data-state="error"] {
+      color: var(--notice-ink);
     }
     .trail-connect-link {
       color: var(--muted);
-      font-size: .78rem;
+      font-size: .76rem;
       white-space: nowrap;
     }
 
@@ -4436,12 +4548,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
 
     .trail-description {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 10px;
-      align-items: start;
-      margin-top: 28px;
-      padding-bottom: 28px;
+      margin: 24px 0 0 20px;
+      padding-bottom: 26px;
       border-bottom: 1px solid var(--wash);
     }
     .trail-endpoint-label {
@@ -4450,16 +4558,22 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-size: .76rem;
     }
     .trail-description textarea {
-      min-height: 108px;
-      background: var(--field-muted);
+      display: block;
+      width: 100%;
+      min-height: 104px;
       padding: 13px 14px;
+      border: 1px solid transparent;
       border-radius: 2px;
-      font-size: 1rem;
-      line-height: 1.5;
+      background: var(--field-muted);
+      color: var(--ink);
+      font-size: .98rem;
+      line-height: 1.52;
+      resize: vertical;
     }
-    .trail-description .text-button {
-      margin-top: 9px;
-      color: var(--annotation);
+    .trail-description textarea:focus-visible {
+      outline: none;
+      border-color: var(--wash);
+      background: var(--field-focus);
     }
 
     .trail-path {
@@ -4473,9 +4587,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
       content: "";
       position: absolute;
       left: 4px;
-      top: 21px;
-      bottom: -1px;
+      top: 18px;
       width: 2px;
+      height: 100%;
       background: var(--annotation);
       pointer-events: none;
     }
@@ -4524,14 +4638,22 @@ function htmlPage(title: string, body: string, status = 200): Response {
       overflow: hidden;
       white-space: nowrap;
     }
-    .trail-step-title {
+    .trail-step-title-input {
       min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      width: 100%;
+      padding: 2px 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
       color: var(--ink);
       font-size: .93rem;
       font-weight: 610;
       line-height: 1.35;
+      text-overflow: ellipsis;
+    }
+    .trail-step-title-input:focus-visible {
+      outline: none;
+      box-shadow: inset 0 -1px var(--annotation);
     }
     .trail-step-kind {
       color: var(--soft);
@@ -4557,37 +4679,25 @@ function htmlPage(title: string, body: string, status = 200): Response {
       padding: 2px 0 15px;
       max-width: 650px;
     }
-    .trail-title-edit summary,
     .trail-note-edit summary {
       cursor: pointer;
       list-style: none;
       color: var(--muted);
     }
-    .trail-title-edit summary::-webkit-details-marker,
     .trail-note-edit summary::-webkit-details-marker { display: none; }
-    .trail-title-edit[open],
     .trail-note-edit[open] {
       width: min(100%, 520px);
       margin: 7px 0;
     }
-    .trail-title-edit form,
-    .trail-note-edit form {
-      display: grid;
+    .trail-note-edit textarea {
+      display: block;
       width: 100%;
-      gap: 7px;
+      min-height: 74px;
       margin-top: 8px;
-    }
-    .trail-title-edit input {
-      min-width: 0;
       padding: 9px 10px;
       background: var(--field-muted);
       font-size: .78rem;
-    }
-    .trail-title-edit button,
-    .trail-note-edit button {
-      justify-self: start;
-      padding: 6px 9px;
-      font-size: .72rem;
+      line-height: 1.45;
     }
     .trail-content {
       max-width: 650px;
@@ -4624,11 +4734,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
       display: inline-flex;
       gap: 6px;
       margin: 0;
-    }
-    .trail-note-edit textarea {
-      min-height: 74px;
-      padding: 9px 10px;
-      font-size: .78rem;
     }
     .trail-mini {
       padding: 0;
@@ -4762,12 +4867,15 @@ function htmlPage(title: string, body: string, status = 200): Response {
       .trail-heading {
         align-items: flex-start;
       }
-      .trail-description {
+      .trail-heading {
         grid-template-columns: 1fr;
+        gap: 10px;
       }
-      .trail-description .text-button {
-        justify-self: start;
-        margin-top: 0;
+      .trail-heading-meta {
+        justify-content: space-between;
+      }
+      .trail-description {
+        margin-top: 18px;
       }
       .trail-note-add {
         grid-template-columns: 1fr;
