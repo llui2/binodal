@@ -32,7 +32,7 @@ Topology may use orthogonal logic for readability, but the rendered stroke shoul
 
 The active path uses annotation blue and is rendered above every inactive path. Inactive paths use stone or muted neutrals without becoming transparent enough to break node-edge continuity.
 
-The focused path occupies the lane nearest the visible mark text. Node positions must remain aligned with the marks they represent. Opening a mark expands the visible path length naturally as later marks move down.
+The focused path occupies the lane nearest the visible mark text. Node positions must align to the actual mark title line, not to surrounding metadata or the total row box. Opening a mark expands the visible path length naturally as later marks move down. Hovering a brush node should make it visibly larger without changing its meaning or color, so clickability is suggested directly by the topology.
 
 Use one topology renderer only: the left SVG brush rail. Do not keep or reintroduce a second inline rail, duplicate node renderer, generic fallback graph, or dormant CSS path for an older topology. Old visual implementations should be removed rather than left beside the current one.
 
@@ -53,7 +53,7 @@ Use short, direct labels. Prefer plain verbs for actions. Avoid prototype or imp
 
 Keep interaction patterns consistent. If a topology node opens mark detail in one place, it should behave the same way everywhere.
 
-Editable trail and mark titles should look like ordinary typography. Editing is indicated by the text caret only: no underline, focus box, glow, tinted background, or other chrome. Browser spelling and grammar underlines are disabled inside the trail workspace because scientific terminology and notation make them noisy.
+Editable trail and mark titles should look like ordinary typography. Editing is indicated by the text caret only: no underline, focus box, glow, tinted background, or other chrome. Use a block, terminal-like caret across trail text editing where supported. Browser spelling and grammar underlines are disabled inside the trail workspace because scientific terminology and notation make them noisy.
 
 ## Layout
 
