@@ -189,6 +189,10 @@ async function route(request: Request, env: Env): Promise<Response> {
     return openTrailByIntegrationKey(request, env, trailJoin[1]);
   }
 
+  if (request.method === "GET" && path === "/trail-example-figure.svg") {
+    return exampleFigureSvg();
+  }
+
   if (request.method === "GET" && path === "/trail-live.js") {
     return trailLiveScript();
   }
@@ -915,6 +919,33 @@ async function openTrailByIntegrationKey(
   });
 }
 
+function exampleFigureSvg(): Response {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 246" role="img" aria-labelledby="title desc">
+    <title id="title">Illustrative trend</title>
+    <desc id="desc">A fictional series of observations increasing with time.</desc>
+    <rect width="520" height="246" fill="#f7f4ed"/>
+    <path d="M58 26 V201 H494" fill="none" stroke="#a7a39a" stroke-width="2"/>
+    <path d="M78 175 L137 160 L197 166 L259 118 L321 135 L382 89 L459 63" fill="none" stroke="#315c84" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <g fill="#315c84">
+      <circle cx="78" cy="175" r="4.5"/><circle cx="137" cy="160" r="4.5"/>
+      <circle cx="197" cy="166" r="4.5"/><circle cx="259" cy="118" r="4.5"/>
+      <circle cx="321" cy="135" r="4.5"/><circle cx="382" cy="89" r="4.5"/>
+      <circle cx="459" cy="63" r="4.5"/>
+    </g>
+    <g fill="#625f58" font-family="Georgia,serif" font-size="17">
+      <text x="463" y="226">time</text>
+      <text x="14" y="31">value</text>
+    </g>
+  </svg>`;
+  return new Response(svg, {
+    headers: {
+      "Content-Type": "image/svg+xml; charset=utf-8",
+      "Cache-Control": "public, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
 function trailLiveScript(): Response {
   const source = `
 (() => {
@@ -1053,7 +1084,7 @@ function trailLiveScript(): Response {
     if (typeof window.renderMathInElement === "function") {
       window.renderMathInElement(preview, {
         delimiters: [
-          { left: "$", right: "$", display: true },
+          { left: "$$", right: "$$", display: true },
           { left: "$", right: "$", display: false },
         ],
         throwOnError: false,
@@ -2218,34 +2249,44 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
     "example:main:start", 0, 0,
   );
   await seedItem(
-    "paper", "A relevant paper", null,
+    "paper", String.raw`A paper about $\alpha$ and $\beta$`, null,
     "A reference that offers one possible explanation.",
-    "Keep a source together with the reason it matters.",
+    "Paper titles may also contain inline mathematics.",
     "example:main:paper-a", 0, 1,
   );
   await seedItem(
     "note", "An observation", null,
-    "One result supports part of the explanation.",
-    "What does the evidence show, and what does it leave unresolved?",
+    String.raw`A quantity $x$ changes over time.
+
+$$
+x(t) = x_0 + vt
+$$`,
+    "This simple equation is illustrative. Click the text to edit its LaTeX.",
     "example:main:observation", 0, 2,
+  );
+  await seedItem(
+    "note", "A figure", null,
+    "![Illustrative trend](https://trails.llui2.workers.dev/trail-example-figure.svg)",
+    "Figures can be inserted using a direct HTTPS image link.",
+    "example:main:figure", 0, 3,
   );
   await seedItem(
     "link", "An external resource", "https://www.crossref.org/",
     "A useful reference, dataset, or tool can belong on the same path.",
     null,
-    "example:main:link", 0, 3,
+    "example:main:link", 0, 4,
   );
   await seedItem(
     "note", "Revise the idea", null,
     "The original explanation needs another condition.",
     "Preserve the change instead of rewriting what came before.",
-    "example:main:revision", 0, 4,
+    "example:main:revision", 0, 5,
   );
   await seedItem(
     "note", "What remains open?", null,
     "Which observation would help decide between the remaining explanations?",
     "Use the next question to continue the trail.",
-    "example:main:next", 0, 5,
+    "example:main:next", 0, 6,
   );
 
 }
