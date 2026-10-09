@@ -195,10 +195,6 @@ async function route(request: Request, env: Env): Promise<Response> {
     return openTrailByIntegrationKey(request, env, trailJoin[1]);
   }
 
-  if (request.method === "GET" && path === "/trail-example-figure.svg") {
-    return exampleFigureSvg();
-  }
-
   if (request.method === "GET" && path === "/trail-live.js") {
     return trailLiveScript();
   }
@@ -563,7 +559,7 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
     ? [
         {
           id: COMMON_TRAIL_ID,
-          title: "A levitating frog",
+          title: "A black hole's shadow",
           created_at: "",
         },
         ...ownedTrails.filter((item) => item.id !== COMMON_TRAIL_ID),
@@ -932,70 +928,6 @@ async function openTrailByIntegrationKey(
     status: response.status,
     statusText: response.statusText,
     headers,
-  });
-}
-
-function exampleFigureSvg(): Response {
-  // Editorial schematic of the levitating-frog experiment, not a
-  // photograph or a quantitative reconstruction of the apparatus.
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" role="img" aria-labelledby="title desc">
-    <title id="title">A frog levitating inside a magnetic bore</title>
-    <desc id="desc">Diagram showing a small frog suspended inside a magnet bore. An upward magnetic force balances its downward weight. Stable levitation additionally requires a restoring force after displacement.</desc>
-    <rect width="600" height="320" fill="#f7f4ed"/>
-    <g fill="none" stroke="#a7a39a" stroke-width="2.5">
-      <path d="M116 24 V258 H151 V24 Z"/>
-      <path d="M449 24 V258 H484 V24 Z"/>
-    </g>
-    <g fill="#d4dcd8" stroke="#71818c" stroke-width="1.6">
-      <rect x="122" y="38" width="24" height="43" rx="3"/>
-      <rect x="122" y="92" width="24" height="43" rx="3"/>
-      <rect x="122" y="146" width="24" height="43" rx="3"/>
-      <rect x="122" y="200" width="24" height="43" rx="3"/>
-      <rect x="454" y="38" width="24" height="43" rx="3"/>
-      <rect x="454" y="92" width="24" height="43" rx="3"/>
-      <rect x="454" y="146" width="24" height="43" rx="3"/>
-      <rect x="454" y="200" width="24" height="43" rx="3"/>
-    </g>
-    <g stroke="#b8c6d0" stroke-width="1.8" stroke-dasharray="5 6" fill="none">
-      <path d="M151 74 Q300 46 449 74"/>
-      <path d="M151 214 Q300 242 449 214"/>
-    </g>
-    <g fill="#789076" stroke="#3b5947" stroke-width="2.5" stroke-linejoin="round">
-      <path d="M258 144 Q230 133 229 109 Q218 95 202 105 L204 117 Q217 116 219 131 Q218 148 240 160 Z"/>
-      <path d="M263 178 Q242 190 218 185 Q204 190 203 204 L214 208 Q222 200 229 198 Q253 207 284 186 Z"/>
-      <path d="M321 143 Q339 129 359 135 L376 115 L383 121 L370 143 Q357 160 336 165 Z"/>
-      <path d="M321 176 Q346 175 361 192 L390 193 L390 203 L354 205 Q331 204 309 192 Z"/>
-      <ellipse cx="290" cy="163" rx="57" ry="29"/>
-      <ellipse cx="247" cy="155" rx="27" ry="24"/>
-      <circle cx="230" cy="141" r="9"/>
-      <circle cx="252" cy="137" r="8"/>
-    </g>
-    <g fill="#263d32">
-      <circle cx="228" cy="140" r="3.5"/>
-      <circle cx="251" cy="137" r="3.3"/>
-    </g>
-    <path d="M226 165 Q239 173 252 165" fill="none" stroke="#3b5947" stroke-width="2"/>
-    <g fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M405 151 V78 M397 90 L405 77 L413 90" stroke="#315c84"/>
-      <path d="M405 167 V239 M397 227 L405 240 L413 227" stroke="#9c7663"/>
-    </g>
-    <g font-family="Georgia,serif" font-size="18" fill="#315c84">
-      <text x="420" y="83">magnetic force</text>
-    </g>
-    <g font-family="Georgia,serif" font-size="18" fill="#9c7663">
-      <text x="420" y="244">weight</text>
-    </g>
-    <g font-family="Georgia,serif" font-size="17" fill="#625f58">
-      <text x="300" y="286" text-anchor="middle">magnetic bore · schematic</text>
-      <text x="300" y="310" text-anchor="middle" font-size="14">force balance does not alone guarantee stability</text>
-    </g>
-  </svg>`;
-  return new Response(svg, {
-    headers: {
-      "Content-Type": "image/svg+xml; charset=utf-8",
-      "Cache-Control": "public, max-age=3600",
-      "X-Content-Type-Options": "nosniff",
-    },
   });
 }
 
@@ -2191,15 +2123,15 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
   )
     .bind(
       COMMON_TRAIL_ID,
-      "A levitating frog",
-      "How can a living frog hover in a static magnetic field? Following a surprising experiment from observation to physical explanation.",
+      "A black hole's shadow",
+      "What does the first image of M87* actually show? A research path from an observed ring to the evidence behind its interpretation.",
     )
     .run();
 
   await env.DB.prepare(
     `UPDATE trail_metadata
-        SET title = 'A levitating frog',
-            description = 'How can a living frog hover in a static magnetic field? Following a surprising experiment from observation to physical explanation.'
+        SET title = 'A black hole''s shadow',
+            description = 'What does the first image of M87* actually show? A research path from an observed ring to the evidence behind its interpretation.'
       WHERE trail_id = ?
         AND title = 'A branching research trail'`,
   )
@@ -2278,66 +2210,62 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
   };
 
   await seedItem(
-    "note", "Could a frog float without a string?", null,
-    "A living frog was levitated in a magnetic field of about 16 T. The surprising part is not just lifting it: why does it stay in place?",
-    "Start with the observation. The real question is how levitation can remain stable.",
-    "example:main:start", 0, 0,
+    "note", "What does a black hole look like?", null,
+    "A black hole emits no light of its own. In 2019, astronomers showed a dark central region surrounded by an asymmetric, glowing ring in the galaxy M87.",
+    "This is radio interferometry, not an ordinary optical photograph. The data were taken in April 2017 and published in 2019.",
+    "example:m87:question", 0, 0,
   );
   await seedItem(
-    "paper", "Of flying frogs and levitrons",
-    "/p/doi%3A10.1088%2F0143-0807%2F18%2F4%2F012",
-    "Berry and Geim (1997) explain how diamagnetic repulsion can balance gravity, and when the resulting equilibrium is stable.",
-    "The paper derives the conditions for a stable levitation zone in an inhomogeneous magnetic field.",
-    "example:main:paper-a", 0, 1,
+    "paper", "First M87 Event Horizon Telescope Results. I. The Shadow of the Supermassive Black Hole",
+    "/p/doi%3A10.3847%2F2041-8213%2Fab0ec7",
+    "The first interpretation: light bent around the black hole produces a bright ring surrounding a deep depression in emission.",
+    "EHT Collaboration (2019), Astrophysical Journal Letters 875 L1. Figure 3 contains the observation reproduced below.",
+    "example:m87:paper-one", 0, 1,
   );
   await seedItem(
-    "note", "But doesn't Earnshaw's theorem forbid it?", null,
-    "A fixed arrangement of ordinary permanent magnets cannot produce this kind of stable equilibrium. The frog is made largely of weakly diamagnetic material.",
-    "The theorem's assumptions matter: the frog's magnetic response is induced, rather than a fixed magnetic moment.",
-    "example:main:objection", 0, 2,
+    "note", "The observation itself", null,
+    "![EHT Collaboration, First M87 EHT Results I, ApJL 875 L1 (2019), Figure 3, CC BY 3.0](https://upload.wikimedia.org/wikipedia/commons/0/09/Apjlab0ec7f3_EHT-image-of-M87-black-hole.jpg)",
+    "Original published Figure 3, unmodified. The top panel shows M87* on one observing day; the lower panels compare other days. Attribution: Event Horizon Telescope Collaboration (2019), First M87 Event Horizon Telescope Results I, Astrophysical Journal Letters 875 L1, DOI 10.3847/2041-8213/ab0ec7. Licensed CC BY 3.0.",
+    "example:m87:figure", 0, 2,
   );
   await seedItem(
-    "note", "What force balances gravity?", null,
-    String.raw`For a material with $\chi<0$, the magnetic force can point away from the stronger field. At equilibrium,
-
-$$
-\rho g = \frac{\chi}{2\mu_0}\frac{dB^2}{dz}.
-$$
-
-Here $\rho$ is the density and $B(z)$ the magnetic field.`,
-    "Both susceptibility and the vertical field-squared gradient are negative in the levitating configuration. The magnetic force is then upward.",
-    "example:main:balance", 0, 3,
+    "link", "Image source and reuse license",
+    "https://commons.wikimedia.org/wiki/File:Apjlab0ec7f3_EHT-image-of-M87-black-hole.jpg",
+    "The original paper figure is available under CC BY 3.0, with credit to the EHT Collaboration and the paper.",
+    "The source page documents attribution, the original figure, and a direct link to the Creative Commons license. No edits were made to the image.",
+    "example:m87:image-source", 0, 3,
   );
   await seedItem(
-    "note", "How does the frog remain suspended?", null,
-    "![Frog suspended in a magnetic bore, with upward magnetic force and downward weight](https://trails.llui2.workers.dev/trail-example-figure.svg?v=2)",
-    "A qualitative drawing of the magnetic bore and competing forces. A balance of forces sets the levitation height; stable levitation also requires restoring forces after small displacements.",
-    "example:main:figure", 0, 4,
+    "note", "Why is the center dark?", null,
+    "The ring comes from radiation emitted by hot plasma near the black hole. Strong light bending and photon capture suppress the brightness at its center.",
+    "The dark region is called the black hole shadow. It is not simply a photograph of the event horizon; the observed ring depends on both spacetime geometry and the emitting plasma.",
+    "example:m87:interpretation", 0, 4,
   );
   await seedItem(
-    "paper", "Diamagnetic levitation: Flying frogs and floating magnets",
-    "/p/doi%3A10.1063%2F1.372654",
-    "Simon and Geim (2000) explore how diamagnetism permits both levitating biological matter and stabilizing magnets.",
-    "A follow-up source changes the perspective: the effect is not restricted to frogs.",
-    "example:main:paper-b", 0, 5,
+    "note", "What sets the angular scale?", null,
+    "The characteristic gravitational length is $r_g = GM/c^2$. What we can resolve depends on its apparent angular scale, $GM/(Dc^2)$, with $D$ the distance to the source.",
+    "For M87, resolving the expected shadow requires an array of radio telescopes operating together as an Earth-sized interferometer.",
+    "example:m87:scale", 0, 5,
   );
   await seedItem(
-    "note", "The field geometry is the key", null,
-    String.raw`The magnetic contribution to the effective energy is
-
-$$
-U(z) = \rho Vgz - \frac{\chi V}{2\mu_0}B(z)^2.
-$$
-
-The field gradient can support the weight; the curvature determines whether the equilibrium restores or repels perturbations.`,
-    "This is the useful distinction: satisfying the force balance at one height does not by itself guarantee stability.",
-    "example:main:synthesis", 0, 6,
+    "paper", "First M87 Event Horizon Telescope Results. IV. Imaging the Central Supermassive Black Hole",
+    "/p/doi%3A10.3847%2F2041-8213%2Fab0e85",
+    "Could reconstruction algorithms have invented the ring? Independent imaging teams and different methods recovered its basic structure.",
+    "EHT Collaboration (2019), Astrophysical Journal Letters 875 L4. Multiple observing nights and blind reconstructions help test robustness.",
+    "example:m87:paper-four", 0, 6,
   );
   await seedItem(
-    "note", "Next question: what stops levitation?", null,
-    "Would changing the material, the magnet geometry, or the field strength destroy the stable zone? Which effect should we test first?",
-    "Possible next steps: compare susceptibilities, examine the three-dimensional Hessian of energy, or estimate the field requirements for water.",
-    "example:main:next", 0, 7,
+    "paper", "First M87 Event Horizon Telescope Results. VI. The Shadow and Mass of the Central Black Hole",
+    "/p/doi%3A10.3847%2F2041-8213%2Fab1141",
+    "Fits to the asymmetric ring and comparisons with relativistic simulations connect the image scale to the mass of the central object.",
+    "EHT Collaboration (2019), Astrophysical Journal Letters 875 L6. The inference depends on distance estimates and calibrated models; the image alone does not determine the mass.",
+    "example:m87:paper-six", 0, 7,
+  );
+  await seedItem(
+    "note", "What have we actually established?", null,
+    "A robust bright crescent with a dark center is consistent with a black hole shadow predicted by general relativity. The ring is evidence, not a literal view of the horizon.",
+    "Open direction: how do changes in observing frequency, time, or the surrounding plasma affect the observed ring? Which properties are robust enough to test the spacetime geometry?",
+    "example:m87:next", 0, 8,
   );
 
 }
