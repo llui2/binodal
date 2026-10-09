@@ -157,7 +157,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       "Support",
       `<p>Trails is an experimental research tool for building and revisiting research paths.</p>
        <p>For bugs, connection problems, or feature requests, use the project issue tracker.</p>
-       <p><a href="https://github.com/llui2/trails/issues">github.com/llui2/trails/issues ↗</a></p>`,
+       <p><a href="https://github.com/llui2/trails/issues" target="_blank" rel="noopener noreferrer">github.com/llui2/trails/issues ↗</a></p>`,
     );
   }
 
@@ -716,7 +716,7 @@ function renderTrailItem(
       </span>
       ${kind
         ? item.url
-          ? `<a class="trail-step-kind" href="${escapeAttr(item.url)}"${item.kind === "link" ? ` target="_blank" rel="noreferrer"` : ""}>${escapeHtml(kind)}</a>`
+          ? `<a class="trail-step-kind" href="${escapeAttr(item.url)}"${/^https?:\/\//i.test(item.url) ? ` target="_blank" rel="noopener noreferrer"` : ""}>${escapeHtml(kind)}</a>`
           : `<span class="trail-step-kind">${escapeHtml(kind)}</span>`
         : `<span class="trail-step-kind" aria-hidden="true"></span>`}
     </div>
@@ -936,19 +936,58 @@ async function openTrailByIntegrationKey(
 }
 
 function exampleFigureSvg(): Response {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 246" role="img" aria-labelledby="title desc">
-    <title id="title">Schematic stable equilibrium</title>
-    <desc id="desc">A qualitative effective energy curve with a minimum, representing stable levitation. Not experimental data.</desc>
-    <rect width="520" height="246" fill="#f7f4ed"/>
-    <path d="M54 24 V205 H495" fill="none" stroke="#a7a39a" stroke-width="2"/>
-    <path d="M80 48 C155 149 197 184 268 184 C340 184 381 134 458 48" fill="none" stroke="#315c84" stroke-width="3.5" stroke-linecap="round"/>
-    <circle cx="268" cy="184" r="5" fill="#315c84"/>
-    <path d="M268 184 V205" fill="none" stroke="#a7a39a" stroke-width="1.5" stroke-dasharray="4 5"/>
-    <g fill="#625f58" font-family="Georgia,serif" font-size="16">
-      <text x="15" y="25">U</text>
-      <text x="481" y="231">z</text>
-      <text x="280" y="172">stable</text>
-      <text x="280" y="189">point</text>
+  // Editorial schematic of the levitating-frog experiment, not a
+  // photograph or a quantitative reconstruction of the apparatus.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" role="img" aria-labelledby="title desc">
+    <title id="title">A frog levitating inside a magnetic bore</title>
+    <desc id="desc">Diagram showing a small frog suspended inside a magnet bore. An upward magnetic force balances its downward weight. Stable levitation additionally requires a restoring force after displacement.</desc>
+    <rect width="600" height="320" fill="#f7f4ed"/>
+    <g fill="none" stroke="#a7a39a" stroke-width="2.5">
+      <path d="M116 24 V258 H151 V24 Z"/>
+      <path d="M449 24 V258 H484 V24 Z"/>
+    </g>
+    <g fill="#d4dcd8" stroke="#71818c" stroke-width="1.6">
+      <rect x="122" y="38" width="24" height="43" rx="3"/>
+      <rect x="122" y="92" width="24" height="43" rx="3"/>
+      <rect x="122" y="146" width="24" height="43" rx="3"/>
+      <rect x="122" y="200" width="24" height="43" rx="3"/>
+      <rect x="454" y="38" width="24" height="43" rx="3"/>
+      <rect x="454" y="92" width="24" height="43" rx="3"/>
+      <rect x="454" y="146" width="24" height="43" rx="3"/>
+      <rect x="454" y="200" width="24" height="43" rx="3"/>
+    </g>
+    <g stroke="#b8c6d0" stroke-width="1.8" stroke-dasharray="5 6" fill="none">
+      <path d="M151 74 Q300 46 449 74"/>
+      <path d="M151 214 Q300 242 449 214"/>
+    </g>
+    <g fill="#789076" stroke="#3b5947" stroke-width="2.5" stroke-linejoin="round">
+      <path d="M258 144 Q230 133 229 109 Q218 95 202 105 L204 117 Q217 116 219 131 Q218 148 240 160 Z"/>
+      <path d="M263 178 Q242 190 218 185 Q204 190 203 204 L214 208 Q222 200 229 198 Q253 207 284 186 Z"/>
+      <path d="M321 143 Q339 129 359 135 L376 115 L383 121 L370 143 Q357 160 336 165 Z"/>
+      <path d="M321 176 Q346 175 361 192 L390 193 L390 203 L354 205 Q331 204 309 192 Z"/>
+      <ellipse cx="290" cy="163" rx="57" ry="29"/>
+      <ellipse cx="247" cy="155" rx="27" ry="24"/>
+      <circle cx="230" cy="141" r="9"/>
+      <circle cx="252" cy="137" r="8"/>
+    </g>
+    <g fill="#263d32">
+      <circle cx="228" cy="140" r="3.5"/>
+      <circle cx="251" cy="137" r="3.3"/>
+    </g>
+    <path d="M226 165 Q239 173 252 165" fill="none" stroke="#3b5947" stroke-width="2"/>
+    <g fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M405 151 V78 M397 90 L405 77 L413 90" stroke="#315c84"/>
+      <path d="M405 167 V239 M397 227 L405 240 L413 227" stroke="#9c7663"/>
+    </g>
+    <g font-family="Georgia,serif" font-size="18" fill="#315c84">
+      <text x="420" y="83">magnetic force</text>
+    </g>
+    <g font-family="Georgia,serif" font-size="18" fill="#9c7663">
+      <text x="420" y="244">weight</text>
+    </g>
+    <g font-family="Georgia,serif" font-size="17" fill="#625f58">
+      <text x="300" y="286" text-anchor="middle">magnetic bore · schematic</text>
+      <text x="300" y="310" text-anchor="middle" font-size="14">force balance does not alone guarantee stability</text>
     </g>
   </svg>`;
   return new Response(svg, {
@@ -2270,9 +2309,9 @@ Here $\rho$ is the density and $B(z)$ the magnetic field.`,
     "example:main:balance", 0, 3,
   );
   await seedItem(
-    "note", "Balance is not the same as stability", null,
-    "![Schematic local minimum of effective energy](https://trails.llui2.workers.dev/trail-example-figure.svg)",
-    "This is a schematic, not experimental data. The total energy must increase under small displacements for a stable equilibrium.",
+    "note", "How does the frog remain suspended?", null,
+    "![Frog suspended in a magnetic bore, with upward magnetic force and downward weight](https://trails.llui2.workers.dev/trail-example-figure.svg?v=2)",
+    "A qualitative drawing of the magnetic bore and competing forces. A balance of forces sets the levitation height; stable levitation also requires restoring forces after small displacements.",
     "example:main:figure", 0, 4,
   );
   await seedItem(
@@ -3466,7 +3505,7 @@ function renderCommentTree(comments: CommentRow[], paperId: string): string {
         const replies = renderBranch(comment.id, depth + 1);
         return `<article class="comment" id="comment-${comment.id}" style="--depth:${Math.min(depth, 6)}">
           <div class="comment-head">
-            <a href="https://orcid.org/${escapeAttr(comment.orcid)}" rel="noreferrer">${escapeHtml(comment.display_name)}</a>
+            <a href="https://orcid.org/${escapeAttr(comment.orcid)}" target="_blank" rel="noopener noreferrer">${escapeHtml(comment.display_name)}</a>
             <span>ORCID ${escapeHtml(comment.orcid)}</span>
             <time datetime="${escapeAttr(comment.created_at)}">${escapeHtml(formatDate(comment.created_at))}</time>
           </div>
@@ -3978,20 +4017,20 @@ function renderPaperSources(identifiers: PaperIdentifier[], foundPdf: string | n
   const source = identifiers.find((item) => item.type === "url");
   const directPdf = foundPdf ?? (arxiv ? `https://arxiv.org/pdf/${encodeURIComponent(arxiv.value)}` : null);
   const pdf = directPdf
-    ? `<a class="paper-source" href="${escapeAttr(directPdf)}" target="_blank" rel="noreferrer noopener">PDF ↗</a>`
+    ? `<a class="paper-source" href="${escapeAttr(directPdf)}" target="_blank" rel="noopener noreferrer">PDF ↗</a>`
     : "";
   if (doi) {
     const venue = doi.label && doi.label !== "Published version" ? doi.label : "Published version";
     return `<p class="paper-venue">${escapeHtml(venue)}</p>
       <div class="paper-links">
-        ${pdf || `<a class="paper-source" href="${escapeAttr(doi.url)}" rel="noreferrer">published version ↗</a>`}
+        ${pdf || `<a class="paper-source" href="${escapeAttr(doi.url)}" target="_blank" rel="noopener noreferrer">published version ↗</a>`}
       </div>
       <p class="paper-doi">DOI ${escapeHtml(doi.value)}</p>`;
   }
   if (arxiv) return `<p class="paper-id">arXiv:${escapeHtml(arxiv.value)}</p>${pdf}`;
   if (source) {
     return `<p class="paper-id">${escapeHtml(source.label ?? sourceHost(source.value))}</p>
-      ${pdf || `<a class="paper-source" href="${escapeAttr(source.url)}" rel="noreferrer">open source ↗</a>`}`;
+      ${pdf || `<a class="paper-source" href="${escapeAttr(source.url)}" target="_blank" rel="noopener noreferrer">open source ↗</a>`}`;
   }
   return pdf || `<p class="paper-id">paper</p>`;
 }
@@ -5706,7 +5745,7 @@ function renderIdentity(user: User | null): string {
 
   return `<div class="identity">
     ${chatGptLink}
-    <a href="https://orcid.org/${escapeAttr(user.orcid)}" rel="noreferrer">${escapeHtml(user.display_name)}</a>
+    <a href="https://orcid.org/${escapeAttr(user.orcid)}" target="_blank" rel="noopener noreferrer">${escapeHtml(user.display_name)}</a>
     <form action="/logout" method="post"><button class="text-button" type="submit">sign out</button></form>
     ${themeToggle}
   </div>`;
