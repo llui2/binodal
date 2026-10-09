@@ -743,16 +743,19 @@ function renderTrailItem(
     ? ""
     : rawContent;
   const detailsText = item.note ?? "";
+  const markUrl = item.kind === "paper" && item.url?.startsWith("/p/")
+    ? item.url + (item.url.includes("?") ? "&" : "?") + "from=trail&mark=" + item.id
+    : item.url;
 
-  return `<div class="trail-step" data-trail-item="${item.id}" data-path-branch="${branchId}" data-open="false">
+  return `<div class="trail-step" id="mark-${item.id}" data-trail-item="${item.id}" data-path-branch="${branchId}" data-open="false">
     <div class="trail-step-summary">
       <span class="trail-step-line">
         <textarea class="trail-step-title-input trail-rich-source" rows="1" maxlength="300" aria-label="Node title" data-item-title="${item.id}" spellcheck="false">${escapeHtml(title)}</textarea>
         <span class="trail-step-title-display trail-rich-preview" data-rich-preview="title" role="button" tabindex="0" aria-label="Edit mark title" hidden></span>
       </span>
       ${kind
-        ? item.url
-          ? `<a class="trail-step-kind" href="${escapeAttr(item.url)}"${/^https?:\/\//i.test(item.url) ? ` target="_blank" rel="noopener noreferrer"` : ""}>${escapeHtml(kind)}</a>`
+        ? markUrl
+          ? `<a class="trail-step-kind" href="${escapeAttr(markUrl)}"${/^https?:\/\//i.test(markUrl) ? ` target="_blank" rel="noopener noreferrer"` : ""}>${escapeHtml(kind)}</a>`
           : `<span class="trail-step-kind">${escapeHtml(kind)}</span>`
         : `<span class="trail-step-kind" aria-hidden="true"></span>`}
     </div>
