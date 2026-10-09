@@ -1473,6 +1473,29 @@ function trailLiveScript(): Response {
       drawBrushSegments(group, points, "trail-map-brush-main", 1);
     }
 
+    // Each visible connection on the focused path inserts precisely between
+    // its two endpoints. These hit areas are invisible and do not alter the
+    // logo-derived brush ribbon.
+    const insertPoints = explicitNodePoints || points;
+    if (className.includes("trail-map-path-active")) {
+      for (let i = 0; i + 1 < itemIds.length; i += 1) {
+        const from = insertPoints[i];
+        const to = insertPoints[i + 1];
+        if (!from || !to) continue;
+        const hit = svgNode("path", {
+          d: "M" + from.x + " " + from.y + " L" + to.x + " " + to.y,
+          class: "trail-map-insert-hit",
+          "data-insert-after": itemIds[i],
+          "data-insert-before": itemIds[i + 1],
+          "data-insert-branch": branchId,
+        });
+        const hint = svgNode("title");
+        hint.textContent = "Insert mark between";
+        hit.appendChild(hint);
+        group.appendChild(hit);
+      }
+    }
+
     const nodePoints = explicitNodePoints ||
       (branchId === "0" ? points : points.slice(1));
     nodePoints.forEach((point, index) => {
@@ -1718,6 +1741,69 @@ function trailLiveScript(): Response {
     drawTrailMap();
   };
 
+  const openInsertBetween = (afterId, beforeId, branchId) => {
+    graph.querySelectorAll(".trail-insert-form").forEach((form) => form.remove());
+    const panel = workspace.querySelector('[data-path-panel="' + branchId + '"]');
+    const afterStep = Array.from(panel?.querySelectorAll(".trail-step") || [])
+      .find((step) => step.dataset.trailItem === afterId);
+    if (!afterStep || afterStep.nextElementSibling?.dataset.trailItem !== beforeId) return;
+
+    const form = document.createElement("form");
+    form.className = "trail-insert-form";
+    form.innerHTML = '<textarea rows="1" maxlength="10000" aria-label="Insert mark between existing marks" placeholder="mark…" required></textarea>' +
+      '<button type="submit">insert</button><button type="button" data-insert-cancel>cancel</button>';
+    afterStep.after(form);
+    const field = form.querySelector("textarea");
+    field.focus();
+    autoGrow(field);
+    field.addEventListener("input", () => {
+      autoGrow(field);
+      drawTrailMap();
+    });
+    field.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        form.remove();
+        drawTrailMap();
+      } else if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+    form.querySelector("[data-insert-cancel]").addEventListener("click", () => {
+      form.remove();
+      drawTrailMap();
+    });
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const value = field.value.trim();
+      if (!value) return;
+      const submit = form.querySelector('[type="submit"]');
+      submit.disabled = true;
+      try {
+        const response = await fetch("/api/trail/items", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            value,
+            branch_id: Number(branchId),
+            after_item_id: Number(afterId),
+            before_item_id: Number(beforeId),
+          }),
+        });
+        if (!response.ok) throw new Error("could not insert mark");
+        form.remove();
+        last = "";
+        await tick(true);
+      } catch {
+        setSaveState("error");
+      } finally {
+        submit.disabled = false;
+      }
+    });
+    drawTrailMap();
+  };
+
   const bindTopology = () => {
     if (mapSvg.dataset.bound !== "true") {
       mapSvg.dataset.bound = "true";
@@ -1731,6 +1817,16 @@ function trailLiveScript(): Response {
         const selected = pathTarget.getAttribute("data-branch-select");
         activeBranchId = selected && selected !== "0" ? selected : null;
         applyActiveBranch();
+
+        const insertion = rawTarget.closest("[data-insert-after]");
+        if (insertion) {
+          openInsertBetween(
+            insertion.getAttribute("data-insert-after"),
+            insertion.getAttribute("data-insert-before"),
+            insertion.getAttribute("data-insert-branch") || "0",
+          );
+          return;
+        }
 
         // The topology node is the control for the second, closable mark block.
         // The permanent mark text remains visible; clicking its brush node
@@ -6922,6 +7018,13 @@ function htmlPage(title: string, body: string, status = 200): Response {
       pointer-events: stroke;
       cursor: pointer;
     }
+    .trail-map-insert-hit {
+      fill: none;
+      stroke: transparent;
+      stroke-width: 16;
+      pointer-events: stroke;
+      cursor: copy;
+    }
     .trail-map-brush-main {
       fill: currentColor;
       stroke: none;
@@ -7175,6 +7278,39 @@ function htmlPage(title: string, body: string, status = 200): Response {
       margin: 8px 0 30px 20px;
       color: var(--muted);
       font-size: .88rem;
+    }
+
+    .trail-insert-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: flex-start;
+      margin: 12px 0 12px 0;
+    }
+    .trail-insert-form textarea {
+      flex: 1 1 210px;
+      min-width: 0;
+      min-height: 40px;
+      padding: 9px 11px;
+      border: none;
+      border-radius: 4px;
+      resize: none;
+      background: var(--field-muted);
+      color: var(--ink);
+      font: inherit;
+      font-size: .84rem;
+    }
+    .trail-insert-form button {
+      min-height: 40px;
+      padding: 8px 11px;
+      color: var(--annotation);
+      font: inherit;
+      font-size: .78rem;
+    }
+    .trail-insert-form [type="submit"] {
+      background: var(--annotation);
+      color: var(--button-ink);
+      border-radius: 3px;
     }
 
     .trail-mark-add {
