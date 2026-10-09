@@ -1376,7 +1376,7 @@ function trailLiveScript(): Response {
       const mainSteps = Array.from(mainPanel?.querySelectorAll(".trail-step") || []);
       const activeSteps = Array.from(panel.querySelectorAll(".trail-step"));
       const branchMetas = Array.from(graph.querySelectorAll("[data-branch-meta]"));
-      const width = Math.max(88, map.clientWidth);
+      const width = Math.max(44, map.clientWidth);
       const rightX = width - 26;
 
       const visibleStepYs = activeSteps.map((step) => {
@@ -2021,14 +2021,14 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
     .bind(
       COMMON_TRAIL_ID,
       "A research trail",
-      "One shared example trail for testing the visual language of notes, papers, links, and expandable research context.",
+      "A simple example of a research path: a question, a reference, a note, and what to examine next.",
     )
     .run();
 
   await env.DB.prepare(
     `UPDATE trail_metadata
         SET title = 'A research trail',
-            description = 'One shared example trail for testing the visual language of notes, papers, links, and expandable research context.'
+            description = 'A simple example of a research path: a question, a reference, a note, and what to examine next.'
       WHERE trail_id = ?
         AND title = 'A branching research trail'`,
   )
@@ -2041,13 +2041,13 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
   )
     .bind(
       COMMON_TRAIL_ID,
-      "How should a research path preserve divergence, evidence, dead ends, and synthesis without becoming an unreadable graph?",
+      "What do we want to understand?",
     )
     .run();
 
   await env.DB.prepare(
     `UPDATE trail_contexts
-        SET question = 'How should a research trail preserve evidence, context, and the evolution of an argument without becoming an unreadable log?'
+        SET question = 'What do we want to understand?'
       WHERE trail_id = ?
         AND question = 'How should a research path preserve divergence, evidence, dead ends, and synthesis without becoming an unreadable graph?'`,
   )
@@ -2106,69 +2106,43 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
     return item.id;
   };
 
-  const mainStart = await seedItem(
-    "note",
-    "Start with a question, not a bibliography",
-    null,
-    "The main trail stays readable as the argument that survives while side investigations can diverge without taking over the page.",
-    "This node also demonstrates the expandable permanent-detail field.",
-    "example:main:start",
-    0,
-    0,
-  );
-  const mainPaperA = await seedItem(
-    "paper",
-    "Structural prediction of super-diffusion in multiplex networks",
-    "/p/2406.01367",
-    "A paper node behaves like a stable research object rather than a pasted citation.",
-    null,
-    "example:main:paper-a",
-    0,
-    1,
-  );
-  const mainHypothesis = await seedItem(
-    "note",
-    "Working hypothesis: structure leaves a transient signature",
-    null,
-    "A short claim can sit directly on the path and later become the origin of a separate line of investigation.",
-    "Alternative explanations should branch here instead of being forced into one linear sequence.",
-    "example:main:hypothesis",
-    0,
-    2,
-  );
-  const mainLink = await seedItem(
-    "link",
-    "simulation code / external artifact",
-    "https://github.com/llui2",
-    "Links and code can occupy the same path as papers and notes.",
-    null,
-    "example:main:link",
-    0,
-    3,
-  );
-  const mainPaperB = await seedItem(
-    "paper",
-    "Indirect Influence on Network Diffusion",
-    "/p/2505.05931",
-    "The same underlying research object can also appear inside a secondary path.",
-    null,
-    "example:main:paper-b",
-    0,
-    4,
+  await seedItem(
+    "note", "Start with a question", null,
+    "What are we trying to understand?",
+    "A trail begins with a question. The details can change as the work develops.",
+    "example:main:start", 0, 0,
   );
   await seedItem(
-    "note",
-    "Synthesis: keep provenance directional, keep knowledge reusable",
+    "paper", "A relevant paper", null,
+    "A reference that offers one possible explanation.",
+    "Keep a source together with the reason it matters.",
+    "example:main:paper-a", 0, 1,
+  );
+  await seedItem(
+    "note", "An observation", null,
+    "One result supports part of the explanation.",
+    "What does the evidence show, and what does it leave unresolved?",
+    "example:main:hypothesis", 0, 2,
+  );
+  await seedItem(
+    "link", "An external resource", "https://www.crossref.org/",
+    "A useful reference, dataset, or tool can belong on the same path.",
     null,
-    "The main path records how the argument developed; secondary paths preserve alternatives without flattening everything into one timeline.",
-    "This is the kind of node where several explored directions can eventually converge conceptually.",
-    "example:main:synthesis",
-    0,
-    5,
+    "example:main:link", 0, 3,
+  );
+  await seedItem(
+    "note", "Revise the idea", null,
+    "The original explanation needs another condition.",
+    "Preserve the change instead of rewriting what came before.",
+    "example:main:paper-b", 0, 4,
+  );
+  await seedItem(
+    "note", "What remains open?", null,
+    "Which observation would help decide between the remaining explanations?",
+    "Use the next question to continue the trail.",
+    "example:main:synthesis", 0, 5,
   );
 
-
-  void mainStart;
 }
 
 async function resetCommonExampleTrail(env: Env): Promise<void> {
@@ -6417,7 +6391,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-graph {
       position: relative;
       display: grid;
-      grid-template-columns: 112px minmax(0, 1fr);
+      grid-template-columns: 68px minmax(0, 1fr);
       column-gap: 16px;
       align-items: start;
       margin-top: var(--trail-section-gap);
@@ -6426,7 +6400,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-map {
       position: relative;
       min-height: 150px;
-      width: 112px;
+      width: 68px;
       z-index: 1;
     }
     .trail-map-svg {
@@ -6755,11 +6729,11 @@ function htmlPage(title: string, body: string, status = 200): Response {
 
     @media (max-width: 820px) {
       .trail-graph {
-        grid-template-columns: 86px minmax(0, 1fr);
+        grid-template-columns: 60px minmax(0, 1fr);
         column-gap: 12px;
       }
       .trail-map {
-        width: 86px;
+        width: 60px;
       }
     }
 
@@ -6836,11 +6810,11 @@ function htmlPage(title: string, body: string, status = 200): Response {
         margin-top: var(--trail-section-gap);
       }
       .trail-graph {
-        grid-template-columns: 62px minmax(0, 1fr);
+        grid-template-columns: 44px minmax(0, 1fr);
         gap: 10px;
       }
       .trail-map {
-        width: 62px;
+        width: 44px;
       }
       .trail-mark-add {
         grid-template-columns: 1fr;
