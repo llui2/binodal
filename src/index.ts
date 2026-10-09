@@ -1922,7 +1922,7 @@ function trailLiveScript(): Response {
   }
   window.addEventListener("load", settleTrailMap, { once: true });
 
-  const interval = window.setInterval(() => tick(false), 1200);
+  const interval = window.setInterval(() => tick(false), 3000);
   window.addEventListener("pagehide", () => {
     stopped = true;
     window.clearInterval(interval);
@@ -2127,6 +2127,13 @@ async function selectTrailForUser(request: Request, env: Env): Promise<Response>
 const COMMON_TRAIL_ID = "trail_common_example_v1";
 
 async function ensureCommonExampleTrail(env: Env): Promise<void> {
+  // The live trail API polls frequently. Avoid dozens of D1 writes every
+  // time a viewer checks for updates; seed only after an explicit reset.
+  const populated = await env.DB.prepare(
+    "SELECT 1 AS ok FROM trail_items WHERE trail_id = ? LIMIT 1",
+  ).bind(COMMON_TRAIL_ID).first<{ ok: number }>();
+  if (populated) return;
+
   await env.DB.prepare("INSERT OR IGNORE INTO trails (id) VALUES (?)")
     .bind(COMMON_TRAIL_ID)
     .run();
