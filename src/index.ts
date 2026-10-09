@@ -2246,7 +2246,7 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
     String.raw`The gravitational radius sets the characteristic scale of the image. At distance $D$, the corresponding angular scale is
 
 $$
-\\theta_g = \\frac{GM}{Dc^2}.
+\theta_g = \frac{GM}{Dc^2}.
 $$
 
 The measured ring size constrains the mass when combined with the distance and an emission model.`,
@@ -2256,7 +2256,7 @@ The measured ring size constrains the mass when combined with the distance and a
   await seedItem(
     "paper", "First M87 Event Horizon Telescope Results. IV. Imaging the Central Supermassive Black Hole",
     "/p/doi%3A10.3847%2F2041-8213%2Fab0e85",
-    "Independent reconstruction methods recover the same main feature: an asymmetric ring surrounding a central brightness depression.",
+    "Independent reconstruction methods recover an asymmetric ring with a central brightness depression.",
     "The agreement across imaging pipelines and observing days supports the robustness of the ring despite sparse interferometric coverage.",
     "example:m87:paper-four", 0, 6,
   );
