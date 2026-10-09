@@ -622,7 +622,7 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
           </div>
 
           <div class="trail-description">
-            <textarea id="trail-description" rows="4" maxlength="2000" aria-label="Trail description" placeholder="context…" data-autosave-trail="description" spellcheck="false">${escapeHtml(description ?? "")}</textarea>
+            <textarea id="trail-description" rows="1" maxlength="2000" aria-label="Trail description" placeholder="context…" data-autosave-trail="description" spellcheck="false">${escapeHtml(description ?? "")}</textarea>
           </div>
 
           <section class="trail-graph" data-trail-live data-trail-id="${escapeAttr(trail.id)}" aria-label="Research paths">
@@ -1925,6 +1925,9 @@ function trailLiveScript(): Response {
 
   bindAutosaveField(title, "/api/trail", () => ({ title: title.value }));
   bindAutosaveField(description, "/api/trail", () => ({ description: description.value }));
+  autoGrow(description);
+  description?.addEventListener("input", () => autoGrow(description));
+  window.addEventListener("resize", () => autoGrow(description));
 
   const addForm = document.querySelector("[data-trail-add]");
   const addField = document.getElementById("trail-add-value");
@@ -7143,15 +7146,16 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-description textarea {
       display: block;
       width: 100%;
-      min-height: 68px;
+      min-height: 0;
       padding: 8px 10px;
+      overflow: hidden;
       border: 0;
       border-radius: 3px;
       background: transparent;
       color: var(--body-muted);
       font-size: .96rem;
       line-height: 1.58;
-      resize: vertical;
+      resize: none;
       transition: background 110ms ease, color 110ms ease;
     }
     .trail-description textarea:hover {
