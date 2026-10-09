@@ -2217,9 +2217,10 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
     "example:main:start", 0, 0,
   );
   await seedItem(
-    "paper", String.raw`A paper about $\alpha$ and $\beta$`, null,
-    "A reference that offers one possible explanation.",
-    "Paper titles may also contain inline mathematics.",
+    "paper", "The unsuccessful self-treatment of a case of writer's block",
+    "https://doi.org/10.1901/jaba.1974.7-497a",
+    "An actual 1974 journal article consisting almost entirely of blank space.",
+    "Dennis Upper, Journal of Applied Behavior Analysis (1974). The title is quite literal.",
     "example:main:paper-a", 0, 1,
   );
   await seedItem(
