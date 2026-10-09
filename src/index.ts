@@ -563,7 +563,7 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
     ? [
         {
           id: COMMON_TRAIL_ID,
-          title: "A research trail",
+          title: "A levitating frog",
           created_at: "",
         },
         ...ownedTrails.filter((item) => item.id !== COMMON_TRAIL_ID),
@@ -2152,14 +2152,14 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
   )
     .bind(
       COMMON_TRAIL_ID,
-      "A research trail",
+      "A levitating frog",
       "How can a living frog hover in a static magnetic field? Following a surprising experiment from observation to physical explanation.",
     )
     .run();
 
   await env.DB.prepare(
     `UPDATE trail_metadata
-        SET title = 'A research trail',
+        SET title = 'A levitating frog',
             description = 'How can a living frog hover in a static magnetic field? Following a surprising experiment from observation to physical explanation.'
       WHERE trail_id = ?
         AND title = 'A branching research trail'`,
