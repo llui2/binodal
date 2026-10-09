@@ -2568,6 +2568,7 @@ async function insertPaperIntoTrail(
   rawPaper: string,
   note: string | null = null,
   branchId = 0,
+  content: string | null = null,
 ): Promise<number | null> {
   const paperId = normalizePaperInput(rawPaper);
   if (!paperId) throw new Error("Invalid paper identifier or URL");
@@ -2579,11 +2580,12 @@ async function insertPaperIntoTrail(
   const itemUrl = `/p/${encodeURIComponent(publicPaperId)}`;
 
   const row = await env.DB.prepare(
-    `INSERT INTO trail_items (trail_id, kind, title, url, note, source_ref, position)
-     VALUES (?, 'paper', ?, ?, ?, ?, ?)
+    `INSERT INTO trail_items (trail_id, kind, title, url, content, note, source_ref, position)
+     VALUES (?, 'paper', ?, ?, ?, ?, ?, ?)
      ON CONFLICT(trail_id, source_ref) DO UPDATE SET
        title = excluded.title,
        url = excluded.url,
+       content = COALESCE(excluded.content, trail_items.content),
        note = COALESCE(excluded.note, trail_items.note)
      RETURNING id`,
   )
@@ -2591,6 +2593,7 @@ async function insertPaperIntoTrail(
       trailId,
       paper.title,
       itemUrl,
+      content ? content.slice(0, 10000) : null,
       note ? note.slice(0, 2000) : null,
       `paper:${paper.arxiv_id}`,
       storagePosition,
@@ -2609,9 +2612,24 @@ async function addPaperToTrail(request: Request, env: Env): Promise<Response> {
   const rawPaper = String(form.get("paper_id") ?? "");
   const nextRaw = String(form.get("next") ?? "/trail");
   const next = nextRaw.startsWith("/") && !nextRaw.startsWith("//") ? nextRaw : "/trail";
+  const sourcePaperId = String(form.get("from_paper_id") ?? "");
+  const reason = String(form.get("reason") ?? "").trim().slice(0, 1000);
+  let provenance: string | null = null;
+
+  if (sourcePaperId) {
+    const refId = normalizePaperInput(rawPaper);
+    const refDoi = refId?.startsWith("doi:") ? refId.slice(4) : "";
+    if (!reason || !refDoi) return new Response("Reason and DOI required", { status: 400 });
+    const exists = await env.DB.prepare(
+      "SELECT 1 AS ok FROM paper_references WHERE paper_id = ? AND doi = ? LIMIT 1",
+    ).bind(sourcePaperId, refDoi).first<{ ok: number }>();
+    const source = await getPaperByStorageId(env, sourcePaperId);
+    if (!exists || !source) return new Response("Reference not found", { status: 400 });
+    provenance = "Referenced by " + source.title.slice(0, 240);
+  }
 
   try {
-    await insertPaperIntoTrail(env, trail.id, rawPaper);
+    await insertPaperIntoTrail(env, trail.id, rawPaper, provenance, 0, reason || null);
   } catch {
     return new Response("Invalid paper identifier or URL", { status: 400 });
   }
