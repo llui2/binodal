@@ -514,7 +514,13 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
           <div class="paper-main">
             <div class="paper-summary">
               <h1>${escapeHtml(paper.title)}</h1>
-              <p class="authors">${authors.map(escapeHtml).join(", ")}</p>
+              ${authors.length > 6
+                ? `<p class="authors">${authors.slice(0, 3).map(escapeHtml).join(", ")} et al.</p>
+                  <details class="paper-authors">
+                    <summary>Show all ${authors.length} authors</summary>
+                    <p class="authors">${authors.map(escapeHtml).join(", ")}</p>
+                  </details>`
+                : `<p class="authors">${authors.map(escapeHtml).join(", ")}</p>`}
 
               <div class="paper-trail-actions">
                 <form action="/trail/add-paper" method="post">
@@ -6417,6 +6423,14 @@ function htmlPage(title: string, body: string, status = 200): Response {
       line-height: 1.55;
     }
 
+    .paper-authors { margin: 6px 0 0; max-width: 720px; }
+    .paper-authors summary {
+      color: var(--annotation); cursor: pointer; font-size: .78rem;
+      font-weight: 550; list-style: none;
+    }
+    .paper-authors summary::-webkit-details-marker { display: none; }
+    .paper-authors[open] summary::after { content: " −"; }
+    .paper-authors .authors { margin: 10px 0 0; font-size: .87rem; }
     .abstract-disclosure {
       max-width: 720px;
       margin-top: 20px;
@@ -6584,8 +6598,12 @@ function htmlPage(title: string, body: string, status = 200): Response {
       background: var(--field-muted); border: none; border-radius: 3px;
       color: var(--ink); font: inherit; font-size: .81rem;
     }
-    .paper-reference-add button { padding: 6px 9px; color: var(--annotation); font-size: .78rem; }
-    .paper-reference-add button:hover { text-decoration: underline; }
+    .paper-reference-add button {
+      padding: 6px 11px; border-radius: 3px;
+      background: var(--annotation); color: var(--button-ink);
+      font-size: .78rem; font-weight: 600; white-space: nowrap;
+    }
+    .paper-reference-add button:hover { filter: brightness(.94); }
 
     .tab-empty {
       min-height: 150px;
@@ -7311,6 +7329,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
       background: var(--annotation);
       color: var(--button-ink);
       border-radius: 3px;
+    }
+    .trail-insert-form [data-insert-cancel] {
+      background: transparent;
+      color: var(--annotation);
     }
 
     .trail-mark-add {
