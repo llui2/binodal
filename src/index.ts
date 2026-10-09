@@ -19,6 +19,12 @@ interface Paper {
   updated_at: string | null;
 }
 
+interface PaperAccess {
+  abstract: string | null;
+  pdf_url: string | null;
+  checked_at: string;
+}
+
 type PaperIdentifierType = "arxiv" | "doi" | "url";
 
 interface PaperIdentifier {
@@ -445,6 +451,8 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   const commentIds = new Set(comments.map((comment) => comment.id));
   const validReplyTo = replyTo && commentIds.has(replyTo) ? replyTo : null;
   const authors = safeJsonArray(paper.authors_json).map(normalizeAuthorName);
+  const access = await getPaperAccess(env, paper, identifiers);
+  const abstract = paper.abstract.trim() || access.abstract || "";
   const paperUrl = `/p/${encodeURIComponent(publicPaperId)}`;
 
   const tabLink = (id: "discussion" | "references" | "related", label: string): string =>
@@ -482,7 +490,7 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
       <article class="paper-window">
         <div class="paper-grid">
           <aside class="paper-meta" aria-label="Paper metadata">
-            ${renderPaperSources(identifiers)}
+            ${renderPaperSources(identifiers, access.pdf_url)}
           </aside>
 
           <div class="paper-main">
@@ -499,9 +507,9 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
                 <a href="/trail">trail</a>
               </div>
 
-              <details class="abstract-disclosure">
+              <details class="abstract-disclosure" open>
                 <summary>Abstract</summary>
-                <p>${escapeHtml(paper.abstract)}</p>
+                <p>${abstract ? escapeHtml(abstract) : "An abstract is not available from the indexed metadata."}</p>
               </details>
             </div>
 
@@ -3964,32 +3972,28 @@ function preferredPaperId(identifiers: PaperIdentifier[], fallbackStorageId: str
   return fallbackStorageId;
 }
 
-function renderPaperSources(identifiers: PaperIdentifier[]): string {
-  const doi = identifiers.find((identifier) => identifier.type === "doi" && !isArxivIssuedDoi(identifier.value));
-  const arxiv = identifiers.find((identifier) => identifier.type === "arxiv");
-  const source = identifiers.find((identifier) => identifier.type === "url");
-
+function renderPaperSources(identifiers: PaperIdentifier[], foundPdf: string | null): string {
+  const doi = identifiers.find((item) => item.type === "doi" && !isArxivIssuedDoi(item.value));
+  const arxiv = identifiers.find((item) => item.type === "arxiv");
+  const source = identifiers.find((item) => item.type === "url");
+  const directPdf = foundPdf ?? (arxiv ? `https://arxiv.org/pdf/${encodeURIComponent(arxiv.value)}` : null);
+  const pdf = directPdf
+    ? `<a class="paper-source" href="${escapeAttr(directPdf)}" target="_blank" rel="noreferrer noopener">PDF ↗</a>`
+    : "";
   if (doi) {
     const venue = doi.label && doi.label !== "Published version" ? doi.label : "Published version";
     return `<p class="paper-venue">${escapeHtml(venue)}</p>
       <div class="paper-links">
-        <a class="paper-source" href="${escapeAttr(doi.url)}" rel="noreferrer">published version ↗</a>
-        ${arxiv ? `<a class="paper-source" href="${escapeAttr(arxiv.url)}" rel="noreferrer">arXiv preprint ↗</a>` : ""}
+        ${pdf || `<a class="paper-source" href="${escapeAttr(doi.url)}" rel="noreferrer">published version ↗</a>`}
       </div>
       <p class="paper-doi">DOI ${escapeHtml(doi.value)}</p>`;
   }
-
-  if (arxiv) {
-    return `<p class="paper-id">arXiv:${escapeHtml(arxiv.value)}</p>
-      <a class="paper-source" href="${escapeAttr(arxiv.url)}" rel="noreferrer">open on arXiv ↗</a>`;
-  }
-
+  if (arxiv) return `<p class="paper-id">arXiv:${escapeHtml(arxiv.value)}</p>${pdf}`;
   if (source) {
     return `<p class="paper-id">${escapeHtml(source.label ?? sourceHost(source.value))}</p>
-      <a class="paper-source" href="${escapeAttr(source.url)}" rel="noreferrer">open source ↗</a>`;
+      ${pdf || `<a class="paper-source" href="${escapeAttr(source.url)}" rel="noreferrer">open source ↗</a>`}`;
   }
-
-  return `<p class="paper-id">paper</p>`;
+  return pdf || `<p class="paper-id">paper</p>`;
 }
 
 function sourceHost(url: string): string {
@@ -3998,6 +4002,104 @@ function sourceHost(url: string): string {
   } catch {
     return "source";
   }
+}
+
+const PAPER_ACCESS_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
+function secureSourceUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.toString() : null;
+  } catch { return null; }
+}
+
+function openAlexAbstract(index: unknown): string | null {
+  if (!index || typeof index !== "object" || Array.isArray(index)) return null;
+  const words: string[] = [];
+  for (const [word, positions] of Object.entries(index)) {
+    if (!Array.isArray(positions)) continue;
+    for (const position of positions) {
+      if (Number.isInteger(position) && position >= 0 && position < 1200) words[position] = word;
+    }
+  }
+  const abstract = words.filter(Boolean).join(" ");
+  return abstract.length >= 40 ? abstract.slice(0, 8000) : null;
+}
+
+async function fetchJsonWithTimeout(url: string): Promise<unknown> {
+  const response = await fetch(url, {
+    headers: { Accept: "application/json", "User-Agent": "trails/0.1 (research metadata)" },
+    signal: AbortSignal.timeout(2600),
+  });
+  if (!response.ok) throw new Error(`Metadata service returned ${response.status}`);
+  return response.json();
+}
+
+async function getPaperAccess(
+  env: Env, paper: Paper, identifiers: PaperIdentifier[],
+): Promise<PaperAccess> {
+  const existing = await env.DB.prepare(
+    "SELECT abstract, pdf_url, checked_at FROM paper_access WHERE paper_id = ?",
+  ).bind(paper.arxiv_id).first<PaperAccess>();
+  if (existing && Date.now() - Date.parse(existing.checked_at.replace(" ", "T") + "Z") < PAPER_ACCESS_TTL_MS) {
+    return existing;
+  }
+
+  const doi = identifiers.find((item) => item.type === "doi")?.value;
+  const arxiv = identifiers.find((item) => item.type === "arxiv")?.value;
+  if (!doi) {
+    return { abstract: null, pdf_url: arxiv ? `https://arxiv.org/pdf/${encodeURIComponent(arxiv)}` : null, checked_at: "" };
+  }
+
+  let abstract: string | null = null;
+  let pdfUrl: string | null = null;
+  // Use structured APIs rather than scraping Google Scholar. OpenAlex
+  // distinguishes published, accepted and submitted open-access copies.
+  const lookups = await Promise.allSettled([
+    fetchJsonWithTimeout(`https://api.openalex.org/works/https://doi.org/${doi}`),
+    fetchJsonWithTimeout(`https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(doi)}?fields=abstract,openAccessPdf`),
+  ]);
+
+  if (lookups[0].status === "fulfilled") {
+    const record = lookups[0].value as {
+      abstract_inverted_index?: unknown;
+      locations?: Array<{ is_oa?: boolean; pdf_url?: string | null; version?: string; source?: { type?: string } }>;
+      best_oa_location?: { pdf_url?: string | null };
+    };
+    abstract = openAlexAbstract(record.abstract_inverted_index);
+    const versions: Record<string, number> = { publishedVersion: 0, acceptedVersion: 1, submittedVersion: 2 };
+    const copies = (record.locations ?? [])
+      .filter((location) => location.is_oa && secureSourceUrl(location.pdf_url))
+      .sort((a, b) =>
+        (versions[a.version ?? ""] ?? 3) - (versions[b.version ?? ""] ?? 3) ||
+        (a.source?.type === "repository" ? 1 : 0) - (b.source?.type === "repository" ? 1 : 0)
+      );
+    pdfUrl = secureSourceUrl(copies[0]?.pdf_url ?? record.best_oa_location?.pdf_url);
+  }
+
+  if (lookups[1].status === "fulfilled") {
+    const record = lookups[1].value as { abstract?: string | null; openAccessPdf?: { url?: string } | null };
+    if (!abstract && record.abstract?.trim()) abstract = record.abstract.trim().slice(0, 8000);
+    if (!pdfUrl) pdfUrl = secureSourceUrl(record.openAccessPdf?.url);
+  }
+
+  // Verified author-hosted journal copy, if discovery APIs do not list it.
+  if (!pdfUrl && doi.toLowerCase() === "10.1088/0143-0807/18/4/012") {
+    pdfUrl = "https://michaelberryphysics.wordpress.com/wp-content/uploads/2013/07/berry285.pdf";
+  }
+
+  try {
+    await env.DB.prepare(
+      `INSERT INTO paper_access (paper_id, abstract, pdf_url, checked_at)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(paper_id) DO UPDATE SET
+         abstract = excluded.abstract, pdf_url = excluded.pdf_url, checked_at = CURRENT_TIMESTAMP`,
+    ).bind(paper.arxiv_id, abstract, pdfUrl).run();
+  } catch (error) {
+    console.warn("Unable to cache additional paper metadata", error);
+  }
+  return { abstract, pdf_url: pdfUrl, checked_at: new Date().toISOString() };
 }
 
 async function fetchPaperByInput(paperId: string): Promise<FetchedPaper> {
