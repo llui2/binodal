@@ -2453,7 +2453,7 @@ async function insertTrailValue(
 
   // Figure markup contains a URL but should remain a mark, not be treated
   // as a paper or an ordinary link by the identifier resolver below.
-  if (/!\\[[^\\]\\n]{1,160}\\]\\(https:\\/\\/[^\\s()]+\\)/.test(clean)) {
+  if (/!\[[^\]\n]{1,160}\]\(https:\/\/[^\s()]+\)/.test(clean)) {
     return insertTrailNote(env, trailId, clean, null, branchId);
   }
 
