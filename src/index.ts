@@ -4110,6 +4110,89 @@ async function getPaperAccess(
   return { abstract, pdf_url: pdfUrl, checked_at: new Date().toISOString() };
 }
 
+async function getPaperReferences(
+  env: Env,
+  paperId: string,
+  identifiers: PaperIdentifier[],
+): Promise<PaperReference[]> {
+  const cached = await env.DB.prepare(
+    "SELECT position, title, doi, year, checked_at FROM paper_references WHERE paper_id = ? ORDER BY position",
+  ).bind(paperId).all<PaperReference>();
+  const previous = cached.results ?? [];
+  if (previous.length && Date.now() - Date.parse(previous[0].checked_at!.replace(" ", "T") + "Z") < 7 * 86400000) {
+    return previous;
+  }
+
+  const doi = identifiers.find((id) => id.type === "doi")?.value;
+  if (!doi) return previous;
+  let references: PaperReference[] = [];
+
+  try {
+    const work = await fetchJsonWithTimeout(
+      `https://api.openalex.org/works/https://doi.org/${doi}`,
+    ) as { referenced_works?: string[] };
+    const ids = (work.referenced_works ?? [])
+      .map((id) => id.match(/W\d+$/)?.[0] ?? "")
+      .filter(Boolean).slice(0, 60);
+    if (ids.length) {
+      const endpoint = new URL("https://api.openalex.org/works");
+      endpoint.searchParams.set("filter", "openalex:" + ids.join("|"));
+      endpoint.searchParams.set("per_page", String(ids.length));
+      endpoint.searchParams.set("select", "id,doi,display_name,publication_year");
+      const data = await fetchJsonWithTimeout(endpoint.toString()) as {
+        results?: Array<{ id: string; doi?: string | null; display_name?: string; publication_year?: number }>;
+      };
+      const byId = new Map((data.results ?? []).map((item) => [item.id.match(/W\d+$/)?.[0], item]));
+      references = ids.flatMap((id, position) => {
+        const ref = byId.get(id);
+        const refDoi = normalizeDoiInput(ref?.doi ?? "");
+        const title = cleanHtmlText(ref?.display_name ?? "").slice(0, 300);
+        return refDoi && title ? [{
+          position, title, doi: refDoi,
+          year: Number.isInteger(ref?.publication_year) ? ref!.publication_year! : null,
+        }] : [];
+      });
+    }
+  } catch (error) {
+    console.warn("OpenAlex reference lookup failed", error);
+  }
+
+  if (!references.length) {
+    try {
+      const data = await fetchJsonWithTimeout(
+        `https://api.crossref.org/works/${encodeURIComponent(doi)}`,
+      ) as { message?: { reference?: Array<{
+        DOI?: string; "article-title"?: string; unstructured?: string; year?: string;
+      }> } };
+      references = (data.message?.reference ?? []).slice(0, 60).flatMap((ref, position) => {
+        const refDoi = normalizeDoiInput(ref.DOI ?? "");
+        if (!refDoi) return [];
+        const title = cleanHtmlText(ref["article-title"] ?? ref.unstructured ?? refDoi).slice(0, 300);
+        const year = Number(ref.year);
+        return [{ position, title, doi: refDoi, year: year >= 1000 && year <= 2100 ? year : null }];
+      });
+    } catch (error) {
+      console.warn("Crossref reference lookup failed", error);
+    }
+  }
+
+  // Retain the recorded source order. Only DOI-resolved entries lead to a
+  // stable paper page; do not fabricate records for unidentified citations.
+  if (references.length) {
+    try {
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM paper_references WHERE paper_id = ?").bind(paperId),
+        ...references.map((ref) => env.DB.prepare(
+          "INSERT INTO paper_references (paper_id, position, title, doi, year) VALUES (?, ?, ?, ?, ?)",
+        ).bind(paperId, ref.position, ref.title, ref.doi, ref.year)),
+      ]);
+    } catch (error) {
+      console.warn("Could not cache paper references", error);
+    }
+  }
+  return references.length ? references : previous;
+}
+
 async function fetchPaperByInput(paperId: string): Promise<FetchedPaper> {
   if (paperId.startsWith("doi:")) {
     const doi = paperId.slice(4);
