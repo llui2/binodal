@@ -2423,6 +2423,12 @@ async function insertTrailValue(
   const clean = value.trim();
   if (!clean) return null;
 
+  // Figure markup contains a URL but should remain a mark, not be treated
+  // as a paper or an ordinary link by the identifier resolver below.
+  if (/!\\[[^\\]\\n]{1,160}\\]\\(https:\\/\\/[^\\s()]+\\)/.test(clean)) {
+    return insertTrailNote(env, trailId, clean, null, branchId);
+  }
+
   // A pasted DOI, arXiv ID, Scholar result, or publisher URL should become a
   // first-class paper node when the resolver can identify it.
   if (normalizePaperInput(clean)) {
