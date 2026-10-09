@@ -227,8 +227,20 @@ async function route(request: Request, env: Env): Promise<Response> {
     return setTrailUser(request, env);
   }
 
+  if (request.method === "GET" && path === "/trail/new") {
+    return renderNewTrail(request, env);
+  }
+
   if (request.method === "POST" && path === "/trail/new") {
     return createTrailForUser(request, env);
+  }
+
+  if (path === "/trail/delete" && request.method === "GET") {
+    return renderDeleteTrail(request, env);
+  }
+
+  if (path === "/trail/delete" && request.method === "POST") {
+    return deleteTrailForUser(request, env);
   }
 
   if (request.method === "POST" && path === "/trail/select") {
@@ -625,7 +637,7 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
             <textarea id="trail-description" rows="1" maxlength="2000" aria-label="Trail description" placeholder="context…" data-autosave-trail="description" spellcheck="false">${escapeHtml(description ?? "")}</textarea>
           </div>
 
-          <section class="trail-graph" data-trail-live data-trail-id="${escapeAttr(trail.id)}" aria-label="Research paths">
+          <section class="trail-graph${items.length ? "" : " trail-graph-empty"}" data-trail-live data-trail-id="${escapeAttr(trail.id)}" aria-label="Research paths">
             ${graphHtml}
           </section>
 
@@ -659,20 +671,23 @@ function renderTrailSidebar(
     ? trails.map((trail) => {
         const label = trail.title?.trim() || "untitled trail";
         const active = trail.id === currentTrailId ? " active" : "";
-        return `<form action="/trail/select" method="post">
-          <input type="hidden" name="trail_id" value="${escapeAttr(trail.id)}">
-          <button class="trail-list-button${active}" type="submit" title="${escapeAttr(label)}">${escapeHtml(label)}</button>
-        </form>`;
+        return `<div class="trail-list-item">
+          <form action="/trail/select" method="post">
+            <input type="hidden" name="trail_id" value="${escapeAttr(trail.id)}">
+            <button class="trail-list-button${active}" type="submit" title="${escapeAttr(label)}">${escapeHtml(label)}</button>
+          </form>
+          ${trail.id !== COMMON_TRAIL_ID
+            ? `<a class="trail-list-delete" href="/trail/delete?trail_id=${encodeURIComponent(trail.id)}" aria-label="Delete ${escapeAttr(label)}" title="Delete trail">×</a>`
+            : ""}
+        </div>`;
       }).join("")
     : `<p class="trail-sidebar-empty">no trails yet</p>`;
 
   return `<div class="trail-sidebar-user">@${escapeHtml(user.username)}</div>
-    <form class="trail-new-form" action="/trail/new" method="post">
-      <button class="text-button" type="submit">+ new trail</button>
-    </form>
+    <a class="trail-new-link" href="/trail/new">+ new trail</a>
     <div class="trail-list">${items}</div>
     <details class="trail-user-switch">
-      <summary>switch user</summary>
+      <summary>rename user</summary>
       <form action="/trail/user" method="post">
         <input name="username" maxlength="32" autocomplete="username" aria-label="Username" placeholder="username" required>
         <button class="trail-user-submit" type="submit" aria-label="Switch user">→</button>
@@ -686,7 +701,7 @@ function renderTrailGraph(
 ): string {
   const mainHtml = items.length
     ? items.map((item, index) => renderTrailItem(item, index, 0)).join("")
-    : `<p class="trail-empty">The path is empty. Add a mark below.</p>`;
+    : `<p class="trail-empty">Start with a paper, note, or question.</p>`;
 
   const branchPanels = branches
     .map((branch) => {
@@ -2218,51 +2233,55 @@ async function setTrailUser(request: Request, env: Env): Promise<Response> {
   const username = normalizeTrailUsername(String(form.get("username") ?? ""));
   if (!username) return redirect("/trail", 303);
 
-  await env.DB.prepare(
+  const currentUser = await currentTrailUser(request, env);
+  const taken = await env.DB.prepare(
+    "SELECT id FROM trail_users WHERE username = ? COLLATE NOCASE",
+  ).bind(username).first<{ id: number }>();
+  if (taken && taken.id !== currentUser?.id) {
+    return htmlPage("username in use",
+      `<main class="shell trail-setup-page">
+        <a class="back" href="/trail">← trail</a>
+        <h1>Username already in use</h1>
+        <p>This temporary username belongs to another browser session. Existing usernames cannot be used to access someone else's trails.</p>
+      </main>`, 409);
+  }
+
+  if (currentUser) {
+    // Rename in place: changing a label must not detach existing trails.
+    if (currentUser.username.toLowerCase() !== username.toLowerCase()) {
+      await env.DB.prepare("UPDATE trail_users SET username = ? WHERE id = ?")
+        .bind(username, currentUser.id).run();
+    }
+    return redirect("/trail", 303);
+  }
+
+  const inserted = await env.DB.prepare(
     "INSERT INTO trail_users (username) VALUES (?) ON CONFLICT(username) DO NOTHING",
-  )
-    .bind(username)
-    .run();
+  ).bind(username).run();
+  if (inserted.meta.changes !== 1) {
+    return htmlPage("username in use",
+      `<main class="shell trail-setup-page"><a class="back" href="/trail">← trail</a><h1>Username already in use</h1></main>`, 409);
+  }
 
   const user = await env.DB.prepare(
     "SELECT id, username FROM trail_users WHERE username = ? COLLATE NOCASE",
-  )
-    .bind(username)
-    .first<TrailUser>();
+  ).bind(username).first<TrailUser>();
   if (!user) throw new Error("Could not create trail user");
 
   const sessionToken = randomToken();
   await env.DB.prepare(
     "INSERT INTO trail_user_sessions (token, user_id) VALUES (?, ?)",
-  )
-    .bind(sessionToken, user.id)
-    .run();
+  ).bind(sessionToken, user.id).run();
 
   const current = await ensureCurrentTrail(request, env);
-  let trailCookieValue = current.cookie;
-
-  if (current.id !== COMMON_TRAIL_ID) {
-    const ownerId = await trailOwnerUserId(env, current.id);
-    if (ownerId === null) {
-      await claimTrailForUser(env, current.id, user.id);
-    } else if (ownerId !== user.id) {
-      const existingTrailId = await latestTrailForUser(env, user.id);
-      if (existingTrailId) {
-        const token = randomToken();
-        await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
-          .bind(token, existingTrailId)
-          .run();
-        trailCookieValue = trailCookie(token, request);
-      } else {
-        trailCookieValue = null;
-      }
-    }
+  if (current.id !== COMMON_TRAIL_ID && await trailOwnerUserId(env, current.id) === null) {
+    await claimTrailForUser(env, current.id, user.id);
   }
 
   const response = redirect("/trail", 303);
   const headers = new Headers(response.headers);
   headers.append("Set-Cookie", trailUserCookie(sessionToken, request));
-  if (trailCookieValue) headers.append("Set-Cookie", trailCookieValue);
+  if (current.cookie) headers.append("Set-Cookie", current.cookie);
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
@@ -2270,13 +2289,108 @@ async function setTrailUser(request: Request, env: Env): Promise<Response> {
   });
 }
 
+async function renderNewTrail(request: Request, env: Env): Promise<Response> {
+  const trailUser = await currentTrailUser(request, env);
+  if (!trailUser) return redirect("/trail");
+  const user = await currentUser(request, env);
+  return htmlPage(
+    "new trail",
+    `<header class="topbar">
+      ${renderBrand()}
+      ${renderIdentity(user)}
+    </header>
+    <main class="shell trail-setup-page">
+      <a class="back" href="/trail">← trails</a>
+      <h1>New trail</h1>
+      <form action="/trail/new" method="post" class="trail-setup-form">
+        <label for="new-trail-title">title</label>
+        <input id="new-trail-title" name="title" maxlength="140" placeholder="What are you investigating?" required autofocus>
+        <label for="new-trail-context">context</label>
+        <textarea id="new-trail-context" name="description" rows="3" maxlength="2000" placeholder="What do you want to understand?"></textarea>
+        <button type="submit">create trail</button>
+      </form>
+    </main>`,
+  );
+}
+
 async function createTrailForUser(request: Request, env: Env): Promise<Response> {
   assertSameOrigin(request);
   const user = await currentTrailUser(request, env);
   if (!user) return redirect("/trail", 303);
 
+  const form = await request.formData();
+  const title = String(form.get("title") ?? "").trim().slice(0, 140);
+  const description = String(form.get("description") ?? "").trim().slice(0, 2000);
+  if (!title) return redirect("/trail/new", 303);
+
   const created = await createOwnedTrail(env, user.id);
+  await setTrailTitle(env, created.trailId, title);
+  if (description) await setTrailDescription(env, created.trailId, description);
   return withTrailCookie(redirect("/trail", 303), trailCookie(created.trailToken, request));
+}
+
+async function ownedTrailForUser(env: Env, trailId: string, userId: number): Promise<TrailSummary | null> {
+  if (trailId === COMMON_TRAIL_ID) return null;
+  return env.DB.prepare(
+    `SELECT t.id, m.title, t.created_at
+       FROM trails t
+       JOIN trail_owners o ON o.trail_id = t.id
+       LEFT JOIN trail_metadata m ON m.trail_id = t.id
+      WHERE t.id = ? AND o.user_id = ?`,
+  ).bind(trailId, userId).first<TrailSummary>();
+}
+
+async function renderDeleteTrail(request: Request, env: Env): Promise<Response> {
+  const trailUser = await currentTrailUser(request, env);
+  if (!trailUser) return notFound("Trail not found.");
+  const trailId = new URL(request.url).searchParams.get("trail_id") ?? "";
+  const trail = await ownedTrailForUser(env, trailId, trailUser.id);
+  if (!trail) return notFound("Trail not found.");
+  const user = await currentUser(request, env);
+  const label = trail.title?.trim() || "untitled trail";
+  return htmlPage(
+    "delete trail",
+    `<header class="topbar">
+      ${renderBrand()}
+      ${renderIdentity(user)}
+    </header>
+    <main class="shell trail-setup-page">
+      <a class="back" href="/trail">← trails</a>
+      <h1>Delete trail?</h1>
+      <p class="trail-delete-title">${escapeHtml(label)}</p>
+      <p class="trail-delete-warning">This permanently deletes its marks, notes, branches, and connection keys. It cannot be undone.</p>
+      <form action="/trail/delete" method="post" class="trail-delete-form">
+        <input type="hidden" name="trail_id" value="${escapeAttr(trail.id)}">
+        <button type="submit">delete trail</button>
+        <a href="/trail">cancel</a>
+      </form>
+    </main>`,
+  );
+}
+
+async function deleteTrailForUser(request: Request, env: Env): Promise<Response> {
+  assertSameOrigin(request);
+  const trailUser = await currentTrailUser(request, env);
+  if (!trailUser) return notFound("Trail not found.");
+  const form = await request.formData();
+  const trailId = String(form.get("trail_id") ?? "");
+  const owned = await ownedTrailForUser(env, trailId, trailUser.id);
+  if (!owned) return notFound("Trail not found.");
+
+  // Foreign-key cascades revoke sessions and integration keys as well as marks.
+  const result = await env.DB.prepare(
+    `DELETE FROM trails WHERE id = ? AND id <> ?
+       AND EXISTS (SELECT 1 FROM trail_owners
+                   WHERE trail_id = trails.id AND user_id = ?)`,
+  ).bind(trailId, COMMON_TRAIL_ID, trailUser.id).run();
+  if (result.meta.changes !== 1) return notFound("Trail not found.");
+
+  // Existing session cookies for the deleted trail have been invalidated.
+  const nextTrail = await latestTrailForUser(env, trailUser.id) ?? COMMON_TRAIL_ID;
+  const newToken = randomToken();
+  await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
+    .bind(newToken, nextTrail).run();
+  return withTrailCookie(redirect("/trail", 303), trailCookie(newToken, request));
 }
 
 async function selectTrailForUser(request: Request, env: Env): Promise<Response> {
@@ -7030,24 +7144,24 @@ function htmlPage(title: string, body: string, status = 200): Response {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .trail-new-form {
-      margin: 0 0 16px;
-    }
-    .trail-new-form .text-button {
-      color: var(--muted);
-      font-size: .73rem;
-      font-weight: 560;
-    }
-    .trail-new-form .text-button:hover,
-    .trail-new-form .text-button:focus-visible {
+    .trail-new-link {
+      display: inline-block;
+      margin-bottom: 16px;
       color: var(--annotation);
-      outline: none;
+      font-size: .73rem;
+      font-weight: 600;
     }
     .trail-list {
       display: grid;
       gap: 1px;
     }
-    .trail-list form { margin: 0; }
+    .trail-list-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+    }
+    .trail-list-item form { flex: 1; min-width: 0; margin: 0; }
     .trail-list-button {
       display: block;
       width: 100%;
@@ -7073,6 +7187,23 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-weight: 640;
       filter: none;
     }
+    .trail-list-delete {
+      display: block;
+      flex: 0 0 17px;
+      color: var(--soft);
+      text-align: center;
+      font-size: 1rem;
+      line-height: 1;
+      opacity: 0;
+      text-decoration: none;
+    }
+    .trail-list-item:hover .trail-list-delete,
+    .trail-list-item:focus-within .trail-list-delete,
+    .trail-list-delete:focus-visible {
+      opacity: 1;
+    }
+    .trail-list-delete:hover { color: var(--ink); }
+    @media (hover: none) { .trail-list-delete { opacity: 1; } }
     .trail-sidebar-empty,
     .trail-user-form p {
       margin: 8px 0 0;
@@ -7176,6 +7307,8 @@ function htmlPage(title: string, body: string, status = 200): Response {
       margin-top: var(--trail-section-gap);
       min-width: 0;
     }
+    .trail-graph-empty .trail-map { min-height: 38px; }
+    .trail-graph-empty + .trail-mark-add { margin-top: 12px; }
     .trail-map {
       position: relative;
       min-height: 150px;
@@ -7559,6 +7692,41 @@ function htmlPage(title: string, body: string, status = 200): Response {
       filter: brightness(.96);
     }
 
+    .trail-setup-page {
+      max-width: 720px;
+      padding: 48px 0 90px;
+    }
+    .trail-setup-page h1 {
+      margin: 30px 0 30px;
+      font-size: clamp(2rem, 4vw, 2.8rem);
+      line-height: 1.08;
+      letter-spacing: -.025em;
+    }
+    .trail-setup-form { display: grid; gap: 10px; max-width: 620px; }
+    .trail-setup-form label { color: var(--muted); font-size: .78rem; }
+    .trail-setup-form input, .trail-setup-form textarea {
+      padding: 10px 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      resize: none;
+      color: var(--ink);
+    }
+    .trail-setup-form input { font-size: 1.4rem; }
+    .trail-setup-form textarea { margin-bottom: 8px; line-height: 1.6; }
+    .trail-setup-form button, .trail-delete-form button {
+      justify-self: start;
+      padding: 8px 14px;
+      border: 0;
+      border-radius: 3px;
+      background: var(--annotation);
+      color: var(--button-ink);
+      font-size: .83rem;
+    }
+    .trail-delete-title { max-width: 560px; font-size: 1.3rem; }
+    .trail-delete-warning { max-width: 560px; color: var(--body-muted); font-size: .91rem; }
+    .trail-delete-form { display: flex; gap: 24px; align-items: center; margin-top: 28px; }
+    .trail-delete-form a { color: var(--muted); font-size: .83rem; }
     .trail-connect-page {
       max-width: 720px;
       padding: 48px 0 90px;
