@@ -414,7 +414,6 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
         </div>
       </form>
       <div class="home-trails-link"><a href="/trail">trails →</a></div>
-      <script src="/trail-live.js" defer></script>
     </main>`,
   );
 }
@@ -4395,7 +4394,7 @@ async function findArxivByTitleAndAuthors(
   endpoint.searchParams.set("max_results", "8");
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 2500);
+  const timeout = setTimeout(() => controller.abort(), 950);
 
   try {
     const response = await fetch(endpoint, {
@@ -5810,6 +5809,12 @@ function themeScript(): Response {
 }
 
 function htmlPage(title: string, body: string, status = 200): Response {
+  // The editor alone needs KaTeX. Other pages should not download it.
+  const mathAssets = body.includes('data-trail-live')
+    ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>`
+    : "";
   return new Response(
     `<!doctype html>
 <html lang="en">
@@ -5819,9 +5824,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#f7f4ed">
   <script src="/theme.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" integrity="sha384-JctiRyLzXCrSoOOzFlSoWLdyzQl7OrrRnhyeBmzB6ZWtcjccUyc8lCQJqIbs3uQX" crossorigin="anonymous">
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" integrity="sha384-+7Keh381hSkXmXqnjC0JBM/kzsN6TFj+wMKychSLjTvJ8/0ElMde2uKl8i6p6Buj" crossorigin="anonymous"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous"></script>
+  ${mathAssets}
   <link rel="icon" href="/trails-logo.svg?v=3" type="image/svg+xml">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400..700&display=swap">
   <title>${escapeHtml(title)}</title>
