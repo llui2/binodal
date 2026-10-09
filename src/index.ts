@@ -2029,6 +2029,48 @@ function trailLiveScript(): Response {
   };
 
   bindGraph();
+
+  // Remember the original scroll position when a paper is opened from a mark.
+  // The URL still carries the mark ID so returning works without storage.
+  graph.addEventListener("click", (event) => {
+    const link = event.target instanceof Element
+      ? event.target.closest('.trail-step-kind[href^="/p/"]') : null;
+    const step = link?.closest(".trail-step");
+    if (!step) return;
+    try {
+      window.sessionStorage.setItem("trails:paper-return", JSON.stringify({
+        trailId: graph.dataset.trailId,
+        mark: step.dataset.trailItem,
+        scrollY: window.scrollY,
+      }));
+    } catch {
+      // The mark anchor remains available if storage is disabled.
+    }
+  });
+
+  const returnMark = window.location.hash.match(/^#mark-([0-9]+)$/)?.[1];
+  const restorePaperReturn = () => {
+    if (!returnMark) return;
+    const step = graph.querySelector('[id="mark-' + returnMark + '"]');
+    if (!step) return;
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem("trails:paper-return") || "null");
+      if (saved?.trailId === graph.dataset.trailId &&
+          saved?.mark === returnMark && Number.isFinite(saved.scrollY)) {
+        window.scrollTo(0, saved.scrollY);
+        return;
+      }
+    } catch {
+      // Use the mark itself as the fallback scroll target.
+    }
+    step.scrollIntoView({ block: "center", behavior: "auto" });
+  };
+  if (returnMark) {
+    window.addEventListener("load", () => {
+      window.requestAnimationFrame(restorePaperReturn);
+    }, { once: true });
+  }
+
   const resizeObserver = typeof ResizeObserver !== "undefined"
     ? new ResizeObserver(() => drawTrailMap())
     : null;
