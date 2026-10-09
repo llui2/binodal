@@ -929,20 +929,18 @@ async function openTrailByIntegrationKey(
 
 function exampleFigureSvg(): Response {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 246" role="img" aria-labelledby="title desc">
-    <title id="title">Illustrative trend</title>
-    <desc id="desc">A fictional series of observations increasing with time.</desc>
+    <title id="title">Schematic stable equilibrium</title>
+    <desc id="desc">A qualitative effective energy curve with a minimum, representing stable levitation. Not experimental data.</desc>
     <rect width="520" height="246" fill="#f7f4ed"/>
-    <path d="M58 26 V201 H494" fill="none" stroke="#a7a39a" stroke-width="2"/>
-    <path d="M78 175 L137 160 L197 166 L259 118 L321 135 L382 89 L459 63" fill="none" stroke="#315c84" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-    <g fill="#315c84">
-      <circle cx="78" cy="175" r="4.5"/><circle cx="137" cy="160" r="4.5"/>
-      <circle cx="197" cy="166" r="4.5"/><circle cx="259" cy="118" r="4.5"/>
-      <circle cx="321" cy="135" r="4.5"/><circle cx="382" cy="89" r="4.5"/>
-      <circle cx="459" cy="63" r="4.5"/>
-    </g>
-    <g fill="#625f58" font-family="Georgia,serif" font-size="17">
-      <text x="463" y="226">time</text>
-      <text x="14" y="31">value</text>
+    <path d="M54 24 V205 H495" fill="none" stroke="#a7a39a" stroke-width="2"/>
+    <path d="M80 48 C155 149 197 184 268 184 C340 184 381 134 458 48" fill="none" stroke="#315c84" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="268" cy="184" r="5" fill="#315c84"/>
+    <path d="M268 184 V205" fill="none" stroke="#a7a39a" stroke-width="1.5" stroke-dasharray="4 5"/>
+    <g fill="#625f58" font-family="Georgia,serif" font-size="16">
+      <text x="15" y="25">U</text>
+      <text x="481" y="231">z</text>
+      <text x="280" y="172">stable</text>
+      <text x="280" y="189">point</text>
     </g>
   </svg>`;
   return new Response(svg, {
@@ -2172,14 +2170,14 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
     .bind(
       COMMON_TRAIL_ID,
       "A research trail",
-      "A simple example of a research path: a question, a reference, a note, and what to examine next.",
+      "How can a living frog hover in a static magnetic field? Following a surprising experiment from observation to physical explanation.",
     )
     .run();
 
   await env.DB.prepare(
     `UPDATE trail_metadata
         SET title = 'A research trail',
-            description = 'A simple example of a research path: a question, a reference, a note, and what to examine next.'
+            description = 'How can a living frog hover in a static magnetic field? Following a surprising experiment from observation to physical explanation.'
       WHERE trail_id = ?
         AND title = 'A branching research trail'`,
   )
@@ -2258,51 +2256,66 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
   };
 
   await seedItem(
-    "note", "Start with a question", null,
-    "What are we trying to understand?",
-    "A trail begins with a question. The details can change as the work develops.",
+    "note", "Could a frog float without a string?", null,
+    "A living frog was levitated in a magnetic field of about 16 T. The surprising part is not just lifting it: why does it stay in place?",
+    "Start with the observation. The real question is how levitation can remain stable.",
     "example:main:start", 0, 0,
   );
   await seedItem(
     "paper", "Of flying frogs and levitrons",
     "/p/doi%3A10.1088%2F0143-0807%2F18%2F4%2F012",
-    "Can a frog levitate in a magnetic field? Yes, under sufficiently strong diamagnetic forces.",
-    "M. V. Berry and A. K. Geim, European Journal of Physics (1997). The paper explores stable magnetic levitation.",
+    "Berry and Geim (1997) explain how diamagnetic repulsion can balance gravity, and when the resulting equilibrium is stable.",
+    "The paper derives the conditions for a stable levitation zone in an inhomogeneous magnetic field.",
     "example:main:paper-a", 0, 1,
   );
   await seedItem(
-    "note", "An observation", null,
-    String.raw`A quantity $x$ changes over time.
+    "note", "But doesn't Earnshaw's theorem forbid it?", null,
+    "A fixed arrangement of ordinary permanent magnets cannot produce this kind of stable equilibrium. The frog is made largely of weakly diamagnetic material.",
+    "The theorem's assumptions matter: the frog's magnetic response is induced, rather than a fixed magnetic moment.",
+    "example:main:objection", 0, 2,
+  );
+  await seedItem(
+    "note", "What force balances gravity?", null,
+    String.raw`For a material with $\chi<0$, the magnetic force can point away from the stronger field. At equilibrium,
 
 $$
-x(t) = x_0 + vt
-$$`,
-    "This simple equation is illustrative. Click the text to edit its LaTeX.",
-    "example:main:observation", 0, 2,
+\rho g = \frac{\chi}{2\mu_0}\frac{dB^2}{dz}.
+$$
+
+Here $\rho$ is the density and $B(z)$ the magnetic field.`,
+    "Both susceptibility and the vertical field-squared gradient are negative in the levitating configuration. The magnetic force is then upward.",
+    "example:main:balance", 0, 3,
   );
   await seedItem(
-    "note", "A figure", null,
-    "![Illustrative trend](https://trails.llui2.workers.dev/trail-example-figure.svg)",
-    "Figures can be inserted using a direct HTTPS image link.",
-    "example:main:figure", 0, 3,
+    "note", "Balance is not the same as stability", null,
+    "![Schematic local minimum of effective energy](https://trails.llui2.workers.dev/trail-example-figure.svg)",
+    "This is a schematic, not experimental data. The total energy must increase under small displacements for a stable equilibrium.",
+    "example:main:figure", 0, 4,
   );
   await seedItem(
-    "link", "An external resource", "https://www.crossref.org/",
-    "A useful reference, dataset, or tool can belong on the same path.",
-    null,
-    "example:main:link", 0, 4,
+    "paper", "Diamagnetic levitation: Flying frogs and floating magnets",
+    "/p/doi%3A10.1063%2F1.372654",
+    "Simon and Geim (2000) explore how diamagnetism permits both levitating biological matter and stabilizing magnets.",
+    "A follow-up source changes the perspective: the effect is not restricted to frogs.",
+    "example:main:paper-b", 0, 5,
   );
   await seedItem(
-    "note", "Revise the idea", null,
-    "The original explanation needs another condition.",
-    "Preserve the change instead of rewriting what came before.",
-    "example:main:revision", 0, 5,
+    "note", "The field geometry is the key", null,
+    String.raw`The magnetic contribution to the effective energy is
+
+$$
+U(z) = \rho Vgz - \frac{\chi V}{2\mu_0}B(z)^2.
+$$
+
+The field gradient can support the weight; the curvature determines whether the equilibrium restores or repels perturbations.`,
+    "This is the useful distinction: satisfying the force balance at one height does not by itself guarantee stability.",
+    "example:main:synthesis", 0, 6,
   );
   await seedItem(
-    "note", "What remains open?", null,
-    "Which observation would help decide between the remaining explanations?",
-    "Use the next question to continue the trail.",
-    "example:main:next", 0, 6,
+    "note", "Next question: what stops levitation?", null,
+    "Would changing the material, the magnet geometry, or the field strength destroy the stable zone? Which effect should we test first?",
+    "Possible next steps: compare susceptibilities, examine the three-dimensional Hessian of energy, or estimate the field requirements for water.",
+    "example:main:next", 0, 7,
   );
 
 }
