@@ -2454,6 +2454,32 @@ async function placeTrailItem(
     .run();
 }
 
+// An insertion changes the displayed order of one path only. Reindexing the
+// small ordered set avoids fractional ranks and preserves adjacency even
+// after moves or repeated insertions into the same gap.
+async function placeTrailItemBetween(
+  env: Env,
+  trailId: string,
+  branchId: number,
+  itemId: number,
+  afterItemId: number,
+  beforeItemId: number,
+): Promise<boolean> {
+  const items = await listTrailItemsInBranch(env, trailId, branchId);
+  const moving = items.find((item) => item.id === itemId);
+  if (!moving) return false;
+  const others = items.filter((item) => item.id !== itemId);
+  const afterIndex = others.findIndex((item) => item.id === afterItemId);
+  if (afterIndex < 0 || others[afterIndex + 1]?.id !== beforeItemId) return false;
+  others.splice(afterIndex + 1, 0, moving);
+  await env.DB.batch(others.map((item, position) =>
+    env.DB.prepare(
+      "UPDATE trail_item_placements SET position = ? WHERE trail_id = ? AND branch_id = ? AND item_id = ?",
+    ).bind(position, trailId, branchId, item.id),
+  ));
+  return true;
+}
+
 async function nextTrailItemStoragePosition(env: Env, trailId: string): Promise<number> {
   const row = await env.DB.prepare(
     "SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM trail_items WHERE trail_id = ?",
@@ -2892,6 +2918,8 @@ async function handleTrailApi(
       content?: string;
       note?: string;
       branch_id?: number;
+      after_item_id?: number;
+      before_item_id?: number;
     };
 
     const branchId = Math.max(0, Math.trunc(Number(payload.branch_id ?? 0)));
@@ -2906,8 +2934,23 @@ async function handleTrailApi(
       }
     }
 
+    const between = payload.after_item_id !== undefined || payload.before_item_id !== undefined;
+    const afterId = Number(payload.after_item_id);
+    const beforeId = Number(payload.before_item_id);
+    if (between) {
+      if (!Number.isSafeInteger(afterId) || !Number.isSafeInteger(beforeId)) {
+        return withTrailCookie(json({ error: "invalid insertion link" }, 400), trail.cookie);
+      }
+      const current = await listTrailItemsInBranch(env, trail.id, branchId);
+      const index = current.findIndex((item) => item.id === afterId);
+      if (index < 0 || current[index + 1]?.id !== beforeId) {
+        return withTrailCookie(json({ error: "the selected link has changed" }, 409), trail.cookie);
+      }
+    }
+
+    let insertedId: number | null = null;
     if (payload.value) {
-      await insertTrailValue(env, trail.id, String(payload.value), branchId);
+      insertedId = await insertTrailValue(env, trail.id, String(payload.value), branchId);
     } else {
       const storagePosition = await nextTrailItemStoragePosition(env, trail.id);
       const kind = String(payload.kind ?? "note").slice(0, 40);
@@ -2922,7 +2965,17 @@ async function handleTrailApi(
       )
         .bind(trail.id, kind, itemTitle, url, content, note, storagePosition)
         .first<{ id: number }>();
-      if (row?.id) await placeTrailItem(env, trail.id, row.id, branchId);
+      if (row?.id) {
+        insertedId = row.id;
+        await placeTrailItem(env, trail.id, row.id, branchId);
+      }
+    }
+
+    if (between && insertedId) {
+      const placed = await placeTrailItemBetween(env, trail.id, branchId, insertedId, afterId, beforeId);
+      if (!placed) {
+        return withTrailCookie(json({ error: "the selected link has changed" }, 409), trail.cookie);
+      }
     }
 
     const [items, branches] = await Promise.all([
