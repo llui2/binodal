@@ -427,16 +427,31 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   const identifiers = await getPaperIdentifiers(env, paper.arxiv_id);
   const publicPaperId = preferredPaperId(identifiers, paper.arxiv_id);
   const requestUrl = new URL(request.url);
-  // Paper links entered from a trail should lead back to that trail, rather
-  // than unexpectedly sending the researcher to the generic search page.
-  const referer = request.headers.get("Referer");
-  let backHref = "/";
-  if (referer) {
-    try {
-      const from = new URL(referer);
-      if (from.origin === requestUrl.origin && from.pathname === "/trail") backHref = "/trail";
-    } catch {
-      // Ignore invalid Referer values.
+  const mark = requestUrl.searchParams.get("mark");
+  const fromTrail = requestUrl.searchParams.get("from") === "trail" &&
+    mark !== null && /^[A-Za-z0-9:_-]{1,160}$/.test(mark);
+  const requestedReturn = requestUrl.searchParams.get("return");
+  const safeReturn = requestedReturn && requestedReturn.startsWith("/p/") &&
+    !requestedReturn.startsWith("//") ? requestedReturn : null;
+  const context = new URLSearchParams();
+  if (fromTrail && mark) {
+    context.set("from", "trail");
+    context.set("mark", mark);
+  }
+  if (safeReturn) context.set("return", safeReturn);
+  let backHref = safeReturn ?? (fromTrail ? "/trail#mark-" + encodeURIComponent(mark!) : "/");
+  if (!safeReturn && !fromTrail) {
+    const referer = request.headers.get("Referer");
+    if (referer) {
+      try {
+        const previous = new URL(referer);
+        if (previous.origin === requestUrl.origin &&
+            (previous.pathname === "/trail" || previous.pathname.startsWith("/p/"))) {
+          backHref = previous.pathname + previous.search + previous.hash;
+        }
+      } catch {
+        // No valid same-origin navigation context.
+      }
     }
   }
 
@@ -474,8 +489,13 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
     : "";
   const paperUrl = `/p/${encodeURIComponent(publicPaperId)}`;
 
+  const paperTabUrl = (id: "discussion" | "references" | "related"): string => {
+    const params = new URLSearchParams(context);
+    params.set("tab", id);
+    return paperUrl + "?" + params.toString();
+  };
   const tabLink = (id: "discussion" | "references" | "related", label: string): string =>
-    `<a href="${paperUrl}?tab=${id}"${tab === id ? ` class="active" aria-current="page"` : ""}>${label}</a>`;
+    `<a href="${escapeAttr(paperTabUrl(id))}"${tab === id ? ` class="active" aria-current="page"` : ""}>${label}</a>`;
 
   const discussion = `<section class="discussion">
     <div class="discussion-meta">
@@ -486,7 +506,7 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   </section>`;
 
   const references = tab === "references"
-    ? await renderPaperReferences(env, storagePaperId, identifiers, paperUrl, requestUrl.searchParams.has("added"))
+    ? await renderPaperReferences(env, storagePaperId, identifiers, paperTabUrl("references"), requestUrl.searchParams.has("added"))
     : "";
 
   const related = `<section class="tab-empty">
@@ -503,7 +523,7 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
       ${renderIdentity(user)}
     </header>
     <main class="shell paper-page">
-      <a class="back" href="${backHref}">← ${backHref === "/trail" ? "trail" : "papers"}</a>
+      <a class="back" href="${escapeAttr(backHref)}">← ${backHref.startsWith("/trail") ? "trail" : "papers"}</a>
 
       <article class="paper-window">
         <div class="paper-grid">
@@ -514,7 +534,13 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
           <div class="paper-main">
             <div class="paper-summary">
               <h1>${escapeHtml(paper.title)}</h1>
-              <p class="authors">${authors.map(escapeHtml).join(", ")}</p>
+              ${authors.length > 6
+                ? `<p class="authors">${authors.slice(0, 3).map(escapeHtml).join(", ")} et al.</p>
+                  <details class="paper-authors">
+                    <summary>Show all ${authors.length} authors</summary>
+                    <p class="authors">${authors.map(escapeHtml).join(", ")}</p>
+                  </details>`
+                : `<p class="authors">${authors.map(escapeHtml).join(", ")}</p>`}
 
               <div class="paper-trail-actions">
                 <form action="/trail/add-paper" method="post">
@@ -710,16 +736,22 @@ function renderTrailItem(
     ? ""
     : rawContent;
   const detailsText = item.note ?? "";
+  // Example items are recreated on page reload, so their database IDs are
+  // unstable. The seed source reference remains stable across resets.
+  const returnMark = item.source_ref?.startsWith("example:") ? item.source_ref : String(item.id);
+  const markUrl = item.kind === "paper" && item.url?.startsWith("/p/")
+    ? item.url + (item.url.includes("?") ? "&" : "?") + "from=trail&mark=" + encodeURIComponent(returnMark)
+    : item.url;
 
-  return `<div class="trail-step" data-trail-item="${item.id}" data-path-branch="${branchId}" data-open="false">
+  return `<div class="trail-step" id="mark-${escapeAttr(returnMark)}" data-return-mark="${escapeAttr(returnMark)}" data-trail-item="${item.id}" data-path-branch="${branchId}" data-open="false">
     <div class="trail-step-summary">
       <span class="trail-step-line">
         <textarea class="trail-step-title-input trail-rich-source" rows="1" maxlength="300" aria-label="Node title" data-item-title="${item.id}" spellcheck="false">${escapeHtml(title)}</textarea>
         <span class="trail-step-title-display trail-rich-preview" data-rich-preview="title" role="button" tabindex="0" aria-label="Edit mark title" hidden></span>
       </span>
       ${kind
-        ? item.url
-          ? `<a class="trail-step-kind" href="${escapeAttr(item.url)}"${/^https?:\/\//i.test(item.url) ? ` target="_blank" rel="noopener noreferrer"` : ""}>${escapeHtml(kind)}</a>`
+        ? markUrl
+          ? `<a class="trail-step-kind" href="${escapeAttr(markUrl)}"${/^https?:\/\//i.test(markUrl) ? ` target="_blank" rel="noopener noreferrer"` : ""}>${escapeHtml(kind)}</a>`
           : `<span class="trail-step-kind">${escapeHtml(kind)}</span>`
         : `<span class="trail-step-kind" aria-hidden="true"></span>`}
     </div>
@@ -1993,6 +2025,55 @@ function trailLiveScript(): Response {
   };
 
   bindGraph();
+
+  // Remember the original scroll position when a paper is opened from a mark.
+  // The URL still carries the mark ID so returning works without storage.
+  graph.addEventListener("click", (event) => {
+    const link = event.target instanceof Element
+      ? event.target.closest('.trail-step-kind[href^="/p/"]') : null;
+    const step = link?.closest(".trail-step");
+    if (!step) return;
+    try {
+      window.sessionStorage.setItem("trails:paper-return", JSON.stringify({
+        trailId: graph.dataset.trailId,
+        mark: step.dataset.returnMark,
+        scrollY: window.scrollY,
+      }));
+    } catch {
+      // The mark anchor remains available if storage is disabled.
+    }
+  });
+
+  let returnMark = null;
+  if (window.location.hash.startsWith("#mark-")) {
+    try {
+      returnMark = decodeURIComponent(window.location.hash.slice(6));
+    } catch {
+      // Ignore malformed fragment identifiers.
+    }
+  }
+  const restorePaperReturn = () => {
+    if (!returnMark || !/^[A-Za-z0-9:_-]{1,160}$/.test(returnMark)) return;
+    const step = document.getElementById("mark-" + returnMark);
+    if (!step) return;
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem("trails:paper-return") || "null");
+      if (saved?.trailId === graph.dataset.trailId &&
+          saved?.mark === returnMark && Number.isFinite(saved.scrollY)) {
+        window.scrollTo(0, saved.scrollY);
+        return;
+      }
+    } catch {
+      // Use the mark itself as the fallback scroll target.
+    }
+    step.scrollIntoView({ block: "center", behavior: "auto" });
+  };
+  if (returnMark) {
+    window.addEventListener("load", () => {
+      window.requestAnimationFrame(restorePaperReturn);
+    }, { once: true });
+  }
+
   const resizeObserver = typeof ResizeObserver !== "undefined"
     ? new ResizeObserver(() => drawTrailMap())
     : null;
@@ -4249,6 +4330,83 @@ async function getPaperAccess(
   return { abstract, pdf_url: pdfUrl, checked_at: new Date().toISOString() };
 }
 
+function usableReferenceTitle(title: string, doi: string): boolean {
+  const clean = title.trim();
+  if (!clean || clean === "title unavailable") return false;
+  return normalizeDoiInput(clean) !== doi;
+}
+
+// Crossref's outgoing references sometimes omit the title entirely.
+// Recover it from the cited work's own record, rather than display its DOI.
+async function resolveReferenceTitles(
+  env: Env,
+  paperId: string,
+  references: PaperReference[],
+): Promise<PaperReference[]> {
+  const missing = references.filter((ref) =>
+    !usableReferenceTitle(ref.title, ref.doi) && ref.title !== "title unavailable",
+  );
+  if (!missing.length) return references;
+
+  const resolved = new Map<string, { title: string; year: number | null }>();
+  const dois = [...new Set(missing.map((ref) => ref.doi))];
+  for (let index = 0; index < dois.length; index += 40) {
+    const batch = dois.slice(index, index + 40);
+    try {
+      const endpoint = new URL("https://api.openalex.org/works");
+      endpoint.searchParams.set("filter", "doi:" + batch.join("|"));
+      endpoint.searchParams.set("per_page", String(batch.length));
+      endpoint.searchParams.set("select", "doi,display_name,publication_year");
+      const data = await fetchJsonWithTimeout(endpoint.toString()) as {
+        results?: Array<{ doi?: string | null; display_name?: string; publication_year?: number }>;
+      };
+      for (const work of data.results ?? []) {
+        const workDoi = normalizeDoiInput(work.doi ?? "");
+        const title = cleanHtmlText(work.display_name ?? "").slice(0, 300);
+        if (workDoi && usableReferenceTitle(title, workDoi)) {
+          resolved.set(workDoi, {
+            title, year: Number.isInteger(work.publication_year) ? work.publication_year! : null,
+          });
+        }
+      }
+    } catch (error) {
+      console.warn("OpenAlex reference-title lookup failed", error);
+    }
+  }
+
+  const remaining = dois.filter((doi) => !resolved.has(doi)).slice(0, 12);
+  await Promise.all(remaining.map(async (doi) => {
+    try {
+      const record = await fetchJsonWithTimeout(
+        "https://api.crossref.org/works/" + encodeURIComponent(doi),
+      ) as { message?: { title?: string[]; published?: { "date-parts"?: number[][] } } };
+      const title = cleanHtmlText(record.message?.title?.[0] ?? "").slice(0, 300);
+      const year = record.message?.published?.["date-parts"]?.[0]?.[0] ?? null;
+      if (usableReferenceTitle(title, doi)) {
+        resolved.set(doi, { title, year: Number.isInteger(year) ? year : null });
+      }
+    } catch {
+      // Missing metadata must not be presented as a paper title.
+    }
+  }));
+
+  const repaired = references.map((ref) => {
+    if (!missing.includes(ref)) return ref;
+    const record = resolved.get(ref.doi);
+    return { ...ref, title: record?.title ?? "title unavailable", year: record?.year ?? ref.year };
+  });
+  try {
+    await env.DB.batch(repaired.filter((ref) => missing.some((old) =>
+      old.position === ref.position,
+    )).map((ref) => env.DB.prepare(
+      "UPDATE paper_references SET title = ?, year = ?, checked_at = CURRENT_TIMESTAMP WHERE paper_id = ? AND position = ?",
+    ).bind(ref.title, ref.year, paperId, ref.position)));
+  } catch (error) {
+    console.warn("Could not cache repaired reference titles", error);
+  }
+  return repaired;
+}
+
 async function getPaperReferences(
   env: Env,
   paperId: string,
@@ -4259,7 +4417,7 @@ async function getPaperReferences(
   ).bind(paperId).all<PaperReference>();
   const previous = cached.results ?? [];
   if (previous.length && Date.now() - Date.parse(previous[0].checked_at!.replace(" ", "T") + "Z") < 7 * 86400000) {
-    return previous;
+    return resolveReferenceTitles(env, paperId, previous);
   }
 
   const doi = identifiers.find((id) => id.type === "doi")?.value;
@@ -4306,7 +4464,7 @@ async function getPaperReferences(
       references = (data.message?.reference ?? []).slice(0, 60).flatMap((ref, position) => {
         const refDoi = normalizeDoiInput(ref.DOI ?? "");
         if (!refDoi) return [];
-        const title = cleanHtmlText(ref["article-title"] ?? ref.unstructured ?? refDoi).slice(0, 300);
+        const title = cleanHtmlText(ref["article-title"] ?? "").slice(0, 300);
         const year = Number(ref.year);
         return [{ position, title, doi: refDoi, year: year >= 1000 && year <= 2100 ? year : null }];
       });
@@ -4329,7 +4487,7 @@ async function getPaperReferences(
       console.warn("Could not cache paper references", error);
     }
   }
-  return references.length ? references : previous;
+  return resolveReferenceTitles(env, paperId, references.length ? references : previous);
 }
 
 async function renderPaperReferences(
@@ -4339,7 +4497,8 @@ async function renderPaperReferences(
   paperUrl: string,
   justAdded: boolean,
 ): Promise<string> {
-  const references = await getPaperReferences(env, paperId, identifiers);
+  const references = (await getPaperReferences(env, paperId, identifiers))
+    .filter((ref) => usableReferenceTitle(ref.title, ref.doi));
   if (!references.length) {
     return `<section class="tab-empty"><h2>References</h2>
       <p>No DOI-resolved references are available for this paper yet.</p></section>`;
@@ -4347,7 +4506,7 @@ async function renderPaperReferences(
 
   const items = references.map((ref) => {
     const refId = `doi:${ref.doi}`;
-    const href = `/p/${encodeURIComponent(refId)}`;
+    const href = `/p/${encodeURIComponent(refId)}?return=${encodeURIComponent(paperUrl)}`;
     return `<li class="paper-reference">
       <div class="paper-reference-text">
         <a href="${escapeAttr(href)}">${escapeHtml(ref.title)}</a>
@@ -4356,7 +4515,7 @@ async function renderPaperReferences(
       <form action="/trail/add-paper" method="post" class="paper-reference-add">
         <input type="hidden" name="paper_id" value="${escapeAttr(refId)}">
         <input type="hidden" name="from_paper_id" value="${escapeAttr(paperId)}">
-        <input type="hidden" name="next" value="${escapeAttr(paperUrl)}?tab=references&amp;added=1">
+        <input type="hidden" name="next" value="${escapeAttr(paperUrl + "&added=1")}">
         <input name="reason" maxlength="1000" placeholder="Why is it relevant?" aria-label="Reason to add ${escapeAttr(ref.title)} to trail" required>
         <button type="submit">add to trail</button>
       </form>
@@ -6389,6 +6548,14 @@ function htmlPage(title: string, body: string, status = 200): Response {
       line-height: 1.55;
     }
 
+    .paper-authors { margin: 6px 0 0; max-width: 720px; }
+    .paper-authors summary {
+      color: var(--annotation); cursor: pointer; font-size: .78rem;
+      font-weight: 550; list-style: none;
+    }
+    .paper-authors summary::-webkit-details-marker { display: none; }
+    .paper-authors[open] summary::after { content: " −"; }
+    .paper-authors .authors { margin: 10px 0 0; font-size: .87rem; }
     .abstract-disclosure {
       max-width: 720px;
       margin-top: 20px;
@@ -6556,8 +6723,12 @@ function htmlPage(title: string, body: string, status = 200): Response {
       background: var(--field-muted); border: none; border-radius: 3px;
       color: var(--ink); font: inherit; font-size: .81rem;
     }
-    .paper-reference-add button { padding: 6px 9px; color: var(--annotation); font-size: .78rem; }
-    .paper-reference-add button:hover { text-decoration: underline; }
+    .paper-reference-add button {
+      padding: 6px 11px; border-radius: 3px;
+      background: var(--annotation); color: var(--button-ink);
+      font-size: .78rem; font-weight: 600; white-space: nowrap;
+    }
+    .paper-reference-add button:hover { filter: brightness(.94); }
 
     .tab-empty {
       min-height: 150px;
@@ -7283,6 +7454,10 @@ function htmlPage(title: string, body: string, status = 200): Response {
       background: var(--annotation);
       color: var(--button-ink);
       border-radius: 3px;
+    }
+    .trail-insert-form [data-insert-cancel] {
+      background: transparent;
+      color: var(--annotation);
     }
 
     .trail-mark-add {
