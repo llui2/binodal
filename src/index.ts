@@ -158,7 +158,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === "GET" && path === "/privacy") {
     return renderPolicyPage(
       "Privacy",
-      `<p>Trails stores the information needed to provide the service, including research trails and their items, paper metadata, discussion content, a provisional trail username when you choose one, and account information when you sign in with ORCID.</p>
+      `<p>Trails stores the information needed to provide the service, including research trails and their items, paper metadata, discussion content, ORCID account information and trail-ownership mappings, including any previously used temporary username linked during account migration.</p>
        <p>Trails uses a browser cookie to keep the current research trail associated with your browser. A private trail key can also grant access to a specific trail through integrations, so it should be treated as a secret.</p>
        <p>When Trails resolves a paper identifier or URL, it may contact the corresponding public scholarly service or publication page to retrieve metadata. Authentication through ORCID is handled through ORCID's authorization flow.</p>
        <p>Do not put confidential, regulated, or sensitive personal information into a trail while the service remains experimental.</p>
@@ -6250,58 +6250,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-size: .66rem;
       line-height: 1.4;
     }
-    .trail-user-form {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 6px;
-      align-items: center;
-    }
-    .trail-user-form input,
-    .trail-user-switch input {
-      min-width: 0;
-      padding: 8px 9px;
-      background: var(--field-muted);
-      border-radius: 3px;
-      font-size: .75rem;
-    }
-    .trail-user-submit {
-      width: 32px;
-      height: 32px;
-      display: grid;
-      place-items: center;
-      padding: 0;
-      border: 0;
-      border-radius: 3px;
-      background: var(--annotation);
-      color: var(--button-ink);
-      font-size: 1rem;
-      font-weight: 650;
-      line-height: 1;
-    }
-    .trail-user-submit:hover,
-    .trail-user-submit:focus-visible {
-      color: var(--button-ink);
-      filter: brightness(.96);
-      outline: none;
-    }
-    .trail-user-form p {
-      grid-column: 1 / -1;
-    }
-    .trail-user-switch {
-      margin-top: 22px;
-      color: var(--soft);
-      font-size: .67rem;
-    }
-    .trail-user-switch summary {
-      cursor: pointer;
-      list-style: none;
-    }
-    .trail-user-switch summary::-webkit-details-marker { display: none; }
-    .trail-user-switch form {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 6px;
-      margin-top: 8px;
+    .trail-user-form a {
+      color: var(--annotation);
+      font-size: .78rem;
     }
 
     .trail-description {
