@@ -4283,6 +4283,83 @@ async function getPaperAccess(
   return { abstract, pdf_url: pdfUrl, checked_at: new Date().toISOString() };
 }
 
+function usableReferenceTitle(title: string, doi: string): boolean {
+  const clean = title.trim();
+  if (!clean || clean === "title unavailable") return false;
+  return normalizeDoiInput(clean) !== doi;
+}
+
+// Crossref's outgoing references sometimes omit the title entirely.
+// Recover it from the cited work's own record, rather than display its DOI.
+async function resolveReferenceTitles(
+  env: Env,
+  paperId: string,
+  references: PaperReference[],
+): Promise<PaperReference[]> {
+  const missing = references.filter((ref) =>
+    !usableReferenceTitle(ref.title, ref.doi) && ref.title !== "title unavailable",
+  );
+  if (!missing.length) return references;
+
+  const resolved = new Map<string, { title: string; year: number | null }>();
+  const dois = [...new Set(missing.map((ref) => ref.doi))];
+  for (let index = 0; index < dois.length; index += 40) {
+    const batch = dois.slice(index, index + 40);
+    try {
+      const endpoint = new URL("https://api.openalex.org/works");
+      endpoint.searchParams.set("filter", "doi:" + batch.join("|"));
+      endpoint.searchParams.set("per_page", String(batch.length));
+      endpoint.searchParams.set("select", "doi,display_name,publication_year");
+      const data = await fetchJsonWithTimeout(endpoint.toString()) as {
+        results?: Array<{ doi?: string | null; display_name?: string; publication_year?: number }>;
+      };
+      for (const work of data.results ?? []) {
+        const workDoi = normalizeDoiInput(work.doi ?? "");
+        const title = cleanHtmlText(work.display_name ?? "").slice(0, 300);
+        if (workDoi && usableReferenceTitle(title, workDoi)) {
+          resolved.set(workDoi, {
+            title, year: Number.isInteger(work.publication_year) ? work.publication_year! : null,
+          });
+        }
+      }
+    } catch (error) {
+      console.warn("OpenAlex reference-title lookup failed", error);
+    }
+  }
+
+  const remaining = dois.filter((doi) => !resolved.has(doi)).slice(0, 12);
+  await Promise.all(remaining.map(async (doi) => {
+    try {
+      const record = await fetchJsonWithTimeout(
+        "https://api.crossref.org/works/" + encodeURIComponent(doi),
+      ) as { message?: { title?: string[]; published?: { "date-parts"?: number[][] } } };
+      const title = cleanHtmlText(record.message?.title?.[0] ?? "").slice(0, 300);
+      const year = record.message?.published?.["date-parts"]?.[0]?.[0] ?? null;
+      if (usableReferenceTitle(title, doi)) {
+        resolved.set(doi, { title, year: Number.isInteger(year) ? year : null });
+      }
+    } catch {
+      // Missing metadata must not be presented as a paper title.
+    }
+  }));
+
+  const repaired = references.map((ref) => {
+    if (!missing.includes(ref)) return ref;
+    const record = resolved.get(ref.doi);
+    return { ...ref, title: record?.title ?? "title unavailable", year: record?.year ?? ref.year };
+  });
+  try {
+    await env.DB.batch(repaired.filter((ref) => missing.some((old) =>
+      old.position === ref.position,
+    )).map((ref) => env.DB.prepare(
+      "UPDATE paper_references SET title = ?, year = ?, checked_at = CURRENT_TIMESTAMP WHERE paper_id = ? AND position = ?",
+    ).bind(ref.title, ref.year, paperId, ref.position)));
+  } catch (error) {
+    console.warn("Could not cache repaired reference titles", error);
+  }
+  return repaired;
+}
+
 async function getPaperReferences(
   env: Env,
   paperId: string,
@@ -4293,7 +4370,7 @@ async function getPaperReferences(
   ).bind(paperId).all<PaperReference>();
   const previous = cached.results ?? [];
   if (previous.length && Date.now() - Date.parse(previous[0].checked_at!.replace(" ", "T") + "Z") < 7 * 86400000) {
-    return previous;
+    return resolveReferenceTitles(env, paperId, previous);
   }
 
   const doi = identifiers.find((id) => id.type === "doi")?.value;
@@ -4340,7 +4417,7 @@ async function getPaperReferences(
       references = (data.message?.reference ?? []).slice(0, 60).flatMap((ref, position) => {
         const refDoi = normalizeDoiInput(ref.DOI ?? "");
         if (!refDoi) return [];
-        const title = cleanHtmlText(ref["article-title"] ?? ref.unstructured ?? refDoi).slice(0, 300);
+        const title = cleanHtmlText(ref["article-title"] ?? "").slice(0, 300);
         const year = Number(ref.year);
         return [{ position, title, doi: refDoi, year: year >= 1000 && year <= 2100 ? year : null }];
       });
@@ -4363,7 +4440,7 @@ async function getPaperReferences(
       console.warn("Could not cache paper references", error);
     }
   }
-  return references.length ? references : previous;
+  return resolveReferenceTitles(env, paperId, references.length ? references : previous);
 }
 
 async function renderPaperReferences(
@@ -4373,7 +4450,8 @@ async function renderPaperReferences(
   paperUrl: string,
   justAdded: boolean,
 ): Promise<string> {
-  const references = await getPaperReferences(env, paperId, identifiers);
+  const references = (await getPaperReferences(env, paperId, identifiers))
+    .filter((ref) => usableReferenceTitle(ref.title, ref.doi));
   if (!references.length) {
     return `<section class="tab-empty"><h2>References</h2>
       <p>No DOI-resolved references are available for this paper yet.</p></section>`;
