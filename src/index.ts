@@ -143,7 +143,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
 
   if (request.method === "GET" && path === "/chatgpt") {
-    return renderChatGptHelp();
+    return renderChatGptHelp(request, env);
   }
 
   if (request.method === "GET" && path === "/support") {
@@ -322,25 +322,49 @@ async function route(request: Request, env: Env): Promise<Response> {
   return notFound("Page not found.");
 }
 
-function renderChatGptHelp(): Response {
-  return renderPolicyPage(
-    "ChatGPT connection",
-    `<p>Use ChatGPT to create and extend research trails. Trails keeps the selected notes and papers as a persistent research record, not a copy of the conversation.</p>
-       <h2>Connect</h2>
-       <ol>
-         <li>Open <a href="https://chatgpt.com/plugins">ChatGPT Plugins</a> in a web browser. Select <strong>+ → Add custom MCP server</strong>.</li>
-         <li>Name it <strong>Trails</strong> and enter the server URL below.</li>
-         <li>Choose <strong>No authentication</strong>, then create and install the plugin.</li>
-         <li>Start a new chat, select the Trails plugin with <strong>@</strong>, and ask it to create a trail.</li>
-       </ol>
-       <div class="chatgpt-endpoint">
-         <span class="eyebrow">MCP server URL</span>
-         <code>https://trails.llui2.workers.dev/mcp</code>
-       </div>
-       <h2>Work with a trail</h2>
-       <p>Ask ChatGPT to add a paper, make a note, or read back the current trail. Open the link returned when a new trail is created to see changes on the Trails website.</p>
-       <p>To connect an existing trail, open <a href="/trail/connect">its connection page</a> and use the private trail key in ChatGPT.</p>
-       <p class="chatgpt-caution">A trail key grants access to read and change that trail. Keep it private. User-account linking is not yet available in the ChatGPT plugin.</p>`,
+async function renderChatGptHelp(request: Request, env: Env): Promise<Response> {
+  const user = await currentUser(request, env);
+  return htmlPage(
+    "Trails for ChatGPT",
+    `<header class="topbar">
+      ${renderBrand()}
+      ${renderIdentity(user)}
+    </header>
+    <main class="shell chatgpt-page">
+      <a class="back" href="/trail">← trails</a>
+      <span class="eyebrow">ChatGPT plugin</span>
+      <h1>Keep the research path, not the chat.</h1>
+      <p class="chatgpt-lead">Explore questions with ChatGPT and preserve the papers, notes, and connections that matter in Trails. The research path remains available to revisit and edit outside the conversation.</p>
+
+      <p class="chatgpt-status">The integration works in private testing. The public plugin is not yet published. A direct installation link will appear here after publication.</p>
+
+      <section class="chatgpt-section">
+        <h2>How it works</h2>
+        <ol>
+          <li>Find and install Trails in ChatGPT when its public listing is available.</li>
+          <li>Ask ChatGPT to create a research trail, add a relevant paper, or record an important finding.</li>
+          <li>Open the trail in Trails to inspect, edit, and continue the research path.</li>
+        </ol>
+      </section>
+
+      <section class="chatgpt-section">
+        <h2>Example requests</h2>
+        <ul class="chatgpt-examples">
+          <li>Create a trail about how physical networks can learn.</li>
+          <li>Add this paper and explain why it changes the question.</li>
+          <li>Read this trail and summarize the open questions.</li>
+        </ul>
+      </section>
+
+      <p class="chatgpt-limitation">Reading an existing trail currently requires its private trail key. Connecting trails directly to a signed-in researcher account is still in development.</p>
+
+      <details class="chatgpt-testing">
+        <summary>Private testing</summary>
+        <p>While the plugin is not publicly listed, testers can connect a custom MCP server in ChatGPT using this URL and no authentication:</p>
+        <code>https://trails.llui2.workers.dev/mcp</code>
+        <p>Keep trail keys private: they grant permission to read and modify the corresponding trail.</p>
+      </details>
+    </main>`,
   );
 }
 
@@ -6096,31 +6120,66 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .policy-copy p + p {
       margin-top: 1rem;
     }
-    .policy-copy h2 {
-      margin: 30px 0 10px;
-      font-size: 1.2rem;
-      font-weight: 620;
-      line-height: 1.3;
+    .chatgpt-page {
+      max-width: 720px;
+      padding: 9vh 0 100px;
     }
-    .policy-copy ol {
-      max-width: 620px;
-      padding-left: 22px;
-      margin: 12px 0;
+    .chatgpt-page h1 {
+      max-width: 660px;
+      margin: 8px 0 18px;
+      font-size: clamp(2rem, 4vw, 3rem);
+      line-height: 1.12;
+      font-weight: 500;
+      letter-spacing: -.025em;
     }
-    .policy-copy li + li { margin-top: 8px; }
-    .chatgpt-endpoint {
-      margin-top: 24px;
-      padding: 15px 0;
+    .chatgpt-page p {
+      max-width: 650px;
+      line-height: 1.65;
     }
-    .chatgpt-endpoint .eyebrow { margin: 0 0 6px; }
-    .chatgpt-endpoint code {
-      font-size: .82rem;
-      color: var(--annotation);
-      overflow-wrap: anywhere;
+    .chatgpt-lead {
+      font-size: 1.06rem;
     }
-    .chatgpt-caution {
+    .chatgpt-status {
+      margin: 28px 0 0;
       color: var(--body-muted);
       font-size: .88rem;
+    }
+    .chatgpt-section {
+      margin-top: 38px;
+    }
+    .chatgpt-section h2 {
+      margin: 0 0 12px;
+      font-size: 1.18rem;
+      line-height: 1.3;
+      font-weight: 620;
+    }
+    .chatgpt-section ol,
+    .chatgpt-section ul {
+      padding-left: 24px;
+      max-width: 620px;
+      margin: 0;
+    }
+    .chatgpt-section li + li { margin-top: 9px; }
+    .chatgpt-examples { color: var(--body-muted); }
+    .chatgpt-limitation {
+      margin-top: 38px;
+      color: var(--body-muted);
+      font-size: .88rem;
+    }
+    .chatgpt-testing {
+      margin-top: 30px;
+      color: var(--body-muted);
+      font-size: .84rem;
+    }
+    .chatgpt-testing summary {
+      cursor: pointer;
+      color: var(--annotation);
+    }
+    .chatgpt-testing p { margin: 12px 0; }
+    .chatgpt-testing code {
+      overflow-wrap: anywhere;
+      color: var(--ink);
+      font-size: .8rem;
     }
     .utility-page h1 {
       margin: 0 0 14px;
