@@ -172,7 +172,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === "GET" && path === "/privacy") {
     return renderPolicyPage(
       "Privacy",
-      `<p>Trails stores the information needed to provide the service, including research trails and their items, paper metadata, discussion content, a provisional trail username when you choose one, and account information when you sign in with ORCID.</p>
+      `<p>Trails stores the information needed to provide the service, including research trails and their items, paper metadata, discussion content, ORCID account information and trail-ownership mappings, including any previously used temporary username linked during account migration.</p>
        <p>Trails uses a browser cookie to keep the current research trail associated with your browser. A private trail key can also grant access to a specific trail through integrations, so it should be treated as a secret.</p>
        <p>When Trails resolves a paper identifier or URL, it may contact the corresponding public scholarly service or publication page to retrieve metadata. Authentication through ORCID is handled through ORCID's authorization flow.</p>
        <p>Do not put confidential, regulated, or sensitive personal information into a trail while the service remains experimental.</p>
@@ -224,7 +224,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
 
   if (request.method === "POST" && path === "/trail/user") {
-    return setTrailUser(request, env);
+    return redirect("/auth/orcid?next=/trail", 303);
   }
 
   if (request.method === "POST" && path === "/trail/new") {
@@ -610,7 +610,7 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
     <main class="shell trail-page">
       <div class="trail-layout">
         <aside class="trail-sidebar" aria-label="Your trails">
-          ${renderTrailSidebar(trailUser, userTrails, trail.id)}
+          ${renderTrailSidebar(trailUser, user, userTrails, trail.id)}
         </aside>
 
         <div class="trail-main">
@@ -643,16 +643,16 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
 }
 
 function renderTrailSidebar(
-  user: TrailUser | null,
+  account: TrailUser | null,
+  identity: User | null,
   trails: TrailSummary[],
   currentTrailId: string,
 ): string {
-  if (!user) {
-    return `<form class="trail-user-form" action="/trail/user" method="post">
-      <input name="username" maxlength="32" autocomplete="username" aria-label="Username" placeholder="username" required>
-      <button class="trail-user-submit" type="submit" aria-label="Continue">→</button>
-      <p>temporary username</p>
-    </form>`;
+  if (!account) {
+    return `<div class="trail-user-form">
+      <a href="/auth/orcid?next=/trail">sign in with ORCID</a>
+      <p>Sign in to save your trails.</p>
+    </div>`;
   }
 
   const items = trails.length
@@ -666,18 +666,11 @@ function renderTrailSidebar(
       }).join("")
     : `<p class="trail-sidebar-empty">no trails yet</p>`;
 
-  return `<div class="trail-sidebar-user">@${escapeHtml(user.username)}</div>
+  return `<div class="trail-sidebar-user">${escapeHtml(identity?.display_name ?? account.username)}</div>
     <form class="trail-new-form" action="/trail/new" method="post">
       <button class="text-button" type="submit">+ new trail</button>
     </form>
-    <div class="trail-list">${items}</div>
-    <details class="trail-user-switch">
-      <summary>switch user</summary>
-      <form action="/trail/user" method="post">
-        <input name="username" maxlength="32" autocomplete="username" aria-label="Username" placeholder="username" required>
-        <button class="trail-user-submit" type="submit" aria-label="Switch user">→</button>
-      </form>
-    </details>`;
+    <div class="trail-list">${items}</div>`;
 }
 
 function renderTrailGraph(
@@ -2125,32 +2118,65 @@ function trailLiveScript(): Response {
   });
 }
 
-async function currentTrailUser(request: Request, env: Env): Promise<TrailUser | null> {
-  const cookies = parseCookies(request.headers.get("Cookie") ?? "");
-  const token = cookies.get("trail_user");
-  if (!token) return null;
-
-  return await env.DB.prepare(
-    `SELECT u.id, u.username
-       FROM trail_user_sessions s
-       JOIN trail_users u ON u.id = s.user_id
-      WHERE s.token = ?`,
+async function linkedTrailUser(env: Env, userId: number): Promise<TrailUser | null> {
+  return env.DB.prepare(
+    `SELECT t.id, t.username
+       FROM trail_user_identities i
+       JOIN trail_users t ON t.id = i.trail_user_id
+      WHERE i.user_id = ?`,
   )
-    .bind(token)
+    .bind(userId)
     .first<TrailUser>();
 }
 
-function normalizeTrailUsername(value: string): string {
-  return value
-    .trim()
-    .replace(/\s+/g, "-")
-    .replace(/[^A-Za-z0-9_.-]/g, "")
-    .slice(0, 32);
-}
+async function currentTrailUser(request: Request, env: Env): Promise<TrailUser | null> {
+  const identity = await currentUser(request, env);
+  if (!identity) return null;
 
-function trailUserCookie(token: string, request: Request): string {
-  const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
-  return `trail_user=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${secure}`;
+  const linked = await linkedTrailUser(env, identity.id);
+  if (linked) return linked;
+
+  // A previous browser session can bring its existing trail collection into
+  // the verified ORCID account. New sessions cannot select users by name.
+  const cookies = parseCookies(request.headers.get("Cookie") ?? "");
+  const previousToken = cookies.get("trail_user");
+  if (previousToken) {
+    const previous = await env.DB.prepare(
+      `SELECT u.id, u.username
+         FROM trail_user_sessions s
+         JOIN trail_users u ON u.id = s.user_id
+        WHERE s.token = ?`,
+    )
+      .bind(previousToken)
+      .first<TrailUser>();
+    if (previous) {
+      await env.DB.prepare(
+        "INSERT OR IGNORE INTO trail_user_identities (user_id, trail_user_id) VALUES (?, ?)",
+      )
+        .bind(identity.id, previous.id)
+        .run();
+      const migrated = await linkedTrailUser(env, identity.id);
+      if (migrated) return migrated;
+    }
+  }
+
+  // Give every new ORCID identity a persistent, private trail collection.
+  const username = "user-" + randomTrailKey();
+  await env.DB.prepare("INSERT INTO trail_users (username) VALUES (?)")
+    .bind(username)
+    .run();
+  const created = await env.DB.prepare(
+    "SELECT id, username FROM trail_users WHERE username = ?",
+  )
+    .bind(username)
+    .first<TrailUser>();
+  if (!created) throw new Error("Could not create trail account");
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO trail_user_identities (user_id, trail_user_id) VALUES (?, ?)",
+  )
+    .bind(identity.id, created.id)
+    .run();
+  return linkedTrailUser(env, identity.id);
 }
 
 async function claimTrailForUser(env: Env, trailId: string, userId: number): Promise<void> {
@@ -2207,64 +2233,6 @@ async function listUserTrails(env: Env, userId: number): Promise<TrailSummary[]>
     .bind(userId)
     .all<TrailSummary>();
   return result.results ?? [];
-}
-
-async function setTrailUser(request: Request, env: Env): Promise<Response> {
-  assertSameOrigin(request);
-  const form = await request.formData();
-  const username = normalizeTrailUsername(String(form.get("username") ?? ""));
-  if (!username) return redirect("/trail", 303);
-
-  await env.DB.prepare(
-    "INSERT INTO trail_users (username) VALUES (?) ON CONFLICT(username) DO NOTHING",
-  )
-    .bind(username)
-    .run();
-
-  const user = await env.DB.prepare(
-    "SELECT id, username FROM trail_users WHERE username = ? COLLATE NOCASE",
-  )
-    .bind(username)
-    .first<TrailUser>();
-  if (!user) throw new Error("Could not create trail user");
-
-  const sessionToken = randomToken();
-  await env.DB.prepare(
-    "INSERT INTO trail_user_sessions (token, user_id) VALUES (?, ?)",
-  )
-    .bind(sessionToken, user.id)
-    .run();
-
-  const current = await ensureCurrentTrail(request, env);
-  let trailCookieValue = current.cookie;
-
-  if (current.id !== COMMON_TRAIL_ID) {
-    const ownerId = await trailOwnerUserId(env, current.id);
-    if (ownerId === null) {
-      await claimTrailForUser(env, current.id, user.id);
-    } else if (ownerId !== user.id) {
-      const existingTrailId = await latestTrailForUser(env, user.id);
-      if (existingTrailId) {
-        const token = randomToken();
-        await env.DB.prepare("INSERT INTO trail_sessions (token, trail_id) VALUES (?, ?)")
-          .bind(token, existingTrailId)
-          .run();
-        trailCookieValue = trailCookie(token, request);
-      } else {
-        trailCookieValue = null;
-      }
-    }
-  }
-
-  const response = redirect("/trail", 303);
-  const headers = new Headers(response.headers);
-  headers.append("Set-Cookie", trailUserCookie(sessionToken, request));
-  if (trailCookieValue) headers.append("Set-Cookie", trailCookieValue);
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
 }
 
 async function createTrailForUser(request: Request, env: Env): Promise<Response> {
@@ -2527,6 +2495,10 @@ async function ensureCurrentTrail(request: Request, env: Env): Promise<TrailCont
 
     if (existing && trailUser) {
       const ownerId = await trailOwnerUserId(env, existing.id);
+      if (ownerId === null) {
+        await claimTrailForUser(env, existing.id, trailUser.id);
+        return { id: existing.id, cookie: null };
+      }
       if (ownerId === trailUser.id) {
         return { id: existing.id, cookie: null };
       }
