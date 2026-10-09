@@ -427,16 +427,31 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   const identifiers = await getPaperIdentifiers(env, paper.arxiv_id);
   const publicPaperId = preferredPaperId(identifiers, paper.arxiv_id);
   const requestUrl = new URL(request.url);
-  // Paper links entered from a trail should lead back to that trail, rather
-  // than unexpectedly sending the researcher to the generic search page.
-  const referer = request.headers.get("Referer");
-  let backHref = "/";
-  if (referer) {
-    try {
-      const from = new URL(referer);
-      if (from.origin === requestUrl.origin && from.pathname === "/trail") backHref = "/trail";
-    } catch {
-      // Ignore invalid Referer values.
+  const mark = requestUrl.searchParams.get("mark");
+  const fromTrail = requestUrl.searchParams.get("from") === "trail" &&
+    mark !== null && /^[0-9]+$/.test(mark);
+  const requestedReturn = requestUrl.searchParams.get("return");
+  const safeReturn = requestedReturn && requestedReturn.startsWith("/p/") &&
+    !requestedReturn.startsWith("//") ? requestedReturn : null;
+  const context = new URLSearchParams();
+  if (fromTrail && mark) {
+    context.set("from", "trail");
+    context.set("mark", mark);
+  }
+  if (safeReturn) context.set("return", safeReturn);
+  let backHref = safeReturn ?? (fromTrail ? "/trail#mark-" + mark : "/");
+  if (!safeReturn && !fromTrail) {
+    const referer = request.headers.get("Referer");
+    if (referer) {
+      try {
+        const previous = new URL(referer);
+        if (previous.origin === requestUrl.origin &&
+            (previous.pathname === "/trail" || previous.pathname.startsWith("/p/"))) {
+          backHref = previous.pathname + previous.search + previous.hash;
+        }
+      } catch {
+        // No valid same-origin navigation context.
+      }
     }
   }
 
@@ -474,8 +489,13 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
     : "";
   const paperUrl = `/p/${encodeURIComponent(publicPaperId)}`;
 
+  const paperTabUrl = (id: "discussion" | "references" | "related"): string => {
+    const params = new URLSearchParams(context);
+    params.set("tab", id);
+    return paperUrl + "?" + params.toString();
+  };
   const tabLink = (id: "discussion" | "references" | "related", label: string): string =>
-    `<a href="${paperUrl}?tab=${id}"${tab === id ? ` class="active" aria-current="page"` : ""}>${label}</a>`;
+    `<a href="${escapeAttr(paperTabUrl(id))}"${tab === id ? ` class="active" aria-current="page"` : ""}>${label}</a>`;
 
   const discussion = `<section class="discussion">
     <div class="discussion-meta">
@@ -486,7 +506,7 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   </section>`;
 
   const references = tab === "references"
-    ? await renderPaperReferences(env, storagePaperId, identifiers, paperUrl, requestUrl.searchParams.has("added"))
+    ? await renderPaperReferences(env, storagePaperId, identifiers, paperTabUrl("references"), requestUrl.searchParams.has("added"))
     : "";
 
   const related = `<section class="tab-empty">
@@ -503,7 +523,7 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
       ${renderIdentity(user)}
     </header>
     <main class="shell paper-page">
-      <a class="back" href="${backHref}">← ${backHref === "/trail" ? "trail" : "papers"}</a>
+      <a class="back" href="${escapeAttr(backHref)}">← ${backHref.startsWith("/trail") ? "trail" : "papers"}</a>
 
       <article class="paper-window">
         <div class="paper-grid">
@@ -4459,7 +4479,7 @@ async function renderPaperReferences(
 
   const items = references.map((ref) => {
     const refId = `doi:${ref.doi}`;
-    const href = `/p/${encodeURIComponent(refId)}`;
+    const href = `/p/${encodeURIComponent(refId)}?return=${encodeURIComponent(paperUrl)}`;
     return `<li class="paper-reference">
       <div class="paper-reference-text">
         <a href="${escapeAttr(href)}">${escapeHtml(ref.title)}</a>
@@ -4468,7 +4488,7 @@ async function renderPaperReferences(
       <form action="/trail/add-paper" method="post" class="paper-reference-add">
         <input type="hidden" name="paper_id" value="${escapeAttr(refId)}">
         <input type="hidden" name="from_paper_id" value="${escapeAttr(paperId)}">
-        <input type="hidden" name="next" value="${escapeAttr(paperUrl)}?tab=references&amp;added=1">
+        <input type="hidden" name="next" value="${escapeAttr(paperUrl + "&added=1")}">
         <input name="reason" maxlength="1000" placeholder="Why is it relevant?" aria-label="Reason to add ${escapeAttr(ref.title)} to trail" required>
         <button type="submit">add to trail</button>
       </form>
