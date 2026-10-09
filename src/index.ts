@@ -4193,6 +4193,44 @@ async function getPaperReferences(
   return references.length ? references : previous;
 }
 
+async function renderPaperReferences(
+  env: Env,
+  paperId: string,
+  identifiers: PaperIdentifier[],
+  paperUrl: string,
+  justAdded: boolean,
+): Promise<string> {
+  const references = await getPaperReferences(env, paperId, identifiers);
+  if (!references.length) {
+    return `<section class="tab-empty"><h2>References</h2>
+      <p>No DOI-resolved references are available for this paper yet.</p></section>`;
+  }
+
+  const items = references.map((ref) => {
+    const refId = `doi:${ref.doi}`;
+    const href = `/p/${encodeURIComponent(refId)}`;
+    return `<li class="paper-reference">
+      <div class="paper-reference-text">
+        <a href="${escapeAttr(href)}">${escapeHtml(ref.title)}</a>
+        ${ref.year ? `<span>${ref.year}</span>` : ""}
+      </div>
+      <form action="/trail/add-paper" method="post" class="paper-reference-add">
+        <input type="hidden" name="paper_id" value="${escapeAttr(refId)}">
+        <input type="hidden" name="from_paper_id" value="${escapeAttr(paperId)}">
+        <input type="hidden" name="next" value="${escapeAttr(paperUrl)}?tab=references&amp;added=1">
+        <input name="reason" maxlength="1000" placeholder="Why is it relevant?" aria-label="Reason to add ${escapeAttr(ref.title)} to trail" required>
+        <button type="submit">add to trail</button>
+      </form>
+    </li>`;
+  }).join("");
+
+  return `<section class="paper-references">
+    ${justAdded ? `<p class="paper-reference-confirm">Added to the current trail.</p>` : ""}
+    <p class="paper-reference-count">${references.length} DOI-resolved references</p>
+    <ol>${items}</ol>
+  </section>`;
+}
+
 async function fetchPaperByInput(paperId: string): Promise<FetchedPaper> {
   if (paperId.startsWith("doi:")) {
     const doi = paperId.slice(4);
