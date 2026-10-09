@@ -423,6 +423,18 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   const identifiers = await getPaperIdentifiers(env, paper.arxiv_id);
   const publicPaperId = preferredPaperId(identifiers, paper.arxiv_id);
   const requestUrl = new URL(request.url);
+  // Paper links entered from a trail should lead back to that trail, rather
+  // than unexpectedly sending the researcher to the generic search page.
+  const referer = request.headers.get("Referer");
+  let backHref = "/";
+  if (referer) {
+    try {
+      const from = new URL(referer);
+      if (from.origin === requestUrl.origin && from.pathname === "/trail") backHref = "/trail";
+    } catch {
+      // Ignore invalid Referer values.
+    }
+  }
 
   if (requestedPaperId !== publicPaperId) {
     return redirect(`/p/${encodeURIComponent(publicPaperId)}${requestUrl.search}`);
@@ -484,7 +496,7 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
       ${renderIdentity(user)}
     </header>
     <main class="shell paper-page">
-      <a class="back" href="/">← papers</a>
+      <a class="back" href="${backHref}">← ${backHref === "/trail" ? "trail" : "papers"}</a>
 
       <article class="paper-window">
         <div class="paper-grid">
