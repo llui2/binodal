@@ -3352,6 +3352,211 @@ async function trailIdForIntegrationKey(env: Env, key: string): Promise<string |
   return row?.trail_id ?? null;
 }
 
+// Reuse the browser's mark IDs and main-path placements for MCP edits.
+async function mcpMark(env: Env, trailId: string, id: number): Promise<TrailItemRow> {
+  const row = await env.DB.prepare(
+    `SELECT i.id, i.trail_id, i.kind, i.title, i.url, i.content, i.note, i.source_ref,
+            p.position, i.created_at
+       FROM trail_items i JOIN trail_item_placements p
+         ON p.trail_id = i.trail_id AND p.item_id = i.id
+      WHERE i.trail_id = ? AND i.id = ? AND p.branch_id = 0`,
+  ).bind(trailId, id).first<TrailItemRow>();
+  if (!row) throw new Error("Mark not found on the main path.");
+  return row;
+}
+
+function mcpReply(verb: string, mark: TrailItemRow, origin: string) {
+  return {
+    content: [{ type: "text" as const, text: verb + " mark #" + mark.id + ": " + mark.title }],
+    structuredContent: {
+      id: mark.id, kind: mark.kind, title: mark.title, content: mark.content,
+      note: mark.note, url: mark.url ? new URL(mark.url, origin).toString() : null,
+      position: mark.position, branch_id: 0,
+    },
+  };
+}
+
+function mcpInsertionIndex(ids: number[], after?: number, before?: number): number {
+  if (after === undefined && before === undefined) return ids.length;
+  const a = after === undefined ? -1 : ids.indexOf(after);
+  const b = before === undefined ? -1 : ids.indexOf(before);
+  if (after !== undefined && a < 0) throw new Error("After-mark ID is not on the main path.");
+  if (before !== undefined && b < 0) throw new Error("Before-mark ID is not on the main path.");
+  if (after !== undefined && before !== undefined && b !== a + 1)
+    throw new Error("Anchor marks are not adjacent. Read the trail again.");
+  return after !== undefined ? a + 1 : b;
+}
+
+async function mcpMoveMark(
+  env: Env, trailId: string, id: number, after?: number, before?: number,
+): Promise<TrailItemRow> {
+  if (after === undefined && before === undefined)
+    throw new Error("Supply after_mark_id or before_mark_id.");
+  if (id === after || id === before) throw new Error("Cannot move a mark relative to itself.");
+  const items = await listTrailItems(env, trailId);
+  const mark = items.find((item) => item.id === id);
+  if (!mark) throw new Error("Mark not found on the main path.");
+  const rest = items.filter((item) => item.id !== id);
+  const index = mcpInsertionIndex(rest.map((item) => item.id), after, before);
+  rest.splice(index, 0, mark);
+  await env.DB.batch(rest.map((item, position) =>
+    env.DB.prepare(
+      "UPDATE trail_item_placements SET position = ? WHERE trail_id = ? AND branch_id = 0 AND item_id = ?",
+    ).bind(position, trailId, item.id),
+  ));
+  return mcpMark(env, trailId, id);
+}
+
+async function mcpAddMark(env: Env, trailId: string, input: {
+  kind: "note" | "code" | "link" | "paper"; title?: string; content?: string;
+  note?: string; source?: string; after_mark_id?: number; before_mark_id?: number;
+}): Promise<TrailItemRow> {
+  mcpInsertionIndex((await listTrailItems(env, trailId)).map((item) => item.id),
+    input.after_mark_id, input.before_mark_id);
+  const title = input.title?.trim();
+  const content = input.content?.trim() || null;
+  const note = input.note?.trim() || null;
+  let id: number | null = null;
+  if (input.kind === "paper") {
+    if (!input.source) throw new Error("Paper marks need a DOI, arXiv ID, or URL in source.");
+    id = await insertPaperIntoTrail(env, trailId, input.source, note, 0, content);
+  } else if (input.kind === "link") {
+    const url = normalizeTrailUrl(input.source ?? "");
+    if (!url) throw new Error("Link marks need an HTTP(S) URL in source.");
+    const old = await env.DB.prepare(
+      "SELECT id FROM trail_items WHERE trail_id = ? AND source_ref = ?",
+    ).bind(trailId, "url:" + url).first<{ id: number }>();
+    if (old) {
+      id = old.id;
+      await placeTrailItem(env, trailId, id);
+    } else {
+      const position = await nextTrailItemStoragePosition(env, trailId);
+      const row = await env.DB.prepare(
+        `INSERT INTO trail_items (trail_id, kind, title, url, content, note, source_ref, position)
+         VALUES (?, 'link', ?, ?, ?, ?, ?, ?) RETURNING id`,
+      ).bind(trailId, title || url, url, content, note, "url:" + url, position)
+        .first<{ id: number }>();
+      id = row?.id ?? null;
+      if (id !== null) await placeTrailItem(env, trailId, id);
+    }
+  } else {
+    if (!title) throw new Error("Note and code marks need a title.");
+    const position = await nextTrailItemStoragePosition(env, trailId);
+    const row = await env.DB.prepare(
+      "INSERT INTO trail_items (trail_id, kind, title, content, note, position) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+    ).bind(trailId, input.kind, title, content, note, position).first<{ id: number }>();
+    id = row?.id ?? null;
+    if (id !== null) await placeTrailItem(env, trailId, id);
+  }
+  if (id === null) throw new Error("Could not add mark.");
+  return input.after_mark_id !== undefined || input.before_mark_id !== undefined
+    ? mcpMoveMark(env, trailId, id, input.after_mark_id, input.before_mark_id)
+    : mcpMark(env, trailId, id);
+}
+
+async function mcpEditMark(env: Env, trailId: string, id: number, patch: {
+  title?: string; content?: string | null; note?: string | null;
+}): Promise<TrailItemRow> {
+  await mcpMark(env, trailId, id);
+  if (patch.title === undefined && patch.content === undefined && patch.note === undefined)
+    throw new Error("Provide a field to edit.");
+  const updates: D1PreparedStatement[] = [];
+  if (patch.title !== undefined) {
+    const title = patch.title.trim();
+    if (!title) throw new Error("Mark title cannot be empty.");
+    updates.push(env.DB.prepare("UPDATE trail_items SET title = ? WHERE id = ? AND trail_id = ?")
+      .bind(title, id, trailId));
+  }
+  if (patch.content !== undefined)
+    updates.push(env.DB.prepare("UPDATE trail_items SET content = ? WHERE id = ? AND trail_id = ?")
+      .bind(patch.content, id, trailId));
+  if (patch.note !== undefined)
+    updates.push(env.DB.prepare("UPDATE trail_items SET note = ? WHERE id = ? AND trail_id = ?")
+      .bind(patch.note, id, trailId));
+  await env.DB.batch(updates);
+  return mcpMark(env, trailId, id);
+}
+
+async function mcpDeleteMark(env: Env, trailId: string, id: number, title: string): Promise<void> {
+  const mark = await mcpMark(env, trailId, id);
+  if (mark.title !== title)
+    throw new Error("Mark title has changed. Read the trail before confirming deletion.");
+  const anchored = await env.DB.prepare(
+    "SELECT id FROM trail_branches WHERE trail_id = ? AND parent_item_id = ? LIMIT 1",
+  ).bind(trailId, id).first();
+  if (anchored) throw new Error("Cannot delete a mark anchoring a branch.");
+  const placements = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM trail_item_placements WHERE trail_id = ? AND item_id = ?",
+  ).bind(trailId, id).first<{ n: number }>();
+  if (placements?.n !== 1)
+    throw new Error("Mark belongs to multiple paths; remove other placements in the web editor first.");
+  await env.DB.prepare("DELETE FROM trail_items WHERE id = ? AND trail_id = ?")
+    .bind(id, trailId).run();
+}
+
+function registerMcpMarkTools(
+  server: McpServer, env: Env, resolveTrail: (key: string) => Promise<string>,
+  requireKey: boolean, origin: string,
+): void {
+  const keyField = requireKey
+    ? { key: z.string().regex(/^[a-fA-F0-9]{24,48}$/, "Invalid trail key") }
+    : {};
+  const resolve = (args: Record<string, unknown>) =>
+    resolveTrail(typeof args.key === "string" ? args.key : "");
+
+  server.registerTool("add_trail_mark", {
+    description: "Create a mark on the main research path. Paper source = DOI/arXiv/URL; link source = URL; note/code require a title. Optional before/after mark IDs position it between marks.",
+    inputSchema: z.object({
+      ...keyField, kind: z.enum(["note", "code", "link", "paper"]),
+      title: z.string().min(1).max(300).optional(),
+      content: z.string().max(10000).optional(),
+      note: z.string().max(2000).optional(),
+      source: z.string().min(1).optional(),
+      after_mark_id: z.number().int().positive().optional(),
+      before_mark_id: z.number().int().positive().optional(),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+  }, async (args) => mcpReply("Added", await mcpAddMark(env, await resolve(args), args), origin));
+
+  server.registerTool("edit_trail_mark", {
+    description: "Edit a mark by stable ID without replacing other fields. Null content or note clears the field.",
+    inputSchema: z.object({
+      ...keyField, mark_id: z.number().int().positive(),
+      title: z.string().min(1).max(300).optional(),
+      content: z.string().max(10000).nullable().optional(),
+      note: z.string().max(2000).nullable().optional(),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  }, async (args) => mcpReply("Edited",
+    await mcpEditMark(env, await resolve(args), args.mark_id, args), origin));
+
+  server.registerTool("move_trail_mark", {
+    description: "Move a mark before/after an existing main-path mark by stable IDs. Both anchors, when provided, must be adjacent.",
+    inputSchema: z.object({
+      ...keyField, mark_id: z.number().int().positive(),
+      after_mark_id: z.number().int().positive().optional(),
+      before_mark_id: z.number().int().positive().optional(),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  }, async (args) => mcpReply("Moved", await mcpMoveMark(
+    env, await resolve(args), args.mark_id, args.after_mark_id, args.before_mark_id), origin));
+
+  server.registerTool("delete_trail_mark", {
+    description: "Permanently delete a mark. Require explicit user approval. Exact expected_title must match its current title. Refuses to delete branch anchors or marks shared by paths.",
+    inputSchema: z.object({
+      ...keyField, mark_id: z.number().int().positive(),
+      expected_title: z.string().min(1), confirm: z.literal(true),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+  }, async (args) => {
+    await mcpDeleteMark(env, await resolve(args), args.mark_id, args.expected_title);
+    return {
+      content: [{ type: "text" as const, text: "Deleted mark #" + args.mark_id }],
+      structuredContent: { id: args.mark_id, deleted: true },
+    };
+  });
+}
+
 async function handleSharedTrailMcp(request: Request, env: Env): Promise<Response> {
   if (request.method === "OPTIONS") {
     return new Response(null, {
@@ -3536,11 +3741,9 @@ async function handleSharedTrailMcp(request: Request, env: Env): Promise<Respons
     },
     async ({ key, text, why }) => {
       const trailId = await resolveTrail(key);
-      await insertTrailNote(env, trailId, text, why ?? null);
-      return {
-        content: [{ type: "text", text: "Added note to the trail." }],
-        structuredContent: { ok: true },
-      };
+      const id = await insertTrailNote(env, trailId, text, why ?? null);
+      if (id === null) throw new Error("Could not add note.");
+      return mcpReply("Added", await mcpMark(env, trailId, id), origin);
     },
   );
 
@@ -3557,13 +3760,13 @@ async function handleSharedTrailMcp(request: Request, env: Env): Promise<Respons
     },
     async ({ key, paper, why }) => {
       const trailId = await resolveTrail(key);
-      await insertPaperIntoTrail(env, trailId, paper, why ?? null);
-      return {
-        content: [{ type: "text", text: "Added paper to the trail." }],
-        structuredContent: { ok: true },
-      };
+      const id = await insertPaperIntoTrail(env, trailId, paper, why ?? null);
+      if (id === null) throw new Error("Could not add paper.");
+      return mcpReply("Added", await mcpMark(env, trailId, id), origin);
     },
   );
+
+  registerMcpMarkTools(server, env, resolveTrail, true, origin);
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
@@ -3729,11 +3932,9 @@ async function handleTrailMcp(request: Request, env: Env, token: string): Promis
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     },
     async ({ text, why }) => {
-      await insertTrailNote(env, integration.trail_id, text, why ?? null);
-      return {
-        content: [{ type: "text", text: "Added note to the trail." }],
-        structuredContent: { ok: true },
-      };
+      const id = await insertTrailNote(env, integration.trail_id, text, why ?? null);
+      if (id === null) throw new Error("Could not add note.");
+      return mcpReply("Added", await mcpMark(env, integration.trail_id, id), origin);
     },
   );
 
@@ -3748,13 +3949,13 @@ async function handleTrailMcp(request: Request, env: Env, token: string): Promis
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
     async ({ paper, why }) => {
-      await insertPaperIntoTrail(env, integration.trail_id, paper, why ?? null);
-      return {
-        content: [{ type: "text", text: "Added paper to the trail." }],
-        structuredContent: { ok: true },
-      };
+      const id = await insertPaperIntoTrail(env, integration.trail_id, paper, why ?? null);
+      if (id === null) throw new Error("Could not add paper.");
+      return mcpReply("Added", await mcpMark(env, integration.trail_id, id), origin);
     },
   );
+
+  registerMcpMarkTools(server, env, async () => integration.trail_id, false, origin);
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
