@@ -690,7 +690,7 @@ function renderTrailSidebar(
       <summary>rename user</summary>
       <form action="/trail/user" method="post">
         <input name="username" maxlength="32" autocomplete="username" aria-label="Username" placeholder="username" required>
-        <button class="trail-user-submit" type="submit" aria-label="Switch user">→</button>
+        <button class="trail-user-submit" type="submit" aria-label="Rename user">→</button>
       </form>
     </details>`;
 }
