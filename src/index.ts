@@ -559,7 +559,7 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
     ? [
         {
           id: COMMON_TRAIL_ID,
-          title: "A black hole's shadow",
+          title: "The M87* shadow",
           created_at: "",
         },
         ...ownedTrails.filter((item) => item.id !== COMMON_TRAIL_ID),
@@ -2155,15 +2155,15 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
   )
     .bind(
       COMMON_TRAIL_ID,
-      "A black hole's shadow",
-      "What does the first image of M87* actually show? A research path from an observed ring to the evidence behind its interpretation.",
+      "The M87* shadow",
+      "The Event Horizon Telescope image of M87* shows an asymmetric emission ring with a central brightness depression. The trail connects the observation to its reconstruction and physical interpretation.",
     )
     .run();
 
   await env.DB.prepare(
     `UPDATE trail_metadata
-        SET title = 'A black hole''s shadow',
-            description = 'What does the first image of M87* actually show? A research path from an observed ring to the evidence behind its interpretation.'
+        SET title = 'The M87* shadow',
+            description = 'The Event Horizon Telescope image of M87* shows an asymmetric emission ring with a central brightness depression. The trail connects the observation to its reconstruction and physical interpretation.'
       WHERE trail_id = ?
         AND title = 'A branching research trail'`,
   )
@@ -2242,61 +2242,67 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
   };
 
   await seedItem(
-    "note", "What does a black hole look like?", null,
-    "A black hole emits no light of its own. In 2019, astronomers showed a dark central region surrounded by an asymmetric, glowing ring in the galaxy M87.",
-    "This is radio interferometry, not an ordinary optical photograph. The data were taken in April 2017 and published in 2019.",
+    "note", "Ring emission around M87*", null,
+    "The Event Horizon Telescope (EHT) observed M87* in April 2017. The reconstructed image contains an asymmetric ring of radio emission surrounding a central brightness depression.",
+    "The image is reconstructed from very-long-baseline interferometry data rather than recorded by a conventional camera.",
     "example:m87:question", 0, 0,
   );
   await seedItem(
     "paper", "First M87 Event Horizon Telescope Results. I. The Shadow of the Supermassive Black Hole",
     "/p/doi%3A10.3847%2F2041-8213%2Fab0ec7",
-    "The first interpretation: light bent around the black hole produces a bright ring surrounding a deep depression in emission.",
-    "EHT Collaboration (2019), Astrophysical Journal Letters 875 L1. Figure 3 contains the observation reproduced below.",
+    "The ring morphology and central brightness depression are consistent with emission around a supermassive black hole.",
+    "EHT Collaboration (2019), Astrophysical Journal Letters 875 L1. Figure 3 contains the reconstructed images reproduced below.",
     "example:m87:paper-one", 0, 1,
   );
   await seedItem(
-    "note", "The observation itself", null,
-    "![EHT Collaboration, First M87 EHT Results I, ApJL 875 L1 (2019), Figure 3, CC BY 3.0](https://upload.wikimedia.org/wikipedia/commons/0/09/Apjlab0ec7f3_EHT-image-of-M87-black-hole.jpg)",
-    "Original published Figure 3, unmodified. The top panel shows M87* on one observing day; the lower panels compare other days. Attribution: Event Horizon Telescope Collaboration (2019), First M87 Event Horizon Telescope Results I, Astrophysical Journal Letters 875 L1, DOI 10.3847/2041-8213/ab0ec7. Licensed CC BY 3.0.",
+    "note", "The reconstructed M87* image", null,
+    "![EHT Collaboration (2019), Figure 3, CC BY 3.0](https://upload.wikimedia.org/wikipedia/commons/0/09/Apjlab0ec7f3_EHT-image-of-M87-black-hole.jpg)",
+    "The reconstructed images show the persistent ring structure across the observing days. EHT Collaboration, Astrophysical Journal Letters 875 L1 (2019), Figure 3. Reproduced without modification under CC BY 3.0.",
     "example:m87:figure", 0, 2,
   );
   await seedItem(
-    "link", "Image source and reuse license",
+    "link", "Figure source and license",
     "https://commons.wikimedia.org/wiki/File:Apjlab0ec7f3_EHT-image-of-M87-black-hole.jpg",
-    "The original paper figure is available under CC BY 3.0, with credit to the EHT Collaboration and the paper.",
-    "The source page documents attribution, the original figure, and a direct link to the Creative Commons license. No edits were made to the image.",
+    "The published figure is available under CC BY 3.0 with attribution to the EHT Collaboration.",
+    "Wikimedia Commons provides the original file and its reuse conditions.",
     "example:m87:image-source", 0, 3,
   );
   await seedItem(
-    "note", "Why is the center dark?", null,
-    "The ring comes from radiation emitted by hot plasma near the black hole. Strong light bending and photon capture suppress the brightness at its center.",
-    "The dark region is called the black hole shadow. It is not simply a photograph of the event horizon; the observed ring depends on both spacetime geometry and the emitting plasma.",
+    "note", "Gravitational lensing and photon capture", null,
+    "Radiation from plasma near M87* is strongly bent by gravity. Photon capture reduces the emission received from the central region, producing the brightness depression surrounded by the ring.",
+    "The black-hole shadow depends on the spacetime geometry. The observed brightness distribution also depends on the emitting plasma.",
     "example:m87:interpretation", 0, 4,
   );
   await seedItem(
-    "note", "What sets the angular scale?", null,
-    "The characteristic gravitational length is $r_g = GM/c^2$. What we can resolve depends on its apparent angular scale, $GM/(Dc^2)$, with $D$ the distance to the source.",
-    "For M87, resolving the expected shadow requires an array of radio telescopes operating together as an Earth-sized interferometer.",
+    "note", "The gravitational angular scale", null,
+    String.raw`The gravitational radius sets the characteristic scale of the image. At distance $D$, the corresponding angular scale is
+
+$$
+\\theta_g = \\frac{GM}{Dc^2}.
+$$
+
+The measured ring size constrains the mass when combined with the distance and an emission model.`,
+    "Here $M$ is the mass, $G$ the gravitational constant, and $c$ the speed of light. Gravitational lensing and the plasma distribution determine the relation between the ring diameter and this scale.",
     "example:m87:scale", 0, 5,
   );
   await seedItem(
     "paper", "First M87 Event Horizon Telescope Results. IV. Imaging the Central Supermassive Black Hole",
     "/p/doi%3A10.3847%2F2041-8213%2Fab0e85",
-    "Could reconstruction algorithms have invented the ring? Independent imaging teams and different methods recovered its basic structure.",
-    "EHT Collaboration (2019), Astrophysical Journal Letters 875 L4. Multiple observing nights and blind reconstructions help test robustness.",
+    "Independent reconstruction methods recover the same main feature: an asymmetric ring surrounding a central brightness depression.",
+    "The agreement across imaging pipelines and observing days supports the robustness of the ring despite sparse interferometric coverage.",
     "example:m87:paper-four", 0, 6,
   );
   await seedItem(
     "paper", "First M87 Event Horizon Telescope Results. VI. The Shadow and Mass of the Central Black Hole",
     "/p/doi%3A10.3847%2F2041-8213%2Fab1141",
-    "Fits to the asymmetric ring and comparisons with relativistic simulations connect the image scale to the mass of the central object.",
-    "EHT Collaboration (2019), Astrophysical Journal Letters 875 L6. The inference depends on distance estimates and calibrated models; the image alone does not determine the mass.",
+    "Comparisons with relativistic simulations relate the measured ring diameter to the mass of the central black hole.",
+    "The mass estimate depends on the distance to M87* and on the model connecting the observed emission to the gravitational scale.",
     "example:m87:paper-six", 0, 7,
   );
   await seedItem(
-    "note", "What have we actually established?", null,
-    "A robust bright crescent with a dark center is consistent with a black hole shadow predicted by general relativity. The ring is evidence, not a literal view of the horizon.",
-    "Open direction: how do changes in observing frequency, time, or the surrounding plasma affect the observed ring? Which properties are robust enough to test the spacetime geometry?",
+    "note", "Interpretation and remaining uncertainty", null,
+    "The observed ring and central depression agree with models of a black-hole shadow in general relativity. The image alone does not uniquely determine the spacetime geometry.",
+    "Observations at additional frequencies and epochs can help separate properties of the plasma from the gravitational structure inferred from the image.",
     "example:m87:next", 0, 8,
   );
 
