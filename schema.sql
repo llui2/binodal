@@ -55,6 +55,19 @@ CREATE TABLE IF NOT EXISTS paper_access (
   FOREIGN KEY (paper_id) REFERENCES papers(arxiv_id) ON DELETE CASCADE
 );
 
+-- Resolved outgoing paper references. Keep source order and the DOI needed
+-- to open a reference as its own Trails paper record.
+CREATE TABLE IF NOT EXISTS paper_references (
+  paper_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  doi TEXT NOT NULL,
+  year INTEGER,
+  checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (paper_id, position),
+  FOREIGN KEY (paper_id) REFERENCES papers(arxiv_id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS comments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   paper_id TEXT NOT NULL,
