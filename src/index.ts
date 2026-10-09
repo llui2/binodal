@@ -1911,6 +1911,17 @@ function trailLiveScript(): Response {
   });
 }
 
+async function linkedTrailUser(env: Env, userId: number): Promise<TrailUser | null> {
+  return env.DB.prepare(
+    `SELECT t.id, t.username
+       FROM trail_user_identities i
+       JOIN trail_users t ON t.id = i.trail_user_id
+      WHERE i.user_id = ?`,
+  )
+    .bind(userId)
+    .first<TrailUser>();
+}
+
 async function currentTrailUser(request: Request, env: Env): Promise<TrailUser | null> {
   const identity = await currentUser(request, env);
   if (!identity) return null;
