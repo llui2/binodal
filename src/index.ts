@@ -676,7 +676,7 @@ function renderTrailItem(
   const comparableText = (value: string): string =>
     value.replace(/\s+/g, " ").trim().replace(/[.!?;:]+$/, "").toLowerCase();
   const rawContent = item.content ?? "";
-  const mainText = item.kind === "note" && comparableText(rawContent) === comparableText(title)
+  const mainText = item.kind === "note" && comparableText(rawContent) === comparableText(title) && !rawContent.startsWith("![")
     ? ""
     : rawContent;
   const detailsText = item.note ?? "";
@@ -684,7 +684,8 @@ function renderTrailItem(
   return `<div class="trail-step" data-trail-item="${item.id}" data-path-branch="${branchId}" data-open="false">
     <div class="trail-step-summary">
       <span class="trail-step-line">
-        <textarea class="trail-step-title-input" rows="1" maxlength="300" aria-label="Node title" data-item-title="${item.id}" spellcheck="false">${escapeHtml(title)}</textarea>
+        <textarea class="trail-step-title-input trail-rich-source" rows="1" maxlength="300" aria-label="Node title" data-item-title="${item.id}" spellcheck="false">${escapeHtml(title)}</textarea>
+        <span class="trail-step-title-display trail-rich-preview" data-rich-preview="title" role="button" tabindex="0" aria-label="Edit mark title" hidden></span>
       </span>
       ${kind
         ? item.url
@@ -693,12 +694,14 @@ function renderTrailItem(
         : `<span class="trail-step-kind" aria-hidden="true"></span>`}
     </div>
 
-    <textarea class="trail-step-body" rows="1" maxlength="10000"
+    <textarea class="trail-step-body trail-rich-source" rows="1" maxlength="10000"
       aria-label="Permanent node text" placeholder="note…" spellcheck="false"
       data-item-content="${item.id}">${escapeHtml(mainText)}</textarea>
+    <div class="trail-step-body trail-rich-preview" data-rich-preview="content" role="button" tabindex="0" aria-label="Edit mark text" hidden></div>
 
     <div class="trail-step-detail" data-item-detail="${item.id}" hidden>
-      <textarea class="trail-node-detail" rows="2" maxlength="2000" aria-label="Node details" placeholder="details…" data-item-note="${item.id}" spellcheck="false">${escapeHtml(detailsText)}</textarea>
+      <textarea class="trail-node-detail trail-rich-source" rows="2" maxlength="2000" aria-label="Node details" placeholder="details…" data-item-note="${item.id}" spellcheck="false">${escapeHtml(detailsText)}</textarea>
+      <div class="trail-node-detail trail-rich-preview" data-rich-preview="note" role="button" tabindex="0" aria-label="Edit mark details" hidden></div>
 
       <div class="trail-step-footer">
         <div class="trail-step-actions" aria-label="Node actions">
@@ -992,9 +995,106 @@ function trailLiveScript(): Response {
   };
 
   const autoGrow = (field) => {
-    if (!field) return;
+    if (!field || field.hidden) return;
     field.style.height = "auto";
     field.style.height = field.scrollHeight + "px";
+  };
+
+  // Keep the original source in a textarea. Show math and figures only
+  // when it is not being edited.
+  const imagePattern = /!\\[([^\\]\\n]{1,160})\\]\\((https:\\/\\/[^\\s()]+)\\)/g;
+  const hasMath = (value) =>
+    /\\$\\$[\\s\\S]+?\\$\\$|\\$(?!\\$)[^\\$\\n]+\\$(?!\\$)/.test(value);
+
+  const figuresIn = (value) => {
+    const figures = [];
+    for (const match of value.matchAll(imagePattern)) {
+      try {
+        const url = new URL(match[2]);
+        if (url.protocol === "https:") {
+          figures.push({ index: match.index, full: match[0], caption: match[1], url: url.href });
+        }
+      } catch {
+        // An invalid URL stays as literal text.
+      }
+    }
+    return figures;
+  };
+
+  const renderRichText = (value, preview, figures) => {
+    preview.replaceChildren();
+    let cursor = 0;
+    for (const figure of figures) {
+      preview.append(document.createTextNode(value.slice(cursor, figure.index)));
+      const element = document.createElement("figure");
+      element.className = "trail-rich-figure";
+      const img = document.createElement("img");
+      img.src = figure.url;
+      img.alt = figure.caption;
+      img.loading = "lazy";
+      img.referrerPolicy = "no-referrer";
+      element.append(img);
+      if (figure.caption) {
+        const label = document.createElement("figcaption");
+        label.textContent = figure.caption;
+        element.append(label);
+      }
+      preview.append(element);
+      cursor = figure.index + figure.full.length;
+    }
+    preview.append(document.createTextNode(value.slice(cursor)));
+    if (typeof window.renderMathInElement === "function") {
+      window.renderMathInElement(preview, {
+        delimiters: [
+          { left: "$", right: "$", display: true },
+          { left: "$", right: "$", display: false },
+        ],
+        throwOnError: false,
+        trust: false,
+      });
+    }
+  };
+
+  const bindRichField = (field, preview, allowFigures = false) => {
+    if (!field || !preview || field.dataset.richBound === "true") return;
+    field.dataset.richBound = "true";
+    const showSource = () => {
+      preview.hidden = true;
+      field.hidden = false;
+      autoGrow(field);
+    };
+    const showPreview = () => {
+      const value = field.value;
+      const figures = allowFigures ? figuresIn(value) : [];
+      const math = hasMath(value);
+      if (
+        document.activeElement === field ||
+        (!math && figures.length === 0) ||
+        (math && typeof window.renderMathInElement !== "function")
+      ) {
+        showSource();
+        return;
+      }
+      renderRichText(value, preview, figures);
+      field.hidden = true;
+      preview.hidden = false;
+      drawTrailMap();
+    };
+    const activate = () => {
+      showSource();
+      field.focus();
+    };
+    field.addEventListener("focus", showSource);
+    field.addEventListener("blur", showPreview);
+    field.addEventListener("input", showSource);
+    preview.addEventListener("click", activate);
+    preview.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        activate();
+      }
+    });
+    showPreview();
   };
 
   const staticCaret = document.createElement("span");
@@ -1157,6 +1257,7 @@ function trailLiveScript(): Response {
       const titleField = step.querySelector("[data-item-title]");
 
       if (titleField) {
+        bindRichField(titleField, step.querySelector('[data-rich-preview="title"]'));
         autoGrow(titleField);
         if (titleField.dataset.titleBound !== "true") {
           titleField.dataset.titleBound = "true";
@@ -1181,6 +1282,7 @@ function trailLiveScript(): Response {
 
       const contentField = step.querySelector("[data-item-content]");
       if (contentField) {
+        bindRichField(contentField, step.querySelector('[data-rich-preview="content"]'), true);
         autoGrow(contentField);
         if (contentField.dataset.growBound !== "true") {
           contentField.dataset.growBound = "true";
@@ -1199,6 +1301,7 @@ function trailLiveScript(): Response {
 
       const noteField = step.querySelector("[data-item-note]");
       if (noteField) {
+        bindRichField(noteField, step.querySelector('[data-rich-preview="note"]'), true);
         autoGrow(noteField);
         if (noteField.dataset.growBound !== "true") {
           noteField.dataset.growBound = "true";
@@ -1808,17 +1911,6 @@ function trailLiveScript(): Response {
   });
 }
 
-async function linkedTrailUser(env: Env, userId: number): Promise<TrailUser | null> {
-  return env.DB.prepare(
-    `SELECT t.id, t.username
-       FROM trail_user_identities i
-       JOIN trail_users t ON t.id = i.trail_user_id
-      WHERE i.user_id = ?`,
-  )
-    .bind(userId)
-    .first<TrailUser>();
-}
-
 async function currentTrailUser(request: Request, env: Env): Promise<TrailUser | null> {
   const identity = await currentUser(request, env);
   if (!identity) return null;
@@ -2288,7 +2380,9 @@ async function insertTrailNote(
 ): Promise<number | null> {
   const compact = value.replace(/\s+/g, " ").trim();
   if (!compact) return null;
-  const title = compact.length > 90 ? `${compact.slice(0, 87)}…` : compact;
+  const figure = /^!\[([^\]\n]{1,160})\]\(https:\/\/[^\s()]+\)/.exec(value);
+  const label = figure ? "Figure: " + figure[1] : compact;
+  const title = label.length > 90 ? `${label.slice(0, 87)}…` : label;
   const storagePosition = await nextTrailItemStoragePosition(env, trailId);
   const row = await env.DB.prepare(
     `INSERT INTO trail_items (trail_id, kind, title, content, note, position)
@@ -5516,6 +5610,9 @@ function htmlPage(title: string, body: string, status = 200): Response {
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#f7f4ed">
   <script src="/theme.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" integrity="sha384-JctiRyLzXCrSoOOzFlSoWLdyzQl7OrrRnhyeBmzB6ZWtcjccUyc8lCQJqIbs3uQX" crossorigin="anonymous">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" integrity="sha384-+7Keh381hSkXmXqnjC0JBM/kzsN6TFj+wMKychSLjTvJ8/0ElMde2uKl8i6p6Buj" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous"></script>
   <link rel="icon" href="/trails-logo.svg?v=3" type="image/svg+xml">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400..700&display=swap">
   <title>${escapeHtml(title)}</title>
@@ -6414,8 +6511,40 @@ function htmlPage(title: string, body: string, status = 200): Response {
       display: block;
       overflow: hidden;
     }
-    .trail-step-detail[hidden] {
+    .trail-step-detail[hidden],
+    .trail-rich-source[hidden],
+    .trail-rich-preview[hidden] {
       display: none !important;
+    }
+    .trail-rich-preview {
+      cursor: text;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .trail-rich-preview:focus-visible { outline: none; }
+    .trail-rich-preview .katex-display {
+      overflow-x: auto;
+      overflow-y: hidden;
+      max-width: 100%;
+      margin: 8px 0;
+    }
+    .trail-rich-figure {
+      margin: 10px 0;
+      max-width: 100%;
+      white-space: normal;
+    }
+    .trail-rich-figure img {
+      display: block;
+      max-width: 100%;
+      max-height: 340px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+    }
+    .trail-rich-figure figcaption {
+      margin-top: 5px;
+      color: var(--soft);
+      font-size: .78rem;
     }
     .trail-step-title-input {
       min-width: 0;
@@ -6439,6 +6568,17 @@ function htmlPage(title: string, body: string, status = 200): Response {
       overflow: hidden;
       resize: none;
       cursor: text;
+    }
+    .trail-step-title-display {
+      display: block;
+      min-width: 0;
+      min-height: 1.35em;
+      padding: 2px 0;
+      color: var(--ink);
+      font-size: .98rem;
+      font-weight: 610;
+      line-height: 1.35;
+      text-align: left;
     }
     .trail-step-title-input:focus-visible {
       outline: none;
@@ -6759,7 +6899,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "strict-origin-when-cross-origin",
-        "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; form-action 'self' https://orcid.org; frame-ancestors 'none'; base-uri 'none'",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' https:; form-action 'self' https://orcid.org; frame-ancestors 'none'; base-uri 'none'",
       },
     },
   );
