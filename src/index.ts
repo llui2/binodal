@@ -2249,10 +2249,10 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
     "example:main:start", 0, 0,
   );
   await seedItem(
-    "paper", "The unsuccessful self-treatment of a case of writer's block",
-    "https://doi.org/10.1901/jaba.1974.7-497a",
-    "An actual 1974 journal article consisting almost entirely of blank space.",
-    "Dennis Upper, Journal of Applied Behavior Analysis (1974). The title is quite literal.",
+    "paper", "Of flying frogs and levitrons",
+    "/p/doi%3A10.1088%2F0143-0807%2F18%2F4%2F012",
+    "Can a frog levitate in a magnetic field? Yes, under sufficiently strong diamagnetic forces.",
+    "M. V. Berry and A. K. Geim, European Journal of Physics (1997). The paper explores stable magnetic levitation.",
     "example:main:paper-a", 0, 1,
   );
   await seedItem(
