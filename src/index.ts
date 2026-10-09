@@ -19,6 +19,14 @@ interface Paper {
   updated_at: string | null;
 }
 
+interface PaperReference {
+  position: number;
+  title: string;
+  doi: string;
+  year: number | null;
+  checked_at?: string;
+}
+
 interface PaperAccess {
   abstract: string | null;
   pdf_url: string | null;
@@ -477,10 +485,9 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
     ${comments.length ? renderCommentTree(comments, publicPaperId) : `<p class="empty">No discussion yet.</p>`}
   </section>`;
 
-  const references = `<section class="tab-empty">
-    <h2>References</h2>
-    <p>Not indexed yet.</p>
-  </section>`;
+  const references = tab === "references"
+    ? await renderPaperReferences(env, storagePaperId, identifiers, paperUrl, requestUrl.searchParams.has("added"))
+    : "";
 
   const related = `<section class="tab-empty">
     <h2>Related papers</h2>
@@ -6272,6 +6279,25 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .comment-actions a { text-decoration: none; }
     .replies { margin-top: 22px; }
+
+    .paper-reference-count, .paper-reference-confirm {
+      font-size: .82rem; color: var(--muted); margin: 0 0 18px;
+    }
+    .paper-reference-confirm { color: var(--annotation); }
+    .paper-references ol { list-style: none; margin: 0; padding: 0; }
+    .paper-reference { padding: 14px 0 18px; border-bottom: 1px solid var(--wash); }
+    .paper-reference-text { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+    .paper-reference-text a { color: var(--ink); line-height: 1.35; text-decoration: none; }
+    .paper-reference-text a:hover { color: var(--annotation); }
+    .paper-reference-text span { color: var(--muted); font-size: .8rem; }
+    .paper-reference-add { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .paper-reference-add input {
+      flex: 1 1 190px; min-width: 0; padding: 6px 8px;
+      background: var(--field-muted); border: none; border-radius: 3px;
+      color: var(--ink); font: inherit; font-size: .81rem;
+    }
+    .paper-reference-add button { padding: 6px 9px; color: var(--annotation); font-size: .78rem; }
+    .paper-reference-add button:hover { text-decoration: underline; }
 
     .tab-empty {
       min-height: 150px;
