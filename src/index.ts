@@ -142,6 +142,10 @@ async function route(request: Request, env: Env): Promise<Response> {
     });
   }
 
+  if (request.method === "GET" && path === "/chatgpt") {
+    return renderChatGptHelp();
+  }
+
   if (request.method === "GET" && path === "/support") {
     return renderPolicyPage(
       "Support",
@@ -316,6 +320,28 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
 
   return notFound("Page not found.");
+}
+
+function renderChatGptHelp(): Response {
+  return renderPolicyPage(
+    "ChatGPT connection",
+    `<p>Use ChatGPT to create and extend research trails. Trails keeps the selected notes and papers as a persistent research record, not a copy of the conversation.</p>
+       <h2>Connect</h2>
+       <ol>
+         <li>Open <a href="https://chatgpt.com/plugins">ChatGPT Plugins</a> in a web browser. Select <strong>+ → Add custom MCP server</strong>.</li>
+         <li>Name it <strong>Trails</strong> and enter the server URL below.</li>
+         <li>Choose <strong>No authentication</strong>, then create and install the plugin.</li>
+         <li>Start a new chat, select the Trails plugin with <strong>@</strong>, and ask it to create a trail.</li>
+       </ol>
+       <div class="chatgpt-endpoint">
+         <span class="eyebrow">MCP server URL</span>
+         <code>https://trails.llui2.workers.dev/mcp</code>
+       </div>
+       <h2>Work with a trail</h2>
+       <p>Ask ChatGPT to add a paper, make a note, or read back the current trail. Open the link returned when a new trail is created to see changes on the Trails website.</p>
+       <p>To connect an existing trail, open <a href="/trail/connect">its connection page</a> and use the private trail key in ChatGPT.</p>
+       <p class="chatgpt-caution">A trail key grants access to read and change that trail. Keep it private. User-account linking is not yet available in the ChatGPT plugin.</p>`,
+  );
 }
 
 function renderPolicyPage(title: string, body: string): Response {
@@ -512,7 +538,7 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
             <input id="trail-title" class="trail-title-input" maxlength="140" aria-label="Trail title" placeholder="untitled trail" value="${escapeAttr(title ?? "")}" data-autosave-trail="title" spellcheck="false">
             <div class="trail-heading-meta">
               <span id="trail-save-state" class="trail-save-state" role="status" aria-live="polite"></span>
-              <a class="trail-connect-link" href="/trail/connect">connect ChatGPT</a>
+              <a class="trail-connect-link" href="/chatgpt">connect ChatGPT</a>
             </div>
           </div>
 
@@ -6067,6 +6093,32 @@ function htmlPage(title: string, body: string, status = 200): Response {
     }
     .policy-copy p + p {
       margin-top: 1rem;
+    }
+    .policy-copy h2 {
+      margin: 30px 0 10px;
+      font-size: 1.2rem;
+      font-weight: 620;
+      line-height: 1.3;
+    }
+    .policy-copy ol {
+      max-width: 620px;
+      padding-left: 22px;
+      margin: 12px 0;
+    }
+    .policy-copy li + li { margin-top: 8px; }
+    .chatgpt-endpoint {
+      margin-top: 24px;
+      padding: 15px 0;
+    }
+    .chatgpt-endpoint .eyebrow { margin: 0 0 6px; }
+    .chatgpt-endpoint code {
+      font-size: .82rem;
+      color: var(--annotation);
+      overflow-wrap: anywhere;
+    }
+    .chatgpt-caution {
+      color: var(--body-muted);
+      font-size: .88rem;
     }
     .utility-page h1 {
       margin: 0 0 14px;
