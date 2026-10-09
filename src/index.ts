@@ -19,6 +19,14 @@ interface Paper {
   updated_at: string | null;
 }
 
+interface PaperReference {
+  position: number;
+  title: string;
+  doi: string;
+  year: number | null;
+  checked_at?: string;
+}
+
 interface PaperAccess {
   abstract: string | null;
   pdf_url: string | null;
@@ -477,10 +485,9 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
     ${comments.length ? renderCommentTree(comments, publicPaperId) : `<p class="empty">No discussion yet.</p>`}
   </section>`;
 
-  const references = `<section class="tab-empty">
-    <h2>References</h2>
-    <p>Not indexed yet.</p>
-  </section>`;
+  const references = tab === "references"
+    ? await renderPaperReferences(env, storagePaperId, identifiers, paperUrl, requestUrl.searchParams.has("added"))
+    : "";
 
   const related = `<section class="tab-empty">
     <h2>Related papers</h2>
@@ -1459,6 +1466,29 @@ function trailLiveScript(): Response {
       drawBrushSegments(group, points, "trail-map-brush-main", 1);
     }
 
+    // Each visible connection on the focused path inserts precisely between
+    // its two endpoints. These hit areas are invisible and do not alter the
+    // logo-derived brush ribbon.
+    const insertPoints = explicitNodePoints || points;
+    if (className.includes("trail-map-path-active")) {
+      for (let i = 0; i + 1 < itemIds.length; i += 1) {
+        const from = insertPoints[i];
+        const to = insertPoints[i + 1];
+        if (!from || !to) continue;
+        const hit = svgNode("path", {
+          d: "M" + from.x + " " + from.y + " L" + to.x + " " + to.y,
+          class: "trail-map-insert-hit",
+          "data-insert-after": itemIds[i],
+          "data-insert-before": itemIds[i + 1],
+          "data-insert-branch": branchId,
+        });
+        const hint = svgNode("title");
+        hint.textContent = "Insert mark between";
+        hit.appendChild(hint);
+        group.appendChild(hit);
+      }
+    }
+
     const nodePoints = explicitNodePoints ||
       (branchId === "0" ? points : points.slice(1));
     nodePoints.forEach((point, index) => {
@@ -1704,6 +1734,69 @@ function trailLiveScript(): Response {
     drawTrailMap();
   };
 
+  const openInsertBetween = (afterId, beforeId, branchId) => {
+    graph.querySelectorAll(".trail-insert-form").forEach((form) => form.remove());
+    const panel = workspace.querySelector('[data-path-panel="' + branchId + '"]');
+    const afterStep = Array.from(panel?.querySelectorAll(".trail-step") || [])
+      .find((step) => step.dataset.trailItem === afterId);
+    if (!afterStep || afterStep.nextElementSibling?.dataset.trailItem !== beforeId) return;
+
+    const form = document.createElement("form");
+    form.className = "trail-insert-form";
+    form.innerHTML = '<textarea rows="1" maxlength="10000" aria-label="Insert mark between existing marks" placeholder="mark…" required></textarea>' +
+      '<button type="submit">insert</button><button type="button" data-insert-cancel>cancel</button>';
+    afterStep.after(form);
+    const field = form.querySelector("textarea");
+    field.focus();
+    autoGrow(field);
+    field.addEventListener("input", () => {
+      autoGrow(field);
+      drawTrailMap();
+    });
+    field.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        form.remove();
+        drawTrailMap();
+      } else if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+    form.querySelector("[data-insert-cancel]").addEventListener("click", () => {
+      form.remove();
+      drawTrailMap();
+    });
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const value = field.value.trim();
+      if (!value) return;
+      const submit = form.querySelector('[type="submit"]');
+      submit.disabled = true;
+      try {
+        const response = await fetch("/api/trail/items", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            value,
+            branch_id: Number(branchId),
+            after_item_id: Number(afterId),
+            before_item_id: Number(beforeId),
+          }),
+        });
+        if (!response.ok) throw new Error("could not insert mark");
+        form.remove();
+        last = "";
+        await tick(true);
+      } catch {
+        setSaveState("error");
+      } finally {
+        submit.disabled = false;
+      }
+    });
+    drawTrailMap();
+  };
+
   const bindTopology = () => {
     if (mapSvg.dataset.bound !== "true") {
       mapSvg.dataset.bound = "true";
@@ -1717,6 +1810,16 @@ function trailLiveScript(): Response {
         const selected = pathTarget.getAttribute("data-branch-select");
         activeBranchId = selected && selected !== "0" ? selected : null;
         applyActiveBranch();
+
+        const insertion = rawTarget.closest("[data-insert-after]");
+        if (insertion) {
+          openInsertBetween(
+            insertion.getAttribute("data-insert-after"),
+            insertion.getAttribute("data-insert-before"),
+            insertion.getAttribute("data-insert-branch") || "0",
+          );
+          return;
+        }
 
         // The topology node is the control for the second, closable mark block.
         // The permanent mark text remains visible; clicking its brush node
@@ -2419,6 +2522,32 @@ async function placeTrailItem(
     .run();
 }
 
+// An insertion changes the displayed order of one path only. Reindexing the
+// small ordered set avoids fractional ranks and preserves adjacency even
+// after moves or repeated insertions into the same gap.
+async function placeTrailItemBetween(
+  env: Env,
+  trailId: string,
+  branchId: number,
+  itemId: number,
+  afterItemId: number,
+  beforeItemId: number,
+): Promise<boolean> {
+  const items = await listTrailItemsInBranch(env, trailId, branchId);
+  const moving = items.find((item) => item.id === itemId);
+  if (!moving) return false;
+  const others = items.filter((item) => item.id !== itemId);
+  const afterIndex = others.findIndex((item) => item.id === afterItemId);
+  if (afterIndex < 0 || others[afterIndex + 1]?.id !== beforeItemId) return false;
+  others.splice(afterIndex + 1, 0, moving);
+  await env.DB.batch(others.map((item, position) =>
+    env.DB.prepare(
+      "UPDATE trail_item_placements SET position = ? WHERE trail_id = ? AND branch_id = ? AND item_id = ?",
+    ).bind(position, trailId, branchId, item.id),
+  ));
+  return true;
+}
+
 async function nextTrailItemStoragePosition(env: Env, trailId: string): Promise<number> {
   const row = await env.DB.prepare(
     "SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM trail_items WHERE trail_id = ?",
@@ -2533,6 +2662,7 @@ async function insertPaperIntoTrail(
   rawPaper: string,
   note: string | null = null,
   branchId = 0,
+  content: string | null = null,
 ): Promise<number | null> {
   const paperId = normalizePaperInput(rawPaper);
   if (!paperId) throw new Error("Invalid paper identifier or URL");
@@ -2544,11 +2674,12 @@ async function insertPaperIntoTrail(
   const itemUrl = `/p/${encodeURIComponent(publicPaperId)}`;
 
   const row = await env.DB.prepare(
-    `INSERT INTO trail_items (trail_id, kind, title, url, note, source_ref, position)
-     VALUES (?, 'paper', ?, ?, ?, ?, ?)
+    `INSERT INTO trail_items (trail_id, kind, title, url, content, note, source_ref, position)
+     VALUES (?, 'paper', ?, ?, ?, ?, ?, ?)
      ON CONFLICT(trail_id, source_ref) DO UPDATE SET
        title = excluded.title,
        url = excluded.url,
+       content = COALESCE(excluded.content, trail_items.content),
        note = COALESCE(excluded.note, trail_items.note)
      RETURNING id`,
   )
@@ -2556,6 +2687,7 @@ async function insertPaperIntoTrail(
       trailId,
       paper.title,
       itemUrl,
+      content ? content.slice(0, 10000) : null,
       note ? note.slice(0, 2000) : null,
       `paper:${paper.arxiv_id}`,
       storagePosition,
@@ -2574,9 +2706,24 @@ async function addPaperToTrail(request: Request, env: Env): Promise<Response> {
   const rawPaper = String(form.get("paper_id") ?? "");
   const nextRaw = String(form.get("next") ?? "/trail");
   const next = nextRaw.startsWith("/") && !nextRaw.startsWith("//") ? nextRaw : "/trail";
+  const sourcePaperId = String(form.get("from_paper_id") ?? "");
+  const reason = String(form.get("reason") ?? "").trim().slice(0, 1000);
+  let provenance: string | null = null;
+
+  if (sourcePaperId) {
+    const refId = normalizePaperInput(rawPaper);
+    const refDoi = refId?.startsWith("doi:") ? refId.slice(4) : "";
+    if (!reason || !refDoi) return new Response("Reason and DOI required", { status: 400 });
+    const exists = await env.DB.prepare(
+      "SELECT 1 AS ok FROM paper_references WHERE paper_id = ? AND doi = ? LIMIT 1",
+    ).bind(sourcePaperId, refDoi).first<{ ok: number }>();
+    const source = await getPaperByStorageId(env, sourcePaperId);
+    if (!exists || !source) return new Response("Reference not found", { status: 400 });
+    provenance = "Referenced by " + source.title.slice(0, 240);
+  }
 
   try {
-    await insertPaperIntoTrail(env, trail.id, rawPaper);
+    await insertPaperIntoTrail(env, trail.id, rawPaper, provenance, 0, reason || null);
   } catch {
     return new Response("Invalid paper identifier or URL", { status: 400 });
   }
@@ -2839,6 +2986,8 @@ async function handleTrailApi(
       content?: string;
       note?: string;
       branch_id?: number;
+      after_item_id?: number;
+      before_item_id?: number;
     };
 
     const branchId = Math.max(0, Math.trunc(Number(payload.branch_id ?? 0)));
@@ -2853,8 +3002,23 @@ async function handleTrailApi(
       }
     }
 
+    const between = payload.after_item_id !== undefined || payload.before_item_id !== undefined;
+    const afterId = Number(payload.after_item_id);
+    const beforeId = Number(payload.before_item_id);
+    if (between) {
+      if (!Number.isSafeInteger(afterId) || !Number.isSafeInteger(beforeId)) {
+        return withTrailCookie(json({ error: "invalid insertion link" }, 400), trail.cookie);
+      }
+      const current = await listTrailItemsInBranch(env, trail.id, branchId);
+      const index = current.findIndex((item) => item.id === afterId);
+      if (index < 0 || current[index + 1]?.id !== beforeId) {
+        return withTrailCookie(json({ error: "the selected link has changed" }, 409), trail.cookie);
+      }
+    }
+
+    let insertedId: number | null = null;
     if (payload.value) {
-      await insertTrailValue(env, trail.id, String(payload.value), branchId);
+      insertedId = await insertTrailValue(env, trail.id, String(payload.value), branchId);
     } else {
       const storagePosition = await nextTrailItemStoragePosition(env, trail.id);
       const kind = String(payload.kind ?? "note").slice(0, 40);
@@ -2869,7 +3033,17 @@ async function handleTrailApi(
       )
         .bind(trail.id, kind, itemTitle, url, content, note, storagePosition)
         .first<{ id: number }>();
-      if (row?.id) await placeTrailItem(env, trail.id, row.id, branchId);
+      if (row?.id) {
+        insertedId = row.id;
+        await placeTrailItem(env, trail.id, row.id, branchId);
+      }
+    }
+
+    if (between && insertedId) {
+      const placed = await placeTrailItemBetween(env, trail.id, branchId, insertedId, afterId, beforeId);
+      if (!placed) {
+        return withTrailCookie(json({ error: "the selected link has changed" }, 409), trail.cookie);
+      }
     }
 
     const [items, branches] = await Promise.all([
@@ -4073,6 +4247,127 @@ async function getPaperAccess(
     console.warn("Unable to cache additional paper metadata", error);
   }
   return { abstract, pdf_url: pdfUrl, checked_at: new Date().toISOString() };
+}
+
+async function getPaperReferences(
+  env: Env,
+  paperId: string,
+  identifiers: PaperIdentifier[],
+): Promise<PaperReference[]> {
+  const cached = await env.DB.prepare(
+    "SELECT position, title, doi, year, checked_at FROM paper_references WHERE paper_id = ? ORDER BY position",
+  ).bind(paperId).all<PaperReference>();
+  const previous = cached.results ?? [];
+  if (previous.length && Date.now() - Date.parse(previous[0].checked_at!.replace(" ", "T") + "Z") < 7 * 86400000) {
+    return previous;
+  }
+
+  const doi = identifiers.find((id) => id.type === "doi")?.value;
+  if (!doi) return previous;
+  let references: PaperReference[] = [];
+
+  try {
+    const work = await fetchJsonWithTimeout(
+      `https://api.openalex.org/works/https://doi.org/${doi}`,
+    ) as { referenced_works?: string[] };
+    const ids = (work.referenced_works ?? [])
+      .map((id) => id.match(/W\d+$/)?.[0] ?? "")
+      .filter(Boolean).slice(0, 60);
+    if (ids.length) {
+      const endpoint = new URL("https://api.openalex.org/works");
+      endpoint.searchParams.set("filter", "openalex:" + ids.join("|"));
+      endpoint.searchParams.set("per_page", String(ids.length));
+      endpoint.searchParams.set("select", "id,doi,display_name,publication_year");
+      const data = await fetchJsonWithTimeout(endpoint.toString()) as {
+        results?: Array<{ id: string; doi?: string | null; display_name?: string; publication_year?: number }>;
+      };
+      const byId = new Map((data.results ?? []).map((item) => [item.id.match(/W\d+$/)?.[0], item]));
+      references = ids.flatMap((id, position) => {
+        const ref = byId.get(id);
+        const refDoi = normalizeDoiInput(ref?.doi ?? "");
+        const title = cleanHtmlText(ref?.display_name ?? "").slice(0, 300);
+        return refDoi && title ? [{
+          position, title, doi: refDoi,
+          year: Number.isInteger(ref?.publication_year) ? ref!.publication_year! : null,
+        }] : [];
+      });
+    }
+  } catch (error) {
+    console.warn("OpenAlex reference lookup failed", error);
+  }
+
+  if (!references.length) {
+    try {
+      const data = await fetchJsonWithTimeout(
+        `https://api.crossref.org/works/${encodeURIComponent(doi)}`,
+      ) as { message?: { reference?: Array<{
+        DOI?: string; "article-title"?: string; unstructured?: string; year?: string;
+      }> } };
+      references = (data.message?.reference ?? []).slice(0, 60).flatMap((ref, position) => {
+        const refDoi = normalizeDoiInput(ref.DOI ?? "");
+        if (!refDoi) return [];
+        const title = cleanHtmlText(ref["article-title"] ?? ref.unstructured ?? refDoi).slice(0, 300);
+        const year = Number(ref.year);
+        return [{ position, title, doi: refDoi, year: year >= 1000 && year <= 2100 ? year : null }];
+      });
+    } catch (error) {
+      console.warn("Crossref reference lookup failed", error);
+    }
+  }
+
+  // Retain the recorded source order. Only DOI-resolved entries lead to a
+  // stable paper page; do not fabricate records for unidentified citations.
+  if (references.length) {
+    try {
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM paper_references WHERE paper_id = ?").bind(paperId),
+        ...references.map((ref) => env.DB.prepare(
+          "INSERT INTO paper_references (paper_id, position, title, doi, year) VALUES (?, ?, ?, ?, ?)",
+        ).bind(paperId, ref.position, ref.title, ref.doi, ref.year)),
+      ]);
+    } catch (error) {
+      console.warn("Could not cache paper references", error);
+    }
+  }
+  return references.length ? references : previous;
+}
+
+async function renderPaperReferences(
+  env: Env,
+  paperId: string,
+  identifiers: PaperIdentifier[],
+  paperUrl: string,
+  justAdded: boolean,
+): Promise<string> {
+  const references = await getPaperReferences(env, paperId, identifiers);
+  if (!references.length) {
+    return `<section class="tab-empty"><h2>References</h2>
+      <p>No DOI-resolved references are available for this paper yet.</p></section>`;
+  }
+
+  const items = references.map((ref) => {
+    const refId = `doi:${ref.doi}`;
+    const href = `/p/${encodeURIComponent(refId)}`;
+    return `<li class="paper-reference">
+      <div class="paper-reference-text">
+        <a href="${escapeAttr(href)}">${escapeHtml(ref.title)}</a>
+        ${ref.year ? `<span>${ref.year}</span>` : ""}
+      </div>
+      <form action="/trail/add-paper" method="post" class="paper-reference-add">
+        <input type="hidden" name="paper_id" value="${escapeAttr(refId)}">
+        <input type="hidden" name="from_paper_id" value="${escapeAttr(paperId)}">
+        <input type="hidden" name="next" value="${escapeAttr(paperUrl)}?tab=references&amp;added=1">
+        <input name="reason" maxlength="1000" placeholder="Why is it relevant?" aria-label="Reason to add ${escapeAttr(ref.title)} to trail" required>
+        <button type="submit">add to trail</button>
+      </form>
+    </li>`;
+  }).join("");
+
+  return `<section class="paper-references">
+    ${justAdded ? `<p class="paper-reference-confirm">Added to the current trail.</p>` : ""}
+    <p class="paper-reference-count">${references.length} DOI-resolved references</p>
+    <ol>${items}</ol>
+  </section>`;
 }
 
 async function fetchPaperByInput(paperId: string): Promise<FetchedPaper> {
@@ -6245,6 +6540,25 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .comment-actions a { text-decoration: none; }
     .replies { margin-top: 22px; }
 
+    .paper-reference-count, .paper-reference-confirm {
+      font-size: .82rem; color: var(--muted); margin: 0 0 18px;
+    }
+    .paper-reference-confirm { color: var(--annotation); }
+    .paper-references ol { list-style: none; margin: 0; padding: 0; }
+    .paper-reference { padding: 14px 0 18px; border-bottom: 1px solid var(--wash); }
+    .paper-reference-text { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+    .paper-reference-text a { color: var(--ink); line-height: 1.35; text-decoration: none; }
+    .paper-reference-text a:hover { color: var(--annotation); }
+    .paper-reference-text span { color: var(--muted); font-size: .8rem; }
+    .paper-reference-add { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .paper-reference-add input {
+      flex: 1 1 190px; min-width: 0; padding: 6px 8px;
+      background: var(--field-muted); border: none; border-radius: 3px;
+      color: var(--ink); font: inherit; font-size: .81rem;
+    }
+    .paper-reference-add button { padding: 6px 9px; color: var(--annotation); font-size: .78rem; }
+    .paper-reference-add button:hover { text-decoration: underline; }
+
     .tab-empty {
       min-height: 150px;
       padding: 20px 4px;
@@ -6676,6 +6990,13 @@ function htmlPage(title: string, body: string, status = 200): Response {
       pointer-events: stroke;
       cursor: pointer;
     }
+    .trail-map-insert-hit {
+      fill: none;
+      stroke: transparent;
+      stroke-width: 16;
+      pointer-events: stroke;
+      cursor: copy;
+    }
     .trail-map-brush-main {
       fill: currentColor;
       stroke: none;
@@ -6929,6 +7250,39 @@ function htmlPage(title: string, body: string, status = 200): Response {
       margin: 8px 0 30px 20px;
       color: var(--muted);
       font-size: .88rem;
+    }
+
+    .trail-insert-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: flex-start;
+      margin: 12px 0 12px 0;
+    }
+    .trail-insert-form textarea {
+      flex: 1 1 210px;
+      min-width: 0;
+      min-height: 40px;
+      padding: 9px 11px;
+      border: none;
+      border-radius: 4px;
+      resize: none;
+      background: var(--field-muted);
+      color: var(--ink);
+      font: inherit;
+      font-size: .84rem;
+    }
+    .trail-insert-form button {
+      min-height: 40px;
+      padding: 8px 11px;
+      color: var(--annotation);
+      font: inherit;
+      font-size: .78rem;
+    }
+    .trail-insert-form [type="submit"] {
+      background: var(--annotation);
+      color: var(--button-ink);
+      border-radius: 3px;
     }
 
     .trail-mark-add {
