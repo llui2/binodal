@@ -2051,8 +2051,14 @@ function trailLiveScript(): Response {
     }
   });
 
-  const returnMark = window.location.hash.startsWith("#mark-")
-    ? decodeURIComponent(window.location.hash.slice(6)) : null;
+  let returnMark = null;
+  if (window.location.hash.startsWith("#mark-")) {
+    try {
+      returnMark = decodeURIComponent(window.location.hash.slice(6));
+    } catch {
+      // Ignore malformed fragment identifiers.
+    }
+  }
   const restorePaperReturn = () => {
     if (!returnMark || !/^[A-Za-z0-9:_-]{1,160}$/.test(returnMark)) return;
     const step = document.getElementById("mark-" + returnMark);
