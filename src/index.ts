@@ -538,7 +538,6 @@ async function renderTrail(request: Request, env: Env): Promise<Response> {
             <input id="trail-title" class="trail-title-input" maxlength="140" aria-label="Trail title" placeholder="untitled trail" value="${escapeAttr(title ?? "")}" data-autosave-trail="title" spellcheck="false">
             <div class="trail-heading-meta">
               <span id="trail-save-state" class="trail-save-state" role="status" aria-live="polite"></span>
-              <a class="trail-connect-link" href="/chatgpt">connect ChatGPT</a>
             </div>
           </div>
 
@@ -5405,15 +5404,18 @@ function renderBrand(): string {
 
 function renderIdentity(user: User | null): string {
   const themeToggle = `<button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch color theme"></button>`;
+  const chatGptLink = `<a class="identity-link" href="/chatgpt">ChatGPT</a>`;
 
   if (!user) {
     return `<div class="identity">
+      ${chatGptLink}
       <a class="identity-link" href="/auth/orcid?next=/">Sign in with ORCID</a>
       ${themeToggle}
     </div>`;
   }
 
   return `<div class="identity">
+    ${chatGptLink}
     <a href="https://orcid.org/${escapeAttr(user.orcid)}" rel="noreferrer">${escapeHtml(user.display_name)}</a>
     <form action="/logout" method="post"><button class="text-button" type="submit">sign out</button></form>
     ${themeToggle}
@@ -6171,17 +6173,6 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .trail-save-state[data-state="error"] {
       color: var(--notice-ink);
     }
-    .trail-connect-link {
-      color: var(--soft);
-      font-size: .74rem;
-      white-space: nowrap;
-    }
-    .trail-connect-link:hover,
-    .trail-connect-link:focus-visible {
-      color: var(--annotation);
-      outline: none;
-    }
-
     .trail-sidebar {
       position: sticky;
       top: 28px;
