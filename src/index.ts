@@ -429,7 +429,7 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   const requestUrl = new URL(request.url);
   const mark = requestUrl.searchParams.get("mark");
   const fromTrail = requestUrl.searchParams.get("from") === "trail" &&
-    mark !== null && /^[0-9]+$/.test(mark);
+    mark !== null && /^[A-Za-z0-9:_-]{1,160}$/.test(mark);
   const requestedReturn = requestUrl.searchParams.get("return");
   const safeReturn = requestedReturn && requestedReturn.startsWith("/p/") &&
     !requestedReturn.startsWith("//") ? requestedReturn : null;
@@ -439,7 +439,7 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
     context.set("mark", mark);
   }
   if (safeReturn) context.set("return", safeReturn);
-  let backHref = safeReturn ?? (fromTrail ? "/trail#mark-" + mark : "/");
+  let backHref = safeReturn ?? (fromTrail ? "/trail#mark-" + encodeURIComponent(mark!) : "/");
   if (!safeReturn && !fromTrail) {
     const referer = request.headers.get("Referer");
     if (referer) {
@@ -743,11 +743,14 @@ function renderTrailItem(
     ? ""
     : rawContent;
   const detailsText = item.note ?? "";
+  // Example items are recreated on page reload, so their database IDs are
+  // unstable. The seed source reference remains stable across resets.
+  const returnMark = item.source_ref?.startsWith("example:") ? item.source_ref : String(item.id);
   const markUrl = item.kind === "paper" && item.url?.startsWith("/p/")
-    ? item.url + (item.url.includes("?") ? "&" : "?") + "from=trail&mark=" + item.id
+    ? item.url + (item.url.includes("?") ? "&" : "?") + "from=trail&mark=" + encodeURIComponent(returnMark)
     : item.url;
 
-  return `<div class="trail-step" id="mark-${item.id}" data-trail-item="${item.id}" data-path-branch="${branchId}" data-open="false">
+  return `<div class="trail-step" id="mark-${escapeAttr(returnMark)}" data-return-mark="${escapeAttr(returnMark)}" data-trail-item="${item.id}" data-path-branch="${branchId}" data-open="false">
     <div class="trail-step-summary">
       <span class="trail-step-line">
         <textarea class="trail-step-title-input trail-rich-source" rows="1" maxlength="300" aria-label="Node title" data-item-title="${item.id}" spellcheck="false">${escapeHtml(title)}</textarea>
@@ -2040,7 +2043,7 @@ function trailLiveScript(): Response {
     try {
       window.sessionStorage.setItem("trails:paper-return", JSON.stringify({
         trailId: graph.dataset.trailId,
-        mark: step.dataset.trailItem,
+        mark: step.dataset.returnMark,
         scrollY: window.scrollY,
       }));
     } catch {
@@ -2048,10 +2051,11 @@ function trailLiveScript(): Response {
     }
   });
 
-  const returnMark = window.location.hash.match(/^#mark-([0-9]+)$/)?.[1];
+  const returnMark = window.location.hash.startsWith("#mark-")
+    ? decodeURIComponent(window.location.hash.slice(6)) : null;
   const restorePaperReturn = () => {
-    if (!returnMark) return;
-    const step = graph.querySelector('[id="mark-' + returnMark + '"]');
+    if (!returnMark || !/^[A-Za-z0-9:_-]{1,160}$/.test(returnMark)) return;
+    const step = document.getElementById("mark-" + returnMark);
     if (!step) return;
     try {
       const saved = JSON.parse(window.sessionStorage.getItem("trails:paper-return") || "null");
