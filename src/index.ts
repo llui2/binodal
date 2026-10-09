@@ -683,7 +683,7 @@ function renderTrailItem(
   const comparableText = (value: string): string =>
     value.replace(/\s+/g, " ").trim().replace(/[.!?;:]+$/, "").toLowerCase();
   const rawContent = item.content ?? "";
-  const mainText = item.kind === "note" && comparableText(rawContent) === comparableText(title)
+  const mainText = item.kind === "note" && comparableText(rawContent) === comparableText(title) && !rawContent.startsWith("![")
     ? ""
     : rawContent;
   const detailsText = item.note ?? "";
@@ -2419,7 +2419,9 @@ async function insertTrailNote(
 ): Promise<number | null> {
   const compact = value.replace(/\s+/g, " ").trim();
   if (!compact) return null;
-  const title = compact.length > 90 ? `${compact.slice(0, 87)}…` : compact;
+  const figure = /^!\[([^\]\n]{1,160})\]\(https:\/\/[^\s()]+\)/.exec(value);
+  const label = figure ? "Figure: " + figure[1] : compact;
+  const title = label.length > 90 ? `${label.slice(0, 87)}…` : label;
   const storagePosition = await nextTrailItemStoragePosition(env, trailId);
   const row = await env.DB.prepare(
     `INSERT INTO trail_items (trail_id, kind, title, content, note, position)
@@ -6654,6 +6656,17 @@ function htmlPage(title: string, body: string, status = 200): Response {
       overflow: hidden;
       resize: none;
       cursor: text;
+    }
+    .trail-step-title-display {
+      display: block;
+      min-width: 0;
+      min-height: 1.35em;
+      padding: 2px 0;
+      color: var(--ink);
+      font-size: .98rem;
+      font-weight: 610;
+      line-height: 1.35;
+      text-align: left;
     }
     .trail-step-title-input:focus-visible {
       outline: none;
