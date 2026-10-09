@@ -45,6 +45,16 @@ CREATE TABLE IF NOT EXISTS paper_identifiers (
 CREATE INDEX IF NOT EXISTS idx_paper_identifiers_paper
   ON paper_identifiers(paper_id);
 
+-- Cached scholarly metadata not necessarily supplied by Crossref (abstract,
+-- legally discoverable direct PDF), refreshed periodically on paper visits.
+CREATE TABLE IF NOT EXISTS paper_access (
+  paper_id TEXT PRIMARY KEY,
+  abstract TEXT,
+  pdf_url TEXT,
+  checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (paper_id) REFERENCES papers(arxiv_id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS comments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   paper_id TEXT NOT NULL,
