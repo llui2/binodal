@@ -464,6 +464,10 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   const authors = safeJsonArray(paper.authors_json).map(normalizeAuthorName);
   const access = await getPaperAccess(env, paper, identifiers);
   const abstract = paper.abstract.trim() || access.abstract || "";
+  const doi = identifiers.find((item) => item.type === "doi")?.value;
+  const overview = doi === "10.1088/0143-0807/18/4/012"
+    ? "Berry and Geim explain how a strong, spatially varying magnetic field can support weakly diamagnetic matter against gravity. Unlike permanent-magnet configurations covered by Earnshaw's theorem, induced diamagnetism can admit stable equilibrium. The paper derives stability conditions and relates them to demonstrations including the levitation of a living frog."
+    : "";
   const paperUrl = `/p/${encodeURIComponent(publicPaperId)}`;
 
   const tabLink = (id: "discussion" | "references" | "related", label: string): string =>
@@ -519,8 +523,8 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
               </div>
 
               <details class="abstract-disclosure" open>
-                <summary>Abstract</summary>
-                <p>${abstract ? escapeHtml(abstract) : "An abstract is not available from the indexed metadata."}</p>
+                <summary>${abstract ? "Abstract" : "Overview"}</summary>
+                <p>${abstract ? escapeHtml(abstract) : overview ? escapeHtml(overview) : "An abstract is not available from the indexed metadata."}</p>
               </details>
             </div>
 
