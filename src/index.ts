@@ -1328,7 +1328,7 @@ function trailLiveScript(): Response {
       const activeSteps = Array.from(panel.querySelectorAll(".trail-step"));
       const branchMetas = Array.from(graph.querySelectorAll("[data-branch-meta]"));
       const width = Math.max(88, map.clientWidth);
-      const rightX = width - 14;
+      const rightX = width - 26;
 
       const visibleStepYs = activeSteps.map((step) => {
         const titleField = step.querySelector(".trail-step-title-input:not([hidden])");
