@@ -506,7 +506,7 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   </section>`;
 
   const references = tab === "references"
-    ? await renderPaperReferences(env, storagePaperId, identifiers, paperTabUrl("references"), requestUrl.searchParams.has("added"))
+    ? await renderPaperReferences(env, storagePaperId, identifiers, paperTabUrl("references"))
     : "";
 
   const related = `<section class="tab-empty">
@@ -553,7 +553,7 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
 
               <details class="abstract-disclosure" open>
                 <summary>${abstract ? "Abstract" : "Overview"}</summary>
-                <p>${abstract ? escapeHtml(abstract) : overview ? escapeHtml(overview) : "An abstract is not available from the indexed metadata."}</p>
+                <p data-paper-math>${abstract ? escapeHtml(normalizeBareUnitPowers(abstract)) : overview ? escapeHtml(overview) : "An abstract is not available from the indexed metadata."}</p>
               </details>
             </div>
 
@@ -4523,7 +4523,6 @@ async function renderPaperReferences(
   paperId: string,
   identifiers: PaperIdentifier[],
   paperUrl: string,
-  justAdded: boolean,
 ): Promise<string> {
   const references = (await getPaperReferences(env, paperId, identifiers))
     .filter((ref) => usableReferenceTitle(ref.title, ref.doi));
@@ -4540,18 +4539,10 @@ async function renderPaperReferences(
         <a href="${escapeAttr(href)}">${escapeHtml(ref.title)}</a>
         ${ref.year ? `<span>${ref.year}</span>` : ""}
       </div>
-      <form action="/trail/add-paper" method="post" class="paper-reference-add">
-        <input type="hidden" name="paper_id" value="${escapeAttr(refId)}">
-        <input type="hidden" name="from_paper_id" value="${escapeAttr(paperId)}">
-        <input type="hidden" name="next" value="${escapeAttr(paperUrl + "&added=1")}">
-        <input name="reason" maxlength="1000" placeholder="Why is it relevant?" aria-label="Reason to add ${escapeAttr(ref.title)} to trail" required>
-        <button type="submit">add to trail</button>
-      </form>
     </li>`;
   }).join("");
 
   return `<section class="paper-references">
-    ${justAdded ? `<p class="paper-reference-confirm">Added to the current trail.</p>` : ""}
     <p class="paper-reference-count">${references.length} DOI-resolved references</p>
     <ol>${items}</ol>
   </section>`;
@@ -6251,12 +6242,46 @@ function themeScript(): Response {
   });
 }
 
+// Render bare scientific unit powers (e.g. cm^-2) via KaTeX, preserving
+// equations already surrounded by TeX delimiters.
+function normalizeBareUnitPowers(abstract: string): string {
+  const parts = abstract.split(/(\$\$[\s\S]*?\$\$|\$[^$]*?\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g);
+  return parts.map((part) => {
+    if (part.startsWith("$") || part.startsWith("\\[") || part.startsWith("\\(")) {
+      return part;
+    }
+    return part.replace(/\b([A-Za-zµμ]{1,5})\^\{?([+−-]?\d+)\}?(?!\w)/g,
+      (_match, unit: string, power: string) =>
+        '$\\mathrm{' + unit + '}^{' + power.replace("−", "-") + '}$');
+  }).join("");
+}
+
 function htmlPage(title: string, body: string, status = 200): Response {
-  // The editor alone needs KaTeX. Other pages should not download it.
-  const mathAssets = body.includes('data-trail-live')
+  // Load KaTeX only for trail editing and paper abstracts.
+  const paperMath = body.includes("data-paper-math");
+  const mathAssets = body.includes('data-trail-live') || paperMath
     ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css">
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>`
+    : "";
+  const abstractMathInit = paperMath
+    ? `<script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const abstract = document.querySelector("[data-paper-math]");
+        if (abstract && typeof window.renderMathInElement === "function") {
+          window.renderMathInElement(abstract, {
+            delimiters: [
+              { left: "$$", right: "$$", display: true },
+              { left: "\\\\[", right: "\\\\]", display: true },
+              { left: "$", right: "$", display: false },
+              { left: "\\\\(", right: "\\\\)", display: false },
+            ],
+            throwOnError: false,
+            trust: false,
+          });
+        }
+      });
+    </script>`
     : "";
   return new Response(
     `<!doctype html>
@@ -6268,6 +6293,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
   <meta name="theme-color" content="#f7f4ed">
   <script src="/theme.js"></script>
   ${mathAssets}
+  ${abstractMathInit}
   <link rel="icon" href="/trails-logo.svg?v=3" type="image/svg+xml">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400..700&display=swap">
   <title>${escapeHtml(title)}</title>
@@ -6603,6 +6629,11 @@ function htmlPage(title: string, body: string, status = 200): Response {
       line-height: 1.68;
       font-weight: 450;
     }
+    .abstract-disclosure .katex-display {
+      max-width: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
 
     .paper-trail-actions {
       display: flex;
@@ -6735,28 +6766,15 @@ function htmlPage(title: string, body: string, status = 200): Response {
     .comment-actions a { text-decoration: none; }
     .replies { margin-top: 22px; }
 
-    .paper-reference-count, .paper-reference-confirm {
+    .paper-reference-count {
       font-size: .82rem; color: var(--muted); margin: 0 0 18px;
     }
-    .paper-reference-confirm { color: var(--annotation); }
     .paper-references ol { list-style: none; margin: 0; padding: 0; }
-    .paper-reference { padding: 14px 0 18px; border-bottom: 1px solid var(--wash); }
+    .paper-reference { padding: 9px 0; }
     .paper-reference-text { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
     .paper-reference-text a { color: var(--ink); line-height: 1.35; text-decoration: none; }
     .paper-reference-text a:hover { color: var(--annotation); }
     .paper-reference-text span { color: var(--muted); font-size: .8rem; }
-    .paper-reference-add { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-    .paper-reference-add input {
-      flex: 1 1 190px; min-width: 0; padding: 6px 8px;
-      background: var(--field-muted); border: none; border-radius: 3px;
-      color: var(--ink); font: inherit; font-size: .81rem;
-    }
-    .paper-reference-add button {
-      padding: 6px 11px; border-radius: 3px;
-      background: var(--annotation); color: var(--button-ink);
-      font-size: .78rem; font-weight: 600; white-space: nowrap;
-    }
-    .paper-reference-add button:hover { filter: brightness(.94); }
 
     .tab-empty {
       min-height: 150px;
