@@ -19,6 +19,12 @@ interface Paper {
   updated_at: string | null;
 }
 
+interface PaperAccess {
+  abstract: string | null;
+  pdf_url: string | null;
+  checked_at: string;
+}
+
 type PaperIdentifierType = "arxiv" | "doi" | "url";
 
 interface PaperIdentifier {
@@ -408,7 +414,6 @@ async function renderHome(request: Request, env: Env): Promise<Response> {
         </div>
       </form>
       <div class="home-trails-link"><a href="/trail">trails →</a></div>
-      <script src="/trail-live.js" defer></script>
     </main>`,
   );
 }
@@ -418,6 +423,18 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   const identifiers = await getPaperIdentifiers(env, paper.arxiv_id);
   const publicPaperId = preferredPaperId(identifiers, paper.arxiv_id);
   const requestUrl = new URL(request.url);
+  // Paper links entered from a trail should lead back to that trail, rather
+  // than unexpectedly sending the researcher to the generic search page.
+  const referer = request.headers.get("Referer");
+  let backHref = "/";
+  if (referer) {
+    try {
+      const from = new URL(referer);
+      if (from.origin === requestUrl.origin && from.pathname === "/trail") backHref = "/trail";
+    } catch {
+      // Ignore invalid Referer values.
+    }
+  }
 
   if (requestedPaperId !== publicPaperId) {
     return redirect(`/p/${encodeURIComponent(publicPaperId)}${requestUrl.search}`);
@@ -445,6 +462,12 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
   const commentIds = new Set(comments.map((comment) => comment.id));
   const validReplyTo = replyTo && commentIds.has(replyTo) ? replyTo : null;
   const authors = safeJsonArray(paper.authors_json).map(normalizeAuthorName);
+  const access = await getPaperAccess(env, paper, identifiers);
+  const abstract = paper.abstract.trim() || access.abstract || "";
+  const doi = identifiers.find((item) => item.type === "doi")?.value;
+  const overview = doi === "10.1088/0143-0807/18/4/012"
+    ? "Berry and Geim explain how a strong, spatially varying magnetic field can support weakly diamagnetic matter against gravity. Unlike permanent-magnet configurations covered by Earnshaw's theorem, induced diamagnetism can admit stable equilibrium. The paper derives stability conditions and relates them to demonstrations including the levitation of a living frog."
+    : "";
   const paperUrl = `/p/${encodeURIComponent(publicPaperId)}`;
 
   const tabLink = (id: "discussion" | "references" | "related", label: string): string =>
@@ -477,12 +500,12 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
       ${renderIdentity(user)}
     </header>
     <main class="shell paper-page">
-      <a class="back" href="/">← papers</a>
+      <a class="back" href="${backHref}">← ${backHref === "/trail" ? "trail" : "papers"}</a>
 
       <article class="paper-window">
         <div class="paper-grid">
           <aside class="paper-meta" aria-label="Paper metadata">
-            ${renderPaperSources(identifiers)}
+            ${renderPaperSources(identifiers, access.pdf_url)}
           </aside>
 
           <div class="paper-main">
@@ -499,9 +522,9 @@ async function renderPaper(request: Request, env: Env, requestedPaperId: string)
                 <a href="/trail">trail</a>
               </div>
 
-              <details class="abstract-disclosure">
-                <summary>Abstract</summary>
-                <p>${escapeHtml(paper.abstract)}</p>
+              <details class="abstract-disclosure" open>
+                <summary>${abstract ? "Abstract" : "Overview"}</summary>
+                <p>${abstract ? escapeHtml(abstract) : overview ? escapeHtml(overview) : "An abstract is not available from the indexed metadata."}</p>
               </details>
             </div>
 
@@ -914,20 +937,18 @@ async function openTrailByIntegrationKey(
 
 function exampleFigureSvg(): Response {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 246" role="img" aria-labelledby="title desc">
-    <title id="title">Illustrative trend</title>
-    <desc id="desc">A fictional series of observations increasing with time.</desc>
+    <title id="title">Schematic stable equilibrium</title>
+    <desc id="desc">A qualitative effective energy curve with a minimum, representing stable levitation. Not experimental data.</desc>
     <rect width="520" height="246" fill="#f7f4ed"/>
-    <path d="M58 26 V201 H494" fill="none" stroke="#a7a39a" stroke-width="2"/>
-    <path d="M78 175 L137 160 L197 166 L259 118 L321 135 L382 89 L459 63" fill="none" stroke="#315c84" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-    <g fill="#315c84">
-      <circle cx="78" cy="175" r="4.5"/><circle cx="137" cy="160" r="4.5"/>
-      <circle cx="197" cy="166" r="4.5"/><circle cx="259" cy="118" r="4.5"/>
-      <circle cx="321" cy="135" r="4.5"/><circle cx="382" cy="89" r="4.5"/>
-      <circle cx="459" cy="63" r="4.5"/>
-    </g>
-    <g fill="#625f58" font-family="Georgia,serif" font-size="17">
-      <text x="463" y="226">time</text>
-      <text x="14" y="31">value</text>
+    <path d="M54 24 V205 H495" fill="none" stroke="#a7a39a" stroke-width="2"/>
+    <path d="M80 48 C155 149 197 184 268 184 C340 184 381 134 458 48" fill="none" stroke="#315c84" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="268" cy="184" r="5" fill="#315c84"/>
+    <path d="M268 184 V205" fill="none" stroke="#a7a39a" stroke-width="1.5" stroke-dasharray="4 5"/>
+    <g fill="#625f58" font-family="Georgia,serif" font-size="16">
+      <text x="15" y="25">U</text>
+      <text x="481" y="231">z</text>
+      <text x="280" y="172">stable</text>
+      <text x="280" y="189">point</text>
     </g>
   </svg>`;
   return new Response(svg, {
@@ -1915,7 +1936,7 @@ function trailLiveScript(): Response {
   }
   window.addEventListener("load", settleTrailMap, { once: true });
 
-  const interval = window.setInterval(() => tick(false), 1200);
+  const interval = window.setInterval(() => tick(false), 3000);
   window.addEventListener("pagehide", () => {
     stopped = true;
     window.clearInterval(interval);
@@ -2095,6 +2116,13 @@ async function selectTrailForUser(request: Request, env: Env): Promise<Response>
 const COMMON_TRAIL_ID = "trail_common_example_v1";
 
 async function ensureCommonExampleTrail(env: Env): Promise<void> {
+  // The live trail API polls frequently. Avoid dozens of D1 writes every
+  // time a viewer checks for updates; seed only after an explicit reset.
+  const populated = await env.DB.prepare(
+    "SELECT 1 AS ok FROM trail_items WHERE trail_id = ? LIMIT 1",
+  ).bind(COMMON_TRAIL_ID).first<{ ok: number }>();
+  if (populated) return;
+
   await env.DB.prepare("INSERT OR IGNORE INTO trails (id) VALUES (?)")
     .bind(COMMON_TRAIL_ID)
     .run();
@@ -2125,14 +2153,14 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
     .bind(
       COMMON_TRAIL_ID,
       "A research trail",
-      "A simple example of a research path: a question, a reference, a note, and what to examine next.",
+      "How can a living frog hover in a static magnetic field? Following a surprising experiment from observation to physical explanation.",
     )
     .run();
 
   await env.DB.prepare(
     `UPDATE trail_metadata
         SET title = 'A research trail',
-            description = 'A simple example of a research path: a question, a reference, a note, and what to examine next.'
+            description = 'How can a living frog hover in a static magnetic field? Following a surprising experiment from observation to physical explanation.'
       WHERE trail_id = ?
         AND title = 'A branching research trail'`,
   )
@@ -2211,51 +2239,66 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
   };
 
   await seedItem(
-    "note", "Start with a question", null,
-    "What are we trying to understand?",
-    "A trail begins with a question. The details can change as the work develops.",
+    "note", "Could a frog float without a string?", null,
+    "A living frog was levitated in a magnetic field of about 16 T. The surprising part is not just lifting it: why does it stay in place?",
+    "Start with the observation. The real question is how levitation can remain stable.",
     "example:main:start", 0, 0,
   );
   await seedItem(
     "paper", "Of flying frogs and levitrons",
     "/p/doi%3A10.1088%2F0143-0807%2F18%2F4%2F012",
-    "Can a frog levitate in a magnetic field? Yes, under sufficiently strong diamagnetic forces.",
-    "M. V. Berry and A. K. Geim, European Journal of Physics (1997). The paper explores stable magnetic levitation.",
+    "Berry and Geim (1997) explain how diamagnetic repulsion can balance gravity, and when the resulting equilibrium is stable.",
+    "The paper derives the conditions for a stable levitation zone in an inhomogeneous magnetic field.",
     "example:main:paper-a", 0, 1,
   );
   await seedItem(
-    "note", "An observation", null,
-    String.raw`A quantity $x$ changes over time.
+    "note", "But doesn't Earnshaw's theorem forbid it?", null,
+    "A fixed arrangement of ordinary permanent magnets cannot produce this kind of stable equilibrium. The frog is made largely of weakly diamagnetic material.",
+    "The theorem's assumptions matter: the frog's magnetic response is induced, rather than a fixed magnetic moment.",
+    "example:main:objection", 0, 2,
+  );
+  await seedItem(
+    "note", "What force balances gravity?", null,
+    String.raw`For a material with $\chi<0$, the magnetic force can point away from the stronger field. At equilibrium,
 
 $$
-x(t) = x_0 + vt
-$$`,
-    "This simple equation is illustrative. Click the text to edit its LaTeX.",
-    "example:main:observation", 0, 2,
+\rho g = \frac{\chi}{2\mu_0}\frac{dB^2}{dz}.
+$$
+
+Here $\rho$ is the density and $B(z)$ the magnetic field.`,
+    "Both susceptibility and the vertical field-squared gradient are negative in the levitating configuration. The magnetic force is then upward.",
+    "example:main:balance", 0, 3,
   );
   await seedItem(
-    "note", "A figure", null,
-    "![Illustrative trend](https://trails.llui2.workers.dev/trail-example-figure.svg)",
-    "Figures can be inserted using a direct HTTPS image link.",
-    "example:main:figure", 0, 3,
+    "note", "Balance is not the same as stability", null,
+    "![Schematic local minimum of effective energy](https://trails.llui2.workers.dev/trail-example-figure.svg)",
+    "This is a schematic, not experimental data. The total energy must increase under small displacements for a stable equilibrium.",
+    "example:main:figure", 0, 4,
   );
   await seedItem(
-    "link", "An external resource", "https://www.crossref.org/",
-    "A useful reference, dataset, or tool can belong on the same path.",
-    null,
-    "example:main:link", 0, 4,
+    "paper", "Diamagnetic levitation: Flying frogs and floating magnets",
+    "/p/doi%3A10.1063%2F1.372654",
+    "Simon and Geim (2000) explore how diamagnetism permits both levitating biological matter and stabilizing magnets.",
+    "A follow-up source changes the perspective: the effect is not restricted to frogs.",
+    "example:main:paper-b", 0, 5,
   );
   await seedItem(
-    "note", "Revise the idea", null,
-    "The original explanation needs another condition.",
-    "Preserve the change instead of rewriting what came before.",
-    "example:main:revision", 0, 5,
+    "note", "The field geometry is the key", null,
+    String.raw`The magnetic contribution to the effective energy is
+
+$$
+U(z) = \rho Vgz - \frac{\chi V}{2\mu_0}B(z)^2.
+$$
+
+The field gradient can support the weight; the curvature determines whether the equilibrium restores or repels perturbations.`,
+    "This is the useful distinction: satisfying the force balance at one height does not by itself guarantee stability.",
+    "example:main:synthesis", 0, 6,
   );
   await seedItem(
-    "note", "What remains open?", null,
-    "Which observation would help decide between the remaining explanations?",
-    "Use the next question to continue the trail.",
-    "example:main:next", 0, 6,
+    "note", "Next question: what stops levitation?", null,
+    "Would changing the material, the magnet geometry, or the field strength destroy the stable zone? Which effect should we test first?",
+    "Possible next steps: compare susceptibilities, examine the three-dimensional Hessian of energy, or estimate the field requirements for water.",
+    "example:main:next", 0, 7,
   );
 
 }
@@ -3929,32 +3972,28 @@ function preferredPaperId(identifiers: PaperIdentifier[], fallbackStorageId: str
   return fallbackStorageId;
 }
 
-function renderPaperSources(identifiers: PaperIdentifier[]): string {
-  const doi = identifiers.find((identifier) => identifier.type === "doi" && !isArxivIssuedDoi(identifier.value));
-  const arxiv = identifiers.find((identifier) => identifier.type === "arxiv");
-  const source = identifiers.find((identifier) => identifier.type === "url");
-
+function renderPaperSources(identifiers: PaperIdentifier[], foundPdf: string | null): string {
+  const doi = identifiers.find((item) => item.type === "doi" && !isArxivIssuedDoi(item.value));
+  const arxiv = identifiers.find((item) => item.type === "arxiv");
+  const source = identifiers.find((item) => item.type === "url");
+  const directPdf = foundPdf ?? (arxiv ? `https://arxiv.org/pdf/${encodeURIComponent(arxiv.value)}` : null);
+  const pdf = directPdf
+    ? `<a class="paper-source" href="${escapeAttr(directPdf)}" target="_blank" rel="noreferrer noopener">PDF ↗</a>`
+    : "";
   if (doi) {
     const venue = doi.label && doi.label !== "Published version" ? doi.label : "Published version";
     return `<p class="paper-venue">${escapeHtml(venue)}</p>
       <div class="paper-links">
-        <a class="paper-source" href="${escapeAttr(doi.url)}" rel="noreferrer">published version ↗</a>
-        ${arxiv ? `<a class="paper-source" href="${escapeAttr(arxiv.url)}" rel="noreferrer">arXiv preprint ↗</a>` : ""}
+        ${pdf || `<a class="paper-source" href="${escapeAttr(doi.url)}" rel="noreferrer">published version ↗</a>`}
       </div>
       <p class="paper-doi">DOI ${escapeHtml(doi.value)}</p>`;
   }
-
-  if (arxiv) {
-    return `<p class="paper-id">arXiv:${escapeHtml(arxiv.value)}</p>
-      <a class="paper-source" href="${escapeAttr(arxiv.url)}" rel="noreferrer">open on arXiv ↗</a>`;
-  }
-
+  if (arxiv) return `<p class="paper-id">arXiv:${escapeHtml(arxiv.value)}</p>${pdf}`;
   if (source) {
     return `<p class="paper-id">${escapeHtml(source.label ?? sourceHost(source.value))}</p>
-      <a class="paper-source" href="${escapeAttr(source.url)}" rel="noreferrer">open source ↗</a>`;
+      ${pdf || `<a class="paper-source" href="${escapeAttr(source.url)}" rel="noreferrer">open source ↗</a>`}`;
   }
-
-  return `<p class="paper-id">paper</p>`;
+  return pdf || `<p class="paper-id">paper</p>`;
 }
 
 function sourceHost(url: string): string {
@@ -3963,6 +4002,104 @@ function sourceHost(url: string): string {
   } catch {
     return "source";
   }
+}
+
+const PAPER_ACCESS_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
+function secureSourceUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.toString() : null;
+  } catch { return null; }
+}
+
+function openAlexAbstract(index: unknown): string | null {
+  if (!index || typeof index !== "object" || Array.isArray(index)) return null;
+  const words: string[] = [];
+  for (const [word, positions] of Object.entries(index)) {
+    if (!Array.isArray(positions)) continue;
+    for (const position of positions) {
+      if (Number.isInteger(position) && position >= 0 && position < 1200) words[position] = word;
+    }
+  }
+  const abstract = words.filter(Boolean).join(" ");
+  return abstract.length >= 40 ? abstract.slice(0, 8000) : null;
+}
+
+async function fetchJsonWithTimeout(url: string): Promise<unknown> {
+  const response = await fetch(url, {
+    headers: { Accept: "application/json", "User-Agent": "trails/0.1 (research metadata)" },
+    signal: AbortSignal.timeout(2600),
+  });
+  if (!response.ok) throw new Error(`Metadata service returned ${response.status}`);
+  return response.json();
+}
+
+async function getPaperAccess(
+  env: Env, paper: Paper, identifiers: PaperIdentifier[],
+): Promise<PaperAccess> {
+  const existing = await env.DB.prepare(
+    "SELECT abstract, pdf_url, checked_at FROM paper_access WHERE paper_id = ?",
+  ).bind(paper.arxiv_id).first<PaperAccess>();
+  if (existing && Date.now() - Date.parse(existing.checked_at.replace(" ", "T") + "Z") < PAPER_ACCESS_TTL_MS) {
+    return existing;
+  }
+
+  const doi = identifiers.find((item) => item.type === "doi")?.value;
+  const arxiv = identifiers.find((item) => item.type === "arxiv")?.value;
+  if (!doi) {
+    return { abstract: null, pdf_url: arxiv ? `https://arxiv.org/pdf/${encodeURIComponent(arxiv)}` : null, checked_at: "" };
+  }
+
+  let abstract: string | null = null;
+  let pdfUrl: string | null = null;
+  // Use structured APIs rather than scraping Google Scholar. OpenAlex
+  // distinguishes published, accepted and submitted open-access copies.
+  const lookups = await Promise.allSettled([
+    fetchJsonWithTimeout(`https://api.openalex.org/works/https://doi.org/${doi}`),
+    fetchJsonWithTimeout(`https://api.semanticscholar.org/graph/v1/paper/DOI:${encodeURIComponent(doi)}?fields=abstract,openAccessPdf`),
+  ]);
+
+  if (lookups[0].status === "fulfilled") {
+    const record = lookups[0].value as {
+      abstract_inverted_index?: unknown;
+      locations?: Array<{ is_oa?: boolean; pdf_url?: string | null; version?: string; source?: { type?: string } }>;
+      best_oa_location?: { pdf_url?: string | null };
+    };
+    abstract = openAlexAbstract(record.abstract_inverted_index);
+    const versions: Record<string, number> = { publishedVersion: 0, acceptedVersion: 1, submittedVersion: 2 };
+    const copies = (record.locations ?? [])
+      .filter((location) => location.is_oa && secureSourceUrl(location.pdf_url))
+      .sort((a, b) =>
+        (versions[a.version ?? ""] ?? 3) - (versions[b.version ?? ""] ?? 3) ||
+        (a.source?.type === "repository" ? 1 : 0) - (b.source?.type === "repository" ? 1 : 0)
+      );
+    pdfUrl = secureSourceUrl(copies[0]?.pdf_url ?? record.best_oa_location?.pdf_url);
+  }
+
+  if (lookups[1].status === "fulfilled") {
+    const record = lookups[1].value as { abstract?: string | null; openAccessPdf?: { url?: string } | null };
+    if (!abstract && record.abstract?.trim()) abstract = record.abstract.trim().slice(0, 8000);
+    if (!pdfUrl) pdfUrl = secureSourceUrl(record.openAccessPdf?.url);
+  }
+
+  // Verified author-hosted journal copy, if discovery APIs do not list it.
+  if (!pdfUrl && doi.toLowerCase() === "10.1088/0143-0807/18/4/012") {
+    pdfUrl = "https://michaelberryphysics.wordpress.com/wp-content/uploads/2013/07/berry285.pdf";
+  }
+
+  try {
+    await env.DB.prepare(
+      `INSERT INTO paper_access (paper_id, abstract, pdf_url, checked_at)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(paper_id) DO UPDATE SET
+         abstract = excluded.abstract, pdf_url = excluded.pdf_url, checked_at = CURRENT_TIMESTAMP`,
+    ).bind(paper.arxiv_id, abstract, pdfUrl).run();
+  } catch (error) {
+    console.warn("Unable to cache additional paper metadata", error);
+  }
+  return { abstract, pdf_url: pdfUrl, checked_at: new Date().toISOString() };
 }
 
 async function fetchPaperByInput(paperId: string): Promise<FetchedPaper> {
@@ -4245,7 +4382,7 @@ async function findArxivByTitleAndAuthors(
   endpoint.searchParams.set("max_results", "8");
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 2500);
+  const timeout = setTimeout(() => controller.abort(), 950);
 
   try {
     const response = await fetch(endpoint, {
@@ -5660,6 +5797,12 @@ function themeScript(): Response {
 }
 
 function htmlPage(title: string, body: string, status = 200): Response {
+  // The editor alone needs KaTeX. Other pages should not download it.
+  const mathAssets = body.includes('data-trail-live')
+    ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js"></script>`
+    : "";
   return new Response(
     `<!doctype html>
 <html lang="en">
@@ -5669,9 +5812,7 @@ function htmlPage(title: string, body: string, status = 200): Response {
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#f7f4ed">
   <script src="/theme.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.css" integrity="sha384-JctiRyLzXCrSoOOzFlSoWLdyzQl7OrrRnhyeBmzB6ZWtcjccUyc8lCQJqIbs3uQX" crossorigin="anonymous">
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/katex.min.js" integrity="sha384-+7Keh381hSkXmXqnjC0JBM/kzsN6TFj+wMKychSLjTvJ8/0ElMde2uKl8i6p6Buj" crossorigin="anonymous"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.18.7/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous"></script>
+  ${mathAssets}
   <link rel="icon" href="/trails-logo.svg?v=3" type="image/svg+xml">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400..700&display=swap">
   <title>${escapeHtml(title)}</title>
@@ -6432,9 +6573,58 @@ function htmlPage(title: string, body: string, status = 200): Response {
       font-size: .66rem;
       line-height: 1.4;
     }
-    .trail-user-form a {
-      color: var(--annotation);
-      font-size: .78rem;
+    .trail-user-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px;
+      align-items: center;
+    }
+    .trail-user-form input,
+    .trail-user-switch input {
+      min-width: 0;
+      padding: 8px 9px;
+      background: var(--field-muted);
+      border-radius: 3px;
+      font-size: .75rem;
+    }
+    .trail-user-submit {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 3px;
+      background: var(--annotation);
+      color: var(--button-ink);
+      font-size: 1rem;
+      font-weight: 650;
+      line-height: 1;
+    }
+    .trail-user-submit:hover,
+    .trail-user-submit:focus-visible {
+      color: var(--button-ink);
+      filter: brightness(.96);
+      outline: none;
+    }
+    .trail-user-form p {
+      grid-column: 1 / -1;
+    }
+    .trail-user-switch {
+      margin-top: 22px;
+      color: var(--soft);
+      font-size: .67rem;
+    }
+    .trail-user-switch summary {
+      cursor: pointer;
+      list-style: none;
+    }
+    .trail-user-switch summary::-webkit-details-marker { display: none; }
+    .trail-user-switch form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px;
+      margin-top: 8px;
     }
 
     .trail-description {
