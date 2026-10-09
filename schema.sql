@@ -90,6 +90,16 @@ CREATE TABLE IF NOT EXISTS trail_user_sessions (
   FOREIGN KEY (user_id) REFERENCES trail_users(id) ON DELETE CASCADE
 );
 
+-- Verified ORCID accounts map to their existing trail collections.
+-- Old username sessions remain only to support migration on sign-in.
+CREATE TABLE IF NOT EXISTS trail_user_identities (
+  user_id INTEGER PRIMARY KEY,
+  trail_user_id INTEGER NOT NULL UNIQUE,
+  linked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (trail_user_id) REFERENCES trail_users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS trail_owners (
   trail_id TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL,
