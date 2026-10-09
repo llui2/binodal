@@ -693,8 +693,10 @@ function renderTrailItem(
       <span class="trail-step-line">
         <textarea class="trail-step-title-input" rows="1" maxlength="300" aria-label="Node title" data-item-title="${item.id}" spellcheck="false">${escapeHtml(title)}</textarea>
       </span>
-      ${kind && item.url
-        ? `<a class="trail-step-kind" href="${escapeAttr(item.url)}"${item.kind === "link" ? ` target="_blank" rel="noreferrer"` : ""}>${escapeHtml(kind)}</a>`
+      ${kind
+        ? item.url
+          ? `<a class="trail-step-kind" href="${escapeAttr(item.url)}"${item.kind === "link" ? ` target="_blank" rel="noreferrer"` : ""}>${escapeHtml(kind)}</a>`
+          : `<span class="trail-step-kind">${escapeHtml(kind)}</span>`
         : `<span class="trail-step-kind" aria-hidden="true"></span>`}
     </div>
 
@@ -2122,7 +2124,7 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
     "note", "An observation", null,
     "One result supports part of the explanation.",
     "What does the evidence show, and what does it leave unresolved?",
-    "example:main:hypothesis", 0, 2,
+    "example:main:observation", 0, 2,
   );
   await seedItem(
     "link", "An external resource", "https://www.crossref.org/",
@@ -2134,13 +2136,13 @@ async function ensureCommonExampleTrail(env: Env): Promise<void> {
     "note", "Revise the idea", null,
     "The original explanation needs another condition.",
     "Preserve the change instead of rewriting what came before.",
-    "example:main:paper-b", 0, 4,
+    "example:main:revision", 0, 4,
   );
   await seedItem(
     "note", "What remains open?", null,
     "Which observation would help decide between the remaining explanations?",
     "Use the next question to continue the trail.",
-    "example:main:synthesis", 0, 5,
+    "example:main:next", 0, 5,
   );
 
 }
